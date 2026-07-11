@@ -23,14 +23,18 @@
   canvas{position:fixed;inset:0;width:100%;height:100%;display:block;cursor:crosshair;touch-action:none}
   #hud{position:fixed;inset:0;pointer-events:none;font-family:-apple-system,"Hiragino Sans","Yu Gothic",sans-serif;
        color:var(--ink);user-select:none;-webkit-user-select:none}
-  #hud .en,#controls .en{letter-spacing:.18em;font-weight:400}
+  #hud .en,#topbar .en,#controls .en{letter-spacing:.18em;font-weight:400}
   .block{position:absolute;text-shadow:0 1px 8px rgba(0,0,0,.85)}
-  #title{top:max(26px, env(safe-area-inset-top));left:max(30px, env(safe-area-inset-left))}
+  #topbar{position:fixed;left:0;right:0;top:0;z-index:4;pointer-events:none;
+    display:flex;justify-content:space-between;align-items:flex-start;gap:24px;
+    font-family:-apple-system,"Hiragino Sans","Yu Gothic",sans-serif;color:var(--ink);
+    text-shadow:0 1px 8px rgba(0,0,0,.85);
+    padding:max(22px, env(safe-area-inset-top)) max(30px, env(safe-area-inset-right)) 14px max(30px, env(safe-area-inset-left));
+    background:linear-gradient(to bottom, rgba(4,5,10,.72) 45%, rgba(4,5,10,0))}
   #title h1{margin:0;font:400 24px/1.2 "Hiragino Mincho ProN","Yu Mincho",serif;color:var(--gold);letter-spacing:.34em}
   #title .sub{margin-top:8px;font-size:11px;color:var(--ink-dim);letter-spacing:.12em;line-height:1.7}
   #title .sub .en{font-size:9.5px;color:rgba(207,214,228,.38)}
-  #status{top:max(30px, env(safe-area-inset-top));right:max(32px, env(safe-area-inset-right));
-          text-align:right;font-size:12px;line-height:1.9;color:var(--ink-dim);letter-spacing:.1em}
+  #status{flex-shrink:0;text-align:right;font-size:12px;line-height:1.9;color:var(--ink-dim);letter-spacing:.1em}
   #status b{color:var(--gold);font-weight:500;font-variant-numeric:tabular-nums}
   #controls{position:fixed;left:0;right:0;bottom:0;z-index:5;pointer-events:none;
     display:flex;flex-direction:column;align-items:center;gap:10px;
@@ -42,6 +46,10 @@
   #presets{display:flex;gap:10px;max-width:100%;overflow-x:auto;pointer-events:auto;
     padding:4px 2px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
   #presets::-webkit-scrollbar{display:none}
+  /* portrait tablets have room: show all presets in two centered rows instead of clipping */
+  @media (orientation:portrait) and (min-width:741px){
+    #presets{flex-wrap:wrap;justify-content:center;overflow:visible}
+  }
   #actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;pointer-events:auto}
   .chip,.btn{pointer-events:auto;cursor:pointer;letter-spacing:.12em;color:var(--ink-dim);
     background:rgba(8,10,18,.62);border:1px solid rgba(207,214,228,.16);border-radius:999px;
@@ -58,6 +66,7 @@
     .chip.on:hover,.btn.on:hover{color:var(--gold)}
   }
   @media (max-width:740px){
+    #topbar{gap:12px;padding-bottom:8px}
     #title h1{font-size:17px}
     #title .sub{font-size:9px}
     #title .sub .en{display:none}
@@ -80,8 +89,8 @@
 </head>
 <body>
 <canvas id="gl"></canvas>
-<div id="hud">
-  <div class="block" id="title">
+<div id="topbar">
+  <div id="title">
     <h1>量子曼荼羅</h1>
     <div class="sub">
       <span class="en">QUANTUM MANDALA — GEOMETRY × QUANTUM MECHANICS</span><br>
@@ -89,11 +98,13 @@
       <span class="en">TIME-DEPENDENT SCHRÖDINGER EQUATION / REAL-TIME GPU FIELD</span>
     </div>
   </div>
-  <div class="block" id="status">
+  <div id="status">
     存在確率 ∫|ψ|²dA <b id="norm">—</b><br>
     時間速度 <b id="spd">×1.0</b> · 512² <span class="en">FIELD</span><br>
     <span id="pname" style="color:var(--gold)">—</span>
   </div>
+</div>
+<div id="hud">
   <div class="block" id="toast"></div>
   <div class="block" id="pause">停 止 中 — PAUSED</div>
 </div>
@@ -727,12 +738,14 @@ function readDensity(){
 }
 
 const ctrlEl = document.getElementById('controls');
+const topEl = document.getElementById('topbar');
 function plateRect(){
-  // keep the plate clear of the bottom toolbar (device y=0 is the bottom)
+  // keep the plate clear of the top header and the bottom toolbar (device y=0 is the bottom)
   const dpr = W/innerWidth;
+  const topH = Math.min((topEl.offsetHeight||0)*dpr, H*0.3);
   const ctrlH = Math.min((ctrlEl.offsetHeight||0)*dpr, H*0.4);
-  const avail = H - ctrlH;
-  const S = Math.min(W, avail)*0.92;
+  const avail = H - ctrlH - topH;
+  const S = Math.min(W*0.94, avail*0.96);
   return [(W-S)/2, ctrlH + (avail-S)/2, S];
 }
 
