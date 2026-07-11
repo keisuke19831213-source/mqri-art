@@ -108,6 +108,7 @@
     <div class="btn" id="bClear">障壁消去</div>
     <div class="btn" id="bPal">配色</div>
     <div class="btn" id="bSpeed">速度 ×1.0</div>
+    <div class="btn" id="bFull">全画面</div>
   </div>
 </div>
 <div id="err"></div>
@@ -973,6 +974,37 @@ bindBtn('bSpeed', ()=>{
   const i = SPEED_STEPS.findIndex(s=>Math.abs(s-speedMul)<0.01);
   setSpeed(SPEED_STEPS[(i+1) % SPEED_STEPS.length]);
 });
+
+// browser fullscreen (iPadOS 16.4+ Safari supports the Fullscreen API on user tap)
+const fsBtn = document.getElementById('bFull');
+const fsRoot = document.documentElement;
+const isStandalone = navigator.standalone
+  || matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches;
+const fsSupported = !!(fsRoot.requestFullscreen || fsRoot.webkitRequestFullscreen);
+if(isStandalone || !fsSupported){
+  fsBtn.style.display = 'none';   // already fullscreen (home-screen app) or unsupported (iPhone)
+} else {
+  bindBtn('bFull', ()=>{
+    if(document.fullscreenElement || document.webkitFullscreenElement){
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    } else {
+      try{
+        const p = fsRoot.requestFullscreen
+          ? fsRoot.requestFullscreen({navigationUI:'hide'})
+          : fsRoot.webkitRequestFullscreen();
+        p?.catch?.(()=>{});
+      }catch(_){}
+    }
+  });
+  const onFsChange = ()=>{
+    const on = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    fsBtn.textContent = on ? '全画面を終了' : '全画面';
+    fsBtn.classList.toggle('on', on);
+    if(!wakeLock) acquireWakeLock();
+  };
+  document.addEventListener('fullscreenchange', onFsChange);
+  document.addEventListener('webkitfullscreenchange', onFsChange);
+}
 
 /* ---------------- exhibition mode ---------------- */
 // keep the display awake (iPadOS 16.4+ / Chrome); re-acquire when tab returns
