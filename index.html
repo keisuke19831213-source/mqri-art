@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#04050a">
+<meta name="description" content="MQRI ART — リアルタイム生成アートのギャラリー。触れて楽しむインタラクティブ作品集。">
+<title>MQRI ART — Interactive Generative Art</title>
+<style>
+  :root{
+    --gold:#d8b06a;
+    --gold-dim:rgba(216,176,106,.55);
+    --ink:#cfd6e4;
+    --ink-dim:rgba(207,214,228,.55);
+    --bg:#04050a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,"Hiragino Sans","Yu Gothic",sans-serif;
+    -webkit-tap-highlight-color:transparent}
+  body{background:
+    radial-gradient(120% 90% at 50% 0%, rgba(26,32,54,.55), rgba(4,5,10,0) 60%),
+    var(--bg)}
+  .en{letter-spacing:.22em;font-weight:400}
+  main{max-width:880px;margin:0 auto;
+    padding:12vh max(24px, env(safe-area-inset-right)) 14vh max(24px, env(safe-area-inset-left))}
+  header h1{margin:0;font:400 30px/1.3 "Hiragino Mincho ProN","Yu Mincho",serif;
+    color:var(--gold);letter-spacing:.42em}
+  header .sub{margin-top:14px;font-size:11px;color:var(--ink-dim);letter-spacing:.18em;line-height:2}
+  header .sub .en{font-size:10px;color:rgba(207,214,228,.38)}
+  .rule{margin:56px 0 48px;height:1px;border:0;
+    background:linear-gradient(to right, var(--gold-dim), rgba(216,176,106,0))}
+  .works{display:grid;gap:22px}
+  .work{display:block;text-decoration:none;color:var(--ink);
+    border:1px solid rgba(207,214,228,.14);border-radius:18px;
+    padding:30px 32px;background:rgba(10,13,24,.5);
+    transition:border-color .25s ease, background .25s ease, transform .25s ease}
+  .work:hover,.work:focus-visible{border-color:var(--gold-dim);background:rgba(216,176,106,.06);transform:translateY(-2px)}
+  .work:active{background:rgba(216,176,106,.1)}
+  .work h2{margin:0;font:400 21px/1.4 "Hiragino Mincho ProN","Yu Mincho",serif;
+    color:var(--gold);letter-spacing:.3em}
+  .work .we{margin-top:6px;font-size:10px;color:rgba(207,214,228,.4);letter-spacing:.24em}
+  .work p{margin:16px 0 0;font-size:13px;line-height:2.1;color:var(--ink-dim);letter-spacing:.06em}
+  .work .tag{display:inline-block;margin-top:18px;font-size:10.5px;letter-spacing:.2em;
+    color:var(--gold-dim);border:1px solid rgba(216,176,106,.3);border-radius:999px;padding:6px 16px}
+  footer{margin-top:14vh;font-size:10px;color:rgba(207,214,228,.32);letter-spacing:.2em;line-height:2}
+  footer a{color:rgba(207,214,228,.45);text-decoration:none}
+  @media (max-width:600px){
+    main{padding-top:9vh}
+    header h1{font-size:22px;letter-spacing:.3em}
+    .work{padding:24px 22px}
+    .work h2{font-size:18px;letter-spacing:.2em}
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>MQRI ART</h1>
+    <div class="sub">
+      触れて楽しむ、リアルタイム生成アートの部屋。<br>
+      <span class="en">A ROOM OF INTERACTIVE GENERATIVE ART — REAL-TIME, IN YOUR HANDS.</span>
+    </div>
+  </header>
+
+  <hr class="rule">
+
+  <div class="works">
+    <a class="work" href="/quantum-mandala/">
+      <h2>量子曼荼羅</h2>
+      <div class="we en">QUANTUM MANDALA — GEOMETRY × QUANTUM MECHANICS</div>
+      <p>これは絵ではなく、方程式そのものである。時間依存シュレーディンガー方程式をGPUで実時間解法し、聖なる幾何学の場に量子の波が干渉し、回折し、曼荼羅を編み上げる。指でなぞって波を放ち、障壁を描き、「観測」で波束を収縮させる。</p>
+      <span class="tag">2026 · WebGL2 · INTERACTIVE</span>
+    </a>
+  </div>
+
+  <footer>
+    © 2026 MQRI — <a href="https://www.mqri.or.jp">mqri.or.jp</a><br>
+    <span class="en">WORKS ARE ADDED FROM TIME TO TIME.</span>
+  </footer>
+</main>
+</body>
+</html>

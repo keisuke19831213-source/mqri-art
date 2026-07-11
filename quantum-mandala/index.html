@@ -1,0 +1,1092 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="量子曼荼羅">
+<meta name="theme-color" content="#04050a">
+<link rel="manifest" href="manifest.webmanifest">
+<title>量子曼荼羅 — Quantum Mandala | 幾何学と量子力学</title>
+<style>
+  :root{
+    --gold:#d8b06a;
+    --gold-dim:rgba(216,176,106,.55);
+    --ink:#cfd6e4;
+    --ink-dim:rgba(207,214,228,.52);
+  }
+  html,body{margin:0;height:100%;background:#04050a;overflow:hidden;
+    position:fixed;inset:0;width:100%;overscroll-behavior:none;
+    -webkit-touch-callout:none;-webkit-user-select:none;user-select:none;touch-action:none}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;cursor:crosshair;touch-action:none}
+  #hud{position:fixed;inset:0;pointer-events:none;font-family:-apple-system,"Hiragino Sans","Yu Gothic",sans-serif;
+       color:var(--ink);user-select:none;-webkit-user-select:none}
+  #hud .en,#controls .en{letter-spacing:.18em;font-weight:400}
+  .block{position:absolute;text-shadow:0 1px 8px rgba(0,0,0,.85)}
+  #title{top:max(26px, env(safe-area-inset-top));left:max(30px, env(safe-area-inset-left))}
+  #title h1{margin:0;font:400 24px/1.2 "Hiragino Mincho ProN","Yu Mincho",serif;color:var(--gold);letter-spacing:.34em}
+  #title .sub{margin-top:8px;font-size:11px;color:var(--ink-dim);letter-spacing:.12em;line-height:1.7}
+  #title .sub .en{font-size:9.5px;color:rgba(207,214,228,.38)}
+  #status{top:max(30px, env(safe-area-inset-top));right:max(32px, env(safe-area-inset-right));
+          text-align:right;font-size:12px;line-height:1.9;color:var(--ink-dim);letter-spacing:.1em}
+  #status b{color:var(--gold);font-weight:500;font-variant-numeric:tabular-nums}
+  #controls{position:fixed;left:0;right:0;bottom:0;z-index:5;pointer-events:none;
+    display:flex;flex-direction:column;align-items:center;gap:10px;
+    font-family:-apple-system,"Hiragino Sans","Yu Gothic",sans-serif;color:var(--ink);
+    padding:26px max(16px, env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    background:linear-gradient(to top, rgba(4,5,10,.78) 55%, rgba(4,5,10,0))}
+  #hint{font-size:12.5px;letter-spacing:.22em;color:var(--ink-dim);text-shadow:0 1px 8px rgba(0,0,0,.85)}
+  #hint b{color:var(--gold);font-weight:400}
+  #presets{display:flex;gap:10px;max-width:100%;overflow-x:auto;pointer-events:auto;
+    padding:4px 2px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  #presets::-webkit-scrollbar{display:none}
+  #actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;pointer-events:auto}
+  .chip,.btn{pointer-events:auto;cursor:pointer;letter-spacing:.12em;color:var(--ink-dim);
+    background:rgba(8,10,18,.62);border:1px solid rgba(207,214,228,.16);border-radius:999px;
+    transition:color .2s,border-color .2s,background .2s;backdrop-filter:blur(6px);
+    display:flex;align-items:center;justify-content:center;white-space:nowrap;box-sizing:border-box;
+    -webkit-tap-highlight-color:transparent;touch-action:manipulation}
+  .chip{font-size:13px;padding:11px 20px;min-height:46px}
+  .chip .en{font-size:9px;opacity:.6;margin-left:8px}
+  .btn{font-size:13.5px;padding:11px 22px;min-height:48px;min-width:48px}
+  .chip:active,.btn:active{background:rgba(216,176,106,.18);color:var(--gold)}
+  .chip.on,.btn.on{color:var(--gold);border-color:var(--gold-dim);background:rgba(216,176,106,.10)}
+  @media (hover:hover){
+    .chip:hover,.btn:hover{color:var(--ink);border-color:rgba(216,176,106,.5)}
+    .chip.on:hover,.btn.on:hover{color:var(--gold)}
+  }
+  @media (max-width:740px){
+    #title h1{font-size:17px}
+    #title .sub{font-size:9px}
+    #title .sub .en{display:none}
+    #status{display:none}
+    #hint{font-size:11px;letter-spacing:.14em}
+    .chip{font-size:12px;padding:9px 14px;min-height:42px}
+    .chip .en{display:none}
+    .btn{font-size:12.5px;padding:9px 16px;min-height:44px}
+    #controls{gap:8px}
+  }
+  #toast{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;
+         font:400 15px/1.8 "Hiragino Mincho ProN","Yu Mincho",serif;color:var(--gold);
+         letter-spacing:.5em;opacity:0;transition:opacity .5s ease;text-shadow:0 0 24px rgba(216,176,106,.5)}
+  #toast .en{display:block;font-size:9px;letter-spacing:.3em;color:var(--ink-dim);font-family:-apple-system,sans-serif}
+  #pause{position:absolute;left:50%;top:9%;transform:translateX(-50%);font-size:11px;letter-spacing:.6em;
+         color:var(--gold-dim);opacity:0;transition:opacity .4s}
+  #err{position:fixed;inset:0;display:none;place-items:center;background:#04050a;color:var(--ink);
+       font-size:13px;letter-spacing:.1em;text-align:center;line-height:2}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="hud">
+  <div class="block" id="title">
+    <h1>量子曼荼羅</h1>
+    <div class="sub">
+      <span class="en">QUANTUM MANDALA — GEOMETRY × QUANTUM MECHANICS</span><br>
+      時間依存シュレーディンガー方程式 · 実時間 GPU 解法<br>
+      <span class="en">TIME-DEPENDENT SCHRÖDINGER EQUATION / REAL-TIME GPU FIELD</span>
+    </div>
+  </div>
+  <div class="block" id="status">
+    存在確率 ∫|ψ|²dA <b id="norm">—</b><br>
+    時間速度 <b id="spd">×1.0</b> · 512² <span class="en">FIELD</span><br>
+    <span id="pname" style="color:var(--gold)">—</span>
+  </div>
+  <div class="block" id="toast"></div>
+  <div class="block" id="pause">停 止 中 — PAUSED</div>
+</div>
+<div id="controls">
+  <div id="hint">なぞって<b>波</b>を放つ — 長くなぞるほど速く飛びます</div>
+  <div id="presets"></div>
+  <div id="actions">
+    <div class="btn on" id="modeWave">波を放つ</div>
+    <div class="btn" id="modeWall">障壁を描く</div>
+    <div class="btn" id="bMeasure">観測</div>
+    <div class="btn" id="bReset">リセット</div>
+    <div class="btn" id="bClear">障壁消去</div>
+    <div class="btn" id="bPal">配色</div>
+    <div class="btn" id="bSpeed">速度 ×1.0</div>
+  </div>
+</div>
+<div id="err"></div>
+
+<script>
+"use strict";
+/* ================================================================
+   量子曼荼羅 — Quantum Mandala
+   2D time-dependent Schrödinger equation (ħ=m=1), Visscher
+   leapfrog on GPU, sacred-geometry potentials, HDR bloom.
+   ================================================================ */
+
+const N = 512;            // simulation grid
+const DENS = 128;         // density readback grid
+const DT = 0.13;          // leapfrog time step
+const STEP_RATE = 480;    // substeps per second at speed ×1.0 (framerate-independent)
+let speedMul = 1.0;
+
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl2', {antialias:false, alpha:false, depth:false, stencil:false});
+const errBox = document.getElementById('err');
+function fatal(msg){ errBox.style.display='grid'; errBox.innerHTML=msg; throw new Error(msg); }
+if(!gl) fatal('WebGL2 が利用できません<br><span style="opacity:.5">WebGL2 is not available</span>');
+if(!gl.getExtension('EXT_color_buffer_float'))
+  fatal('浮動小数点レンダリング拡張がありません<br><span style="opacity:.5">EXT_color_buffer_float required</span>');
+
+/* ---------------- shader utilities ---------------- */
+const VS = `#version 300 es
+void main(){
+  vec2 p = vec2(float((gl_VertexID<<1)&2), float(gl_VertexID&2));
+  gl_Position = vec4(p*2.0-1.0, 0.0, 1.0);
+}`;
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+    fatal('shader error:<br><pre style="text-align:left;font-size:10px">'+gl.getShaderInfoLog(s)+'</pre>');
+  return s;
+}
+const vsObj = compile(gl.VERTEX_SHADER, VS);
+function program(fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, vsObj);
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)) fatal('link error: '+gl.getProgramInfoLog(p));
+  return {p, u:{}, loc(name){ if(!(name in this.u)) this.u[name]=gl.getUniformLocation(this.p,name); return this.u[name]; }};
+}
+const vao = gl.createVertexArray();
+gl.bindVertexArray(vao);
+function draw(){ gl.drawArrays(gl.TRIANGLES, 0, 3); }
+
+function makeTex(w,h,internal,filter){
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, internal, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function makeFBO(tex){
+  const f = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return f;
+}
+function bindTex(unit, tex){ gl.activeTexture(gl.TEXTURE0+unit); gl.bindTexture(gl.TEXTURE_2D, tex); }
+
+/* ---------------- simulation shaders ---------------- */
+// Visscher leapfrog: mode 0 kicks Im(ψ), mode 1 kicks Re(ψ) + absorbing border.
+const FS_SIM = `#version 300 es
+precision highp float;
+uniform sampler2D uPsi;
+uniform sampler2D uPot;
+uniform sampler2D uWall;
+uniform float uDt;
+uniform int uMode;
+out vec4 o;
+ivec2 sz;
+vec2 psi(ivec2 q){ q = clamp(q, ivec2(0), sz-1); return texelFetch(uPsi,q,0).xy; }
+void main(){
+  sz = textureSize(uPsi,0);
+  ivec2 q = ivec2(gl_FragCoord.xy);
+  vec2 c = texelFetch(uPsi,q,0).xy;
+  vec2 n=psi(q+ivec2(0,1)), s=psi(q+ivec2(0,-1)), e=psi(q+ivec2(1,0)), w=psi(q+ivec2(-1,0));
+  vec2 ne=psi(q+ivec2(1,1)), nw=psi(q+ivec2(-1,1)), se=psi(q+ivec2(1,-1)), sw=psi(q+ivec2(-1,-1));
+  vec2 lap = (4.0*(n+s+e+w) + (ne+nw+se+sw) - 20.0*c) / 6.0;
+  float V = min(texelFetch(uPot,q,0).x + texelFetch(uWall,q,0).x, 2.2);
+  vec2 r;
+  if(uMode==0){
+    float H = -0.5*lap.x + V*c.x;          // H acting on Re
+    r = vec2(c.x, c.y - uDt*H);
+  } else {
+    float H = -0.5*lap.y + V*c.y;          // H acting on Im (already updated)
+    r = vec2(c.x + uDt*H, c.y);
+    vec2 uv = gl_FragCoord.xy / vec2(sz);
+    float bw = 30.0/float(sz.x);
+    float b =        1.0 - smoothstep(0.0,bw,uv.x);
+    b = max(b, 1.0 - smoothstep(0.0,bw,1.0-uv.x));
+    b = max(b, 1.0 - smoothstep(0.0,bw,uv.y));
+    b = max(b, 1.0 - smoothstep(0.0,bw,1.0-uv.y));
+    r *= exp(-1.4*b*b*uDt);
+  }
+  o = vec4(r,0.0,1.0);
+}`;
+
+// Gaussian wave-packet injection / collapse (uKeep=1: add, uKeep=0: replace).
+const FS_INJECT = `#version 300 es
+precision highp float;
+uniform sampler2D uPsi;
+uniform vec2 uPos;
+uniform vec2 uK;
+uniform float uSigma;
+uniform float uAmp;
+uniform float uPhase;
+uniform float uKeep;
+out vec4 o;
+void main(){
+  vec2 c = texelFetch(uPsi, ivec2(gl_FragCoord.xy), 0).xy;
+  vec2 d = gl_FragCoord.xy - uPos;
+  float g = uAmp * exp(-dot(d,d)/(2.0*uSigma*uSigma));
+  float ph = dot(uK, d) + uPhase;
+  o = vec4(c*uKeep + g*vec2(cos(ph), sin(ph)), 0.0, 1.0);
+}`;
+
+// user-drawn barrier stamp
+const FS_PAINT = `#version 300 es
+precision highp float;
+uniform sampler2D uWall;
+uniform vec2 uPos;
+uniform float uSigma;
+uniform float uAmp;
+out vec4 o;
+void main(){
+  float c = texelFetch(uWall, ivec2(gl_FragCoord.xy), 0).x;
+  vec2 d = gl_FragCoord.xy - uPos;
+  float g = uAmp * exp(-dot(d,d)/(2.0*uSigma*uSigma));
+  o = vec4(min(c+g, 1.6), 0.0, 0.0, 1.0);
+}`;
+
+/* ---------------- geometric potentials ---------------- */
+const FS_POT = `#version 300 es
+precision highp float;
+uniform float uN;
+uniform int uPreset;
+out vec4 o;
+float ridge(float d, float w){ return exp(-(d*d)/(2.0*w*w)); }
+float sdEqTri(vec2 p, float r){
+  const float k = 1.7320508075688772;
+  p.x = abs(p.x) - r;
+  p.y = p.y + r/k;
+  if(p.x + k*p.y > 0.0) p = vec2(p.x - k*p.y, -k*p.x - p.y)*0.5;
+  p.x -= clamp(p.x, -2.0*r, 0.0);
+  return -length(p)*sign(p.y);
+}
+void main(){
+  vec2 p = gl_FragCoord.xy;
+  vec2 cc = vec2(uN*0.5);
+  vec2 q = p - cc;
+  float r = length(q);
+  float V = 0.0, L = 0.0;
+
+  if(uPreset==1){                       // 二重スリット double slit
+    float ay = abs(q.y);
+    float open = smoothstep(7.0, 5.0, abs(ay-17.0));
+    float wall = ridge(abs(q.x), 2.7) * (1.0-open);
+    V = 2.0*wall; L = wall;
+  }
+  else if(uPreset==2){                  // 生命の花 flower of life (正本準拠)
+    // 19個の完全円（|c|≤2R）＋外側格子円の弧は19円の合併内のみ。
+    // スカラップ縁と二重外周円（3R, 3.4855R）の間は空白の環。
+    float R = uN*0.12;
+    float dNear = 1e9;   // 19円のリッジ
+    float dCent = 1e9;   // 最寄りの19円中心までの距離（合併判定）
+    float dFar  = 1e9;   // 外側格子円の弧
+    for(int n1=-4;n1<=4;n1++) for(int n2=-6;n2<=6;n2++){
+      vec2 c2 = R*vec2(0.8660254*float(n1), float(n2)+0.5*float(n1));
+      float cd = length(c2);
+      if(cd > 3.3*R) continue;
+      float dd = abs(length(q - c2) - R);
+      if(cd < 2.05*R){ dNear = min(dNear, dd); dCent = min(dCent, length(q - c2)); }
+      else { dFar = min(dFar, dd); }
+    }
+    float uIn = smoothstep(R+1.5, R-1.5, dCent);
+    float w = max(ridge(dNear, 2.3), ridge(dFar, 2.3)*uIn);
+    float ob = max(ridge(abs(r - 3.0*R), 2.3), ridge(abs(r - 3.4855*R), 2.3));
+    float m = max(w, ob);
+    V = 1.1*m; L = m;
+  }
+  else if(uPreset==3){                  // 六芒星 hexagram billiard
+    float rt = uN*0.30;
+    float d1 = abs(sdEqTri(q, rt));
+    float d2 = abs(sdEqTri(-q, rt));
+    float w = ridge(min(d1,d2), 2.3);
+    V = 1.5*w; L = w;
+  }
+  else if(uPreset==4){                  // 同心環 concentric shells with gates
+    float th = atan(q.y, q.x);
+    for(int i=0;i<3;i++){
+      float Ri = uN*(0.13 + 0.125*float(i));
+      float d = abs(r - Ri);
+      float ph = float(i)*2.399963 + 0.7;
+      float g1 = abs(atan(sin(th-ph), cos(th-ph)));
+      float g2 = abs(atan(sin(th-ph-3.14159265), cos(th-ph-3.14159265)));
+      float gate = max(smoothstep(0.30,0.16,g1), smoothstep(0.30,0.16,g2));
+      float w = ridge(d, 2.2)*(1.0-gate);
+      V += 1.3*w; L = max(L, w);
+    }
+  }
+  else if(uPreset==6){                  // 生命の種 seed of life
+    float R = uN*0.185;
+    float dmin = abs(r - R);                       // 中心円
+    for(int i=0;i<6;i++){
+      float a = float(i)*1.0471975512 + 1.5707963268;   // 縦隣接の向き（正本準拠）
+      dmin = min(dmin, abs(length(q - R*vec2(cos(a),sin(a))) - R));
+    }
+    float w = ridge(dmin, 2.3);
+    V = 1.1*w; L = w;
+  }
+  else if(uPreset==7){                  // メタトロン立方体 metatron's cube
+    float d = uN*0.17;
+    float rc = 0.5*d;                              // フルーツ・オブ・ライフの13円
+    vec2 C[13];
+    C[0] = vec2(0.0);
+    for(int i=0;i<6;i++){
+      float a = float(i)*1.0471975512 + 1.5707963268;
+      vec2 dir = vec2(cos(a),sin(a));
+      C[1+i] = d*dir;
+      C[7+i] = 2.0*d*dir;
+    }
+    float dc = 1e9;
+    for(int i=0;i<13;i++) dc = min(dc, abs(length(q - C[i]) - rc));
+    float dl = 1e9;                                // 全中心対を結ぶ78本の線分
+    for(int i=0;i<13;i++) for(int j=i+1;j<13;j++){
+      vec2 a2 = C[i], ab = C[j]-C[i];
+      float h = clamp(dot(q-a2, ab)/dot(ab,ab), 0.0, 1.0);
+      dl = min(dl, length(q - a2 - ab*h));
+    }
+    float wc = ridge(dc, 2.3);
+    float wl = ridge(dl, 1.6);
+    V = min(1.1*wc + 0.55*wl, 2.0);                // 線分は低い障壁＝トンネル可能
+    L = max(wc, wl*0.75);
+  }
+  else if(uPreset==5){                  // 三角格子 triangular lattice
+    float a = uN*0.082;
+    mat2 Binv = mat2(1.0, 0.0, -0.57735027, 1.15470054)/a;
+    vec2 cell = floor(Binv*q);
+    float dmin = 1e9;
+    for(int i=0;i<2;i++) for(int j=0;j<2;j++){
+      vec2 lat = cell + vec2(float(i),float(j));
+      vec2 pos = (mat2(1.0,0.0,0.5,0.8660254)*lat)*a;
+      dmin = min(dmin, length(q-pos));
+    }
+    float mask = smoothstep(uN*0.46, uN*0.40, r);
+    V = 0.85*exp(-dmin*dmin/50.0)*mask;
+    L = exp(-dmin*dmin/32.0)*mask;
+  }
+  o = vec4(min(V,2.0), L, 0.0, 1.0);
+}`;
+
+/* ---------------- display preparation ---------------- */
+const FS_PREP = `#version 300 es
+precision highp float;
+uniform sampler2D uPsi;
+uniform sampler2D uPot;
+uniform sampler2D uWall;
+out vec4 o;
+void main(){
+  ivec2 q = ivec2(gl_FragCoord.xy);
+  vec2 psi = texelFetch(uPsi,q,0).xy;
+  vec2 pot = texelFetch(uPot,q,0).xy;
+  float wall = texelFetch(uWall,q,0).x;
+  float line = clamp(pot.y + wall*0.65, 0.0, 1.3);
+  o = vec4(psi, line, pot.x);
+}`;
+
+// density for measurement / norm readback: true 4x4 block average, packed x/(1+x)
+const FS_DENS = `#version 300 es
+precision highp float;
+uniform sampler2D uField;
+out vec4 o;
+void main(){
+  ivec2 base = ivec2(gl_FragCoord.xy) * 4;
+  float d = 0.0;
+  for(int i=0;i<4;i++) for(int j=0;j<4;j++){
+    vec2 psi = texelFetch(uField, base + ivec2(i,j), 0).xy;
+    d += dot(psi,psi);
+  }
+  d *= 0.0625;
+  o = vec4(d/(1.0+d), 0.0, 0.0, 1.0);
+}`;
+
+/* ---------------- scene (HDR) ---------------- */
+const FS_SCENE = `#version 300 es
+precision highp float;
+uniform sampler2D uField;
+uniform vec2 uRes;
+uniform vec3 uPlate;      // x0, y0, side (device px)
+uniform float uN;
+uniform float uTime;
+uniform int uPal;
+uniform float uExposure;
+uniform vec4 uAims[6];
+uniform int uAimCount;
+out vec4 o;
+
+vec4 sampleCR(sampler2D tex, vec2 uv, vec2 ts){
+  vec2 sp = uv*ts;
+  vec2 t1 = floor(sp-0.5)+0.5;
+  vec2 f = sp-t1;
+  vec2 w0 = f*(-0.5+f*(1.0-0.5*f));
+  vec2 w1 = 1.0+f*f*(-2.5+1.5*f);
+  vec2 w2 = f*(0.5+f*(2.0-1.5*f));
+  vec2 w3 = f*f*(-0.5+0.5*f);
+  vec2 w12 = w1+w2;
+  vec2 o12 = w2/w12;
+  vec2 t0=(t1-1.0)/ts, t3=(t1+2.0)/ts, t12=(t1+o12)/ts;
+  vec4 r = vec4(0.0);
+  r += texture(tex, vec2(t0.x, t0.y ))*w0.x*w0.y;
+  r += texture(tex, vec2(t12.x,t0.y ))*w12.x*w0.y;
+  r += texture(tex, vec2(t3.x, t0.y ))*w3.x*w0.y;
+  r += texture(tex, vec2(t0.x, t12.y))*w0.x*w12.y;
+  r += texture(tex, vec2(t12.x,t12.y))*w12.x*w12.y;
+  r += texture(tex, vec2(t3.x, t12.y))*w3.x*w12.y;
+  r += texture(tex, vec2(t0.x, t3.y ))*w0.x*w3.y;
+  r += texture(tex, vec2(t12.x,t3.y ))*w12.x*w3.y;
+  r += texture(tex, vec2(t3.x, t3.y ))*w3.x*w3.y;
+  return r;
+}
+
+vec3 phasePal(float ph){
+  if(uPal==0) return vec3(0.44,0.52,0.70) + vec3(0.42,0.40,0.30)*cos(ph + vec3(5.2,3.9,2.4));
+  if(uPal==1) return vec3(0.58,0.40,0.62) + vec3(0.38,0.34,0.36)*cos(ph + vec3(4.4,5.8,3.1));
+  return      vec3(0.40,0.58,0.52) + vec3(0.34,0.36,0.30)*cos(ph + vec3(3.4,2.2,4.3));
+}
+
+void main(){
+  vec2 fc = gl_FragCoord.xy;
+  vec2 duv = (fc - uPlate.xy)/uPlate.z;
+
+  // background: deep radial night
+  float rr = length((fc - 0.5*uRes)/uRes.y);
+  vec3 col = mix(vec3(0.014,0.016,0.028), vec3(0.003,0.004,0.008), smoothstep(0.10,0.95,rr));
+
+  if(duv.x>0.0 && duv.x<1.0 && duv.y>0.0 && duv.y<1.0){
+    col = vec3(0.008,0.010,0.020);
+    // faint reference grid
+    vec2 gm = abs(fract(duv*uN/64.0)-0.5);
+    col += vec3(0.30,0.40,0.62) * smoothstep(0.030,0.0,min(gm.x,gm.y)) * 0.016;
+
+    vec4 fld = sampleCR(uField, duv, vec2(uN));
+    float d = max(dot(fld.xy, fld.xy), 0.0);
+    float ph = (d > 1e-16) ? atan(fld.y, fld.x) : 0.0;   // avoid atan(0,0) NaN
+    float lum = 1.0 - exp(-d*uExposure);
+    vec3 pc = phasePal(ph);
+    vec3 field = pc * lum * 2.5;
+    field = mix(field, vec3(1.05,1.00,0.92)*lum*3.0, smoothstep(0.42,1.0,lum));
+
+    // sacred geometry lines (gold, breathing)
+    float line = clamp(fld.z, 0.0, 1.4);
+    vec3 gold = vec3(1.0,0.74,0.40);
+    field += gold * line * (0.20 + 0.045*sin(uTime*0.7));
+    // potential interior shading (very subtle)
+    field += vec3(0.06,0.05,0.03) * clamp(fld.w,0.0,1.0) * 0.35;
+
+    col += field;
+  }
+
+  // plate hairline frame
+  vec2 pp = fc - uPlate.xy;
+  vec2 hp = vec2(uPlate.z*0.5);
+  vec2 dd = abs(pp-hp)-hp;
+  float sd = length(max(dd,0.0)) + min(max(dd.x,dd.y),0.0);
+  col += vec3(0.85,0.66,0.38) * exp(-sd*sd/1.6) * 0.45;
+
+  // aiming guides (one per active touch)
+  for(int i=0;i<6;i++){
+    if(i>=uAimCount) break;
+    vec2 a = uAims[i].xy, b = uAims[i].zw;
+    vec2 pa = fc-a, ba = b-a;
+    float len = max(length(ba), 1e-4);
+    float h = clamp(dot(pa,ba)/(len*len), 0.0, 1.0);
+    float dl = length(pa - ba*h);
+    float dash = 0.45 + 0.55*step(0.5, fract(h*len/16.0));
+    col += vec3(1.0,0.82,0.52) * exp(-dl*dl/2.2) * dash * 0.55;
+    col += vec3(1.0,0.88,0.62) * exp(-dot(fc-b,fc-b)/20.0) * 0.8;
+  }
+  o = vec4(col, 1.0);
+}`;
+
+/* ---------------- post: bloom + composite ---------------- */
+const FS_BRIGHT = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform vec2 uRes;
+out vec4 o;
+void main(){
+  vec3 c = texture(uSrc, gl_FragCoord.xy/uRes).rgb;
+  vec3 x = max(c - 0.50, 0.0);
+  o = vec4(x*x/(x+0.30), 1.0);
+}`;
+
+const FS_BLUR = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform vec2 uRes;
+uniform vec2 uDir;
+out vec4 o;
+void main(){
+  vec2 uv = gl_FragCoord.xy/uRes;
+  vec2 px = uDir/uRes;
+  vec3 c = texture(uSrc, uv).rgb * 0.2270270270;
+  c += texture(uSrc, uv + px*1.3846153846).rgb * 0.3162162162;
+  c += texture(uSrc, uv - px*1.3846153846).rgb * 0.3162162162;
+  c += texture(uSrc, uv + px*3.2307692308).rgb * 0.0702702703;
+  c += texture(uSrc, uv - px*3.2307692308).rgb * 0.0702702703;
+  o = vec4(c, 1.0);
+}`;
+
+const FS_COMP = `#version 300 es
+precision highp float;
+uniform sampler2D uScene;
+uniform sampler2D uB0;
+uniform sampler2D uB1;
+uniform sampler2D uB2;
+uniform sampler2D uB3;
+uniform vec2 uRes;
+uniform float uBloom;
+uniform float uTime;
+out vec4 o;
+vec3 aces(vec3 x){
+  x *= 0.62;
+  return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0);
+}
+void main(){
+  vec2 uv = gl_FragCoord.xy/uRes;
+  vec3 c = texture(uScene, uv).rgb;
+  vec3 bloom = texture(uB0,uv).rgb*0.42 + texture(uB1,uv).rgb*0.34
+             + texture(uB2,uv).rgb*0.27 + texture(uB3,uv).rgb*0.22;
+  c += bloom * uBloom;
+  c = aces(c*1.35);
+  vec2 vc = uv-0.5;
+  c *= 1.0 - 0.34*dot(vc,vc)*1.9;
+  c = pow(c, vec3(1.0/2.2));
+  float n = fract(sin(dot(gl_FragCoord.xy + fract(uTime)*61.7, vec2(12.9898,78.233)))*43758.5453);
+  c += (n-0.5)*0.011;
+  o = vec4(c, 1.0);
+}`;
+
+/* ---------------- programs & targets ---------------- */
+const P = {
+  sim:    program(FS_SIM),
+  inject: program(FS_INJECT),
+  paint:  program(FS_PAINT),
+  pot:    program(FS_POT),
+  prep:   program(FS_PREP),
+  dens:   program(FS_DENS),
+  scene:  program(FS_SCENE),
+  bright: program(FS_BRIGHT),
+  blur:   program(FS_BLUR),
+  comp:   program(FS_COMP),
+};
+
+// simulation ping-pong (RG32F)
+const psiTex = [makeTex(N,N,gl.RG32F,gl.NEAREST), makeTex(N,N,gl.RG32F,gl.NEAREST)];
+const psiFbo = [makeFBO(psiTex[0]), makeFBO(psiTex[1])];
+let psiSrc = 0;
+// user walls ping-pong
+const wallTex = [makeTex(N,N,gl.R16F,gl.NEAREST), makeTex(N,N,gl.R16F,gl.NEAREST)];
+const wallFbo = [makeFBO(wallTex[0]), makeFBO(wallTex[1])];
+let wallSrc = 0;
+// baked potential + display field
+const potTex  = makeTex(N,N,gl.RGBA16F,gl.NEAREST);  const potFbo  = makeFBO(potTex);
+const fieldTex= makeTex(N,N,gl.RGBA16F,gl.LINEAR);   const fieldFbo= makeFBO(fieldTex);
+// density readback
+const densTex = makeTex(DENS,DENS,gl.RGBA8,gl.NEAREST); const densFbo = makeFBO(densTex);
+const densBuf = new Uint8Array(DENS*DENS*4);
+
+// canvas-sized HDR targets (rebuilt on resize)
+let W=0, H=0, sceneTex=null, sceneFbo=null, bloomLv=[];
+function buildTargets(){
+  const dpr = Math.min(devicePixelRatio||1, 2);
+  W = Math.max(2, Math.round(innerWidth*dpr));
+  H = Math.max(2, Math.round(innerHeight*dpr));
+  canvas.width = W; canvas.height = H;
+  if(sceneTex){ gl.deleteTexture(sceneTex); gl.deleteFramebuffer(sceneFbo);
+    for(const l of bloomLv){ gl.deleteTexture(l.a); gl.deleteTexture(l.b); gl.deleteFramebuffer(l.fa); gl.deleteFramebuffer(l.fb); } }
+  sceneTex = makeTex(W,H,gl.RGBA16F,gl.LINEAR); sceneFbo = makeFBO(sceneTex);
+  bloomLv = [];
+  for(let i=0;i<4;i++){
+    const w = Math.max(2, W>>(i+1)), h = Math.max(2, H>>(i+1));
+    const a = makeTex(w,h,gl.RGBA16F,gl.LINEAR), b = makeTex(w,h,gl.RGBA16F,gl.LINEAR);
+    bloomLv.push({w,h,a,b,fa:makeFBO(a),fb:makeFBO(b)});
+  }
+}
+buildTargets();
+addEventListener('resize', buildTargets);
+
+/* ---------------- state ---------------- */
+const PRESETS = [
+  {jp:'自由場',       en:'FREE FIELD'},
+  {jp:'二重スリット', en:'DOUBLE SLIT'},
+  {jp:'生命の花',     en:'FLOWER OF LIFE'},
+  {jp:'六芒星',       en:'HEXAGRAM'},
+  {jp:'同心環',       en:'SHELLS'},
+  {jp:'三角格子',     en:'LATTICE'},
+  {jp:'生命の種',     en:'SEED OF LIFE'},
+  {jp:'メタトロン立方体', en:"METATRON'S CUBE"},
+];
+const state = {
+  preset: 2, pal: 0, paused: false,
+  bloom: 1.0, exposure: 4.4,
+  time: 0, frame: 0,
+  normBase: -1,
+  lastInteract: performance.now(), lastAuto: 0,
+};
+const injectQueue = [];
+let collapseReq = false;
+
+/* ---------------- passes ---------------- */
+function runSim(nSteps){
+  gl.viewport(0,0,N,N);
+  gl.useProgram(P.sim.p);
+  gl.uniform1i(P.sim.loc('uPsi'), 0);
+  gl.uniform1i(P.sim.loc('uPot'), 1);
+  gl.uniform1i(P.sim.loc('uWall'), 2);
+  gl.uniform1f(P.sim.loc('uDt'), DT);
+  bindTex(1, potTex);
+  bindTex(2, wallTex[wallSrc]);
+  for(let s=0; s<nSteps; s++){
+    for(let mode=0; mode<2; mode++){
+      gl.uniform1i(P.sim.loc('uMode'), mode);
+      bindTex(0, psiTex[psiSrc]);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, psiFbo[1-psiSrc]);
+      draw();
+      psiSrc = 1-psiSrc;
+    }
+  }
+}
+
+function runInject(x, y, kx, ky, sigma, amp, keep){
+  state.normBase = -1;   // re-baseline ∫|ψ|² after every injection
+  gl.viewport(0,0,N,N);
+  gl.useProgram(P.inject.p);
+  gl.uniform1i(P.inject.loc('uPsi'), 0);
+  gl.uniform2f(P.inject.loc('uPos'), x, y);
+  gl.uniform2f(P.inject.loc('uK'), kx, ky);
+  gl.uniform1f(P.inject.loc('uSigma'), sigma);
+  gl.uniform1f(P.inject.loc('uAmp'), amp);
+  gl.uniform1f(P.inject.loc('uPhase'), Math.random()*6.2832);
+  gl.uniform1f(P.inject.loc('uKeep'), keep);
+  bindTex(0, psiTex[psiSrc]);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, psiFbo[1-psiSrc]);
+  draw();
+  psiSrc = 1-psiSrc;
+}
+
+function paintWall(x, y){
+  gl.viewport(0,0,N,N);
+  gl.useProgram(P.paint.p);
+  gl.uniform1i(P.paint.loc('uWall'), 0);
+  gl.uniform2f(P.paint.loc('uPos'), x, y);
+  gl.uniform1f(P.paint.loc('uSigma'), 2.7);
+  gl.uniform1f(P.paint.loc('uAmp'), 0.45);
+  bindTex(0, wallTex[wallSrc]);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, wallFbo[1-wallSrc]);
+  draw();
+  wallSrc = 1-wallSrc;
+}
+
+function bakePotential(){
+  gl.viewport(0,0,N,N);
+  gl.useProgram(P.pot.p);
+  gl.uniform1f(P.pot.loc('uN'), N);
+  gl.uniform1i(P.pot.loc('uPreset'), state.preset);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, potFbo);
+  draw();
+}
+
+function clearWalls(){
+  for(const f of wallFbo){ gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT); }
+}
+
+function clearPsi(){
+  for(const f of psiFbo){ gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT); }
+}
+
+function runPrep(){
+  gl.viewport(0,0,N,N);
+  gl.useProgram(P.prep.p);
+  gl.uniform1i(P.prep.loc('uPsi'), 0);
+  gl.uniform1i(P.prep.loc('uPot'), 1);
+  gl.uniform1i(P.prep.loc('uWall'), 2);
+  bindTex(0, psiTex[psiSrc]); bindTex(1, potTex); bindTex(2, wallTex[wallSrc]);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fieldFbo);
+  draw();
+}
+
+function readDensity(){
+  gl.viewport(0,0,DENS,DENS);
+  gl.useProgram(P.dens.p);
+  gl.uniform1i(P.dens.loc('uField'), 0);
+  bindTex(0, fieldTex);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, densFbo);
+  draw();
+  gl.readPixels(0,0,DENS,DENS,gl.RGBA,gl.UNSIGNED_BYTE,densBuf);
+  let sum = 0;
+  for(let i=0;i<DENS*DENS;i++){
+    const v = Math.min(densBuf[i*4]/255, 0.995);
+    sum += v/(1-v);
+  }
+  return sum;
+}
+
+const ctrlEl = document.getElementById('controls');
+function plateRect(){
+  // keep the plate clear of the bottom toolbar (device y=0 is the bottom)
+  const dpr = W/innerWidth;
+  const ctrlH = Math.min((ctrlEl.offsetHeight||0)*dpr, H*0.4);
+  const avail = H - ctrlH;
+  const S = Math.min(W, avail)*0.92;
+  return [(W-S)/2, ctrlH + (avail-S)/2, S];
+}
+
+function render(){
+  const [px, py, S] = plateRect();
+  // scene → HDR
+  gl.viewport(0,0,W,H);
+  gl.useProgram(P.scene.p);
+  gl.uniform1i(P.scene.loc('uField'), 0);
+  gl.uniform2f(P.scene.loc('uRes'), W, H);
+  gl.uniform3f(P.scene.loc('uPlate'), px, py, S);
+  gl.uniform1f(P.scene.loc('uN'), N);
+  gl.uniform1f(P.scene.loc('uTime'), state.time);
+  gl.uniform1i(P.scene.loc('uPal'), state.pal);
+  gl.uniform1f(P.scene.loc('uExposure'), state.exposure);
+  let aimCount = 0;
+  for(const pt of pointers.values()){
+    if(pt.type==='aim' && aimCount<6){
+      aimArr.set([pt.ax, pt.ay, pt.bx, pt.by], aimCount*4);
+      aimCount++;
+    }
+  }
+  gl.uniform4fv(P.scene.loc('uAims'), aimArr);
+  gl.uniform1i(P.scene.loc('uAimCount'), aimCount);
+  bindTex(0, fieldTex);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, sceneFbo);
+  draw();
+
+  // bright pass → level0.a
+  const L0 = bloomLv[0];
+  gl.viewport(0,0,L0.w,L0.h);
+  gl.useProgram(P.bright.p);
+  gl.uniform1i(P.bright.loc('uSrc'), 0);
+  gl.uniform2f(P.bright.loc('uRes'), L0.w, L0.h);
+  bindTex(0, sceneTex);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, L0.fa);
+  draw();
+
+  // downsample + blur chain
+  gl.useProgram(P.blur.p);
+  gl.uniform1i(P.blur.loc('uSrc'), 0);
+  for(let i=0;i<bloomLv.length;i++){
+    const L = bloomLv[i];
+    if(i>0){ // downsample previous a → this a (via blur h with src prev)
+      gl.viewport(0,0,L.w,L.h);
+      gl.uniform2f(P.blur.loc('uRes'), L.w, L.h);
+      gl.uniform2f(P.blur.loc('uDir'), 1, 0);
+      bindTex(0, bloomLv[i-1].a);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, L.fa);
+      draw();
+    }
+    gl.viewport(0,0,L.w,L.h);
+    gl.uniform2f(P.blur.loc('uRes'), L.w, L.h);
+    // horizontal a→b
+    gl.uniform2f(P.blur.loc('uDir'), 1, 0);
+    bindTex(0, L.a);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, L.fb);
+    draw();
+    // vertical b→a
+    gl.uniform2f(P.blur.loc('uDir'), 0, 1);
+    bindTex(0, L.b);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, L.fa);
+    draw();
+  }
+
+  // composite → screen
+  gl.viewport(0,0,W,H);
+  gl.useProgram(P.comp.p);
+  gl.uniform1i(P.comp.loc('uScene'), 0);
+  gl.uniform1i(P.comp.loc('uB0'), 1);
+  gl.uniform1i(P.comp.loc('uB1'), 2);
+  gl.uniform1i(P.comp.loc('uB2'), 3);
+  gl.uniform1i(P.comp.loc('uB3'), 4);
+  gl.uniform2f(P.comp.loc('uRes'), W, H);
+  gl.uniform1f(P.comp.loc('uBloom'), state.bloom);
+  gl.uniform1f(P.comp.loc('uTime'), state.time);
+  bindTex(0, sceneTex);
+  for(let i=0;i<4;i++) bindTex(1+i, bloomLv[i].a);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  draw();
+}
+
+/* ---------------- measurement (collapse) ---------------- */
+function doCollapse(){
+  runPrep();
+  readDensity();
+  // build CDF over density
+  let total = 0;
+  const w = new Float32Array(DENS*DENS);
+  for(let i=0;i<DENS*DENS;i++){
+    const v = Math.min(densBuf[i*4]/255, 0.995);
+    const d = v/(1-v);
+    w[i] = d; total += d;
+  }
+  if(total < 1e-4) return;
+  let r = Math.random()*total, idx = 0;
+  for(; idx<w.length-1; idx++){ r -= w[idx]; if(r<=0) break; }
+  const gx = ((idx % DENS) + Math.random()) / DENS * N;
+  const gy = (Math.floor(idx / DENS) + Math.random()) / DENS * N;
+  runInject(gx, gy, 0, 0, 4.5, 0.9, 0);   // replace ψ with collapsed packet
+  state.normBase = -1;
+  toast('観測 — 波束の収縮', 'MEASUREMENT — WAVEFUNCTION COLLAPSE');
+}
+
+/* ---------------- interaction ---------------- */
+// multi-touch: each pointer is either an aim (wave launch) or a wall stroke
+const pointers = new Map();   // pointerId → {type:'aim',ax,ay,bx,by} | {type:'wall',last:[x,y]}
+const aimArr = new Float32Array(24);
+let drawMode = 'wave';        // 'wave' | 'wall' (touch mode toggle)
+
+function toDevice(ev){
+  const dpr = W/innerWidth;
+  return [ev.clientX*dpr, H - ev.clientY*dpr];
+}
+function toDomain(dx, dy){
+  const [px, py, S] = plateRect();
+  return [(dx-px)/S*N, (dy-py)/S*N];
+}
+function inPlate(dx, dy){
+  const [px, py, S] = plateRect();
+  return dx>=px && dx<=px+S && dy>=py && dy<=py+S;
+}
+
+canvas.addEventListener('contextmenu', e=>e.preventDefault());
+canvas.addEventListener('pointerdown', ev=>{
+  const [dx,dy] = toDevice(ev);
+  if(!inPlate(dx,dy)) return;
+  state.lastInteract = performance.now();
+  try{ canvas.setPointerCapture(ev.pointerId); }catch(_){}
+  if(ev.button===2 || ev.shiftKey || drawMode==='wall'){
+    const p = toDomain(dx,dy);
+    pointers.set(ev.pointerId, {type:'wall', last:p});
+    paintSegment(p, p);
+  } else {
+    pointers.set(ev.pointerId, {type:'aim', ax:dx, ay:dy, bx:dx, by:dy});
+  }
+});
+canvas.addEventListener('pointermove', ev=>{
+  const pt = pointers.get(ev.pointerId);
+  if(!pt) return;
+  const [dx,dy] = toDevice(ev);
+  if(pt.type==='aim'){ pt.bx = dx; pt.by = dy; }
+  else {
+    const p = toDomain(dx,dy);
+    paintSegment(pt.last, p);
+    pt.last = p;
+  }
+  state.lastInteract = performance.now();
+});
+function endPointer(ev){
+  const pt = pointers.get(ev.pointerId);
+  pointers.delete(ev.pointerId);
+  if(!pt || pt.type!=='aim') return;
+  const [dx,dy] = toDevice(ev);
+  const [ax,ay] = toDomain(pt.ax, pt.ay);
+  let [bx,by] = toDomain(dx,dy);
+  let kx = (bx-ax)*0.016, ky = (by-ay)*0.016;
+  const km = Math.hypot(kx,ky);
+  if(km > 1.45){ kx *= 1.45/km; ky *= 1.45/km; }
+  if(km < 0.06){ kx = 0; ky = 0; }
+  const x = Math.min(Math.max(ax, 10), N-10);
+  const y = Math.min(Math.max(ay, 10), N-10);
+  injectQueue.push([x, y, kx, ky, 9, 1.0, 1]);
+  state.lastInteract = performance.now();
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', ev=>pointers.delete(ev.pointerId));
+
+function paintSegment(a, b){
+  const dist = Math.hypot(b[0]-a[0], b[1]-a[1]);
+  const steps = Math.max(1, Math.ceil(dist/2));
+  for(let i=0;i<=steps;i++){
+    const t = i/steps;
+    paintWall(a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t);
+  }
+}
+
+function setSpeed(v){
+  speedMul = Math.min(3, Math.max(0.12, v));
+  document.getElementById('spd').textContent = '×'+speedMul.toFixed(2);
+  document.getElementById('bSpeed').textContent = '速度 ×'+speedMul.toFixed(1);
+  state.lastInteract = performance.now();
+}
+addEventListener('wheel', ev=>{
+  setSpeed(speedMul * (ev.deltaY<0 ? 1.15 : 1/1.15));
+}, {passive:true});
+
+addEventListener('keydown', ev=>{
+  if(ev.repeat) return;
+  state.lastInteract = performance.now();
+  const k = ev.key.toLowerCase();
+  if(k===' '){ state.paused = !state.paused; document.getElementById('pause').style.opacity = state.paused?1:0; ev.preventDefault(); }
+  else if(k==='r'){ resetField(); }
+  else if(k==='m'){ collapseReq = true; }
+  else if(k==='x'){ clearWalls(); toast('障壁を消去','BARRIERS CLEARED'); }
+  else if(k==='c'){ state.pal = (state.pal+1)%3; }
+  else if(k==='b'){ state.bloom = state.bloom>0.7 ? 0.45 : (state.bloom>0.3 ? 0.12 : 1.0); }
+  else if(k>='1' && k<='8'){ setPreset(+k-1); }
+});
+
+/* ---------------- presets / HUD ---------------- */
+const presetBox = document.getElementById('presets');
+PRESETS.forEach((pr,i)=>{
+  const el = document.createElement('div');
+  el.className = 'chip';
+  el.innerHTML = `${pr.jp}<span class="en">${pr.en}</span>`;
+  el.addEventListener('click', ()=>{ state.lastInteract = performance.now(); setPreset(i); });
+  presetBox.appendChild(el);
+});
+function refreshChips(){
+  [...presetBox.children].forEach((el,i)=>el.classList.toggle('on', i===state.preset));
+  document.getElementById('pname').textContent = PRESETS[state.preset].jp+' — '+PRESETS[state.preset].en;
+  presetBox.children[state.preset]?.scrollIntoView({inline:'nearest', block:'nearest'});
+}
+
+/* ---------------- touch toolbar ---------------- */
+function bindBtn(id, fn){
+  const el = document.getElementById(id);
+  el.addEventListener('click', ()=>{ state.lastInteract = performance.now(); fn(el); });
+  return el;
+}
+const hintEl = document.getElementById('hint');
+function setDrawMode(m){
+  drawMode = m;
+  document.getElementById('modeWave').classList.toggle('on', m==='wave');
+  document.getElementById('modeWall').classList.toggle('on', m==='wall');
+  hintEl.innerHTML = m==='wave'
+    ? 'なぞって<b>波</b>を放つ — 長くなぞるほど速く飛びます'
+    : 'なぞって<b>障壁</b>を描く — 波がぶつかり、回折します';
+}
+bindBtn('modeWave', ()=>setDrawMode('wave'));
+bindBtn('modeWall', ()=>setDrawMode('wall'));
+bindBtn('bMeasure', ()=>{ collapseReq = true; });
+bindBtn('bReset',   ()=>{ resetField(); toast('リセット','RESET'); });
+bindBtn('bClear',   ()=>{ clearWalls(); toast('障壁を消去','BARRIERS CLEARED'); });
+bindBtn('bPal',     ()=>{ state.pal = (state.pal+1)%3; toast('配色','PALETTE'); });
+const SPEED_STEPS = [0.5, 1.0, 2.0];
+bindBtn('bSpeed', ()=>{
+  const i = SPEED_STEPS.findIndex(s=>Math.abs(s-speedMul)<0.01);
+  setSpeed(SPEED_STEPS[(i+1) % SPEED_STEPS.length]);
+});
+
+/* ---------------- exhibition mode ---------------- */
+// keep the display awake (iPadOS 16.4+ / Chrome); re-acquire when tab returns
+let wakeLock = null;
+async function acquireWakeLock(){
+  try{ wakeLock = await navigator.wakeLock?.request('screen'); }catch(_){}
+}
+acquireWakeLock();
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='visible') acquireWakeLock();
+});
+canvas.addEventListener('pointerdown', ()=>{ if(!wakeLock) acquireWakeLock(); });
+
+// block iOS Safari pinch/double-tap zoom outside the canvas
+document.addEventListener('gesturestart', e=>e.preventDefault());
+document.addEventListener('dblclick', e=>e.preventDefault());
+
+// attract mode: after 90s idle, slowly cycle through the geometries
+let lastCycle = 0;
+setInterval(()=>{
+  if(document.hidden || state.paused) return;
+  const now = performance.now();
+  if(now - state.lastInteract > 90000 && now - lastCycle > 40000){
+    lastCycle = now;
+    const next = (state.preset+1) % PRESETS.length;
+    setPreset(next);
+    state.lastInteract = performance.now() - 90001;  // stay in attract mode
+  }
+}, 5000);
+
+let toastTimer = 0;
+function toast(jp, en){
+  const t = document.getElementById('toast');
+  t.innerHTML = jp + '<span class="en">'+en+'</span>';
+  t.style.opacity = 1;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.style.opacity=0, 1600);
+}
+
+function setPreset(i){
+  state.preset = i;
+  bakePotential();
+  resetField();
+  refreshChips();
+  toast(PRESETS[i].jp, PRESETS[i].en);
+}
+
+function resetField(){
+  clearPsi();
+  state.normBase = -1;
+  if(state.preset===0){          // 自由場: 正面衝突する2つの波束
+    injectQueue.push([N*0.26, N*0.5, 0.85, 0.04, 9, 1.0, 1]);
+    injectQueue.push([N*0.74, N*0.5, -0.85, -0.04, 9, 1.0, 1]);
+  } else if(state.preset===1){   // 二重スリット: 左から正面入射
+    injectQueue.push([N*0.20, N*0.5, 1.05, 0, 9, 1.0, 1]);
+  } else if([2,4,6,7].includes(state.preset)){  // 生命の花・同心環・生命の種・メタトロン: 中心から等方拡散
+    injectQueue.push([N*0.5, N*0.5, 0, 0, 7, 1.0, 1]);
+  } else if(state.preset===3){   // 六芒星: 中心からランダム方向
+    const a = Math.random()*6.2832;
+    injectQueue.push([N*0.5, N*0.5, Math.cos(a)*1.0, Math.sin(a)*1.0, 8, 1.0, 1]);
+  } else {
+    injectQueue.push([N*0.20, N*0.5, 1.05, (Math.random()-0.5)*0.1, 9, 1.0, 1]);
+  }
+}
+
+/* ---------------- main loop ---------------- */
+let lastT = 0, stepAcc = 0;
+function frame(tms){
+  state.frame++;
+  state.time = tms/1000;
+  const dtSec = Math.min(Math.max((tms - lastT)/1000, 0), 0.1);
+  lastT = tms;
+
+  while(injectQueue.length) runInject(...injectQueue.shift());
+  if(collapseReq){ collapseReq = false; doCollapse(); }
+
+  if(!state.paused){
+    stepAcc += dtSec * STEP_RATE * speedMul;
+    const n = Math.min(Math.floor(stepAcc), 24);
+    stepAcc = Math.min(stepAcc - n, 8);
+    if(n > 0) runSim(n);
+    // idle attract mode
+    const now = performance.now();
+    if(now - state.lastInteract > 8000 && now - state.lastAuto > 6500){
+      state.lastAuto = now;
+      const ang = Math.random()*6.2832;
+      const rad = N*0.36;
+      const x = N/2 + Math.cos(ang)*rad, y = N/2 + Math.sin(ang)*rad;
+      const aimAng = ang + Math.PI + (Math.random()-0.5)*0.8;
+      const km = 0.85 + Math.random()*0.5;
+      injectQueue.push([x, y, Math.cos(aimAng)*km, Math.sin(aimAng)*km, 9, 1.0, 1]);
+    }
+  }
+
+  runPrep();
+
+  // norm readout
+  if(state.frame % 45 === 0){
+    const sum = readDensity();
+    if(state.normBase < 0 && sum > 0.5) state.normBase = sum;
+    const el = document.getElementById('norm');
+    el.textContent = state.normBase>0 ? (100*sum/state.normBase).toFixed(1)+'%' : '—';
+  }
+
+  render();
+  requestAnimationFrame(frame);
+}
+
+/* ---------------- boot ---------------- */
+bakePotential();
+clearWalls();
+resetField();
+refreshChips();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

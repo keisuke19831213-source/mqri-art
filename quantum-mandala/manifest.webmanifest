@@ -1,0 +1,10 @@
+{
+  "name": "量子曼荼羅 — Quantum Mandala",
+  "short_name": "量子曼荼羅",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#04050a",
+  "theme_color": "#04050a",
+  "start_url": ".",
+  "icons": []
+}
