@@ -9,6 +9,7 @@
 | URL | 作品 | 概要 |
 |---|---|---|
 | [/quantum-mandala/](https://art.mqri.or.jp/quantum-mandala/) | 量子曼荼羅 Quantum Mandala | シュレーディンガー方程式の実時間GPU解法 × 神聖幾何学。iPad展示用にタッチ最適化済み(詳細は各フォルダのREADME) |
+| [/hopf-loom/](https://art.mqri.or.jp/hopf-loom/) | HOPF LOOM — S³の織物 | 四次元球面のHopfファイブレーション × 四次元正多胞体。マルチタッチ(1本指=視点/2本指=ズーム・4次元回転)でiPad展示用に最適化済み |
 
 ## 作品の追加手順
 

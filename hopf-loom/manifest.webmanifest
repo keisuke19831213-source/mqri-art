@@ -1,0 +1,10 @@
+{
+  "name": "HOPF LOOM — S³の織物",
+  "short_name": "HOPF LOOM",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#04060c",
+  "theme_color": "#04060c",
+  "start_url": ".",
+  "icons": []
+}
