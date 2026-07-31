@@ -1,0 +1,10 @@
+{
+  "name": "QUINTESSENCE — 内接するプラトン立体",
+  "short_name": "QUINTESSENCE",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#02030a",
+  "theme_color": "#02030a",
+  "start_url": ".",
+  "icons": []
+}

@@ -1,0 +1,10 @@
+{
+  "name": "METATRON — 立体メタトロン方陣",
+  "short_name": "METATRON",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#050510",
+  "theme_color": "#050510",
+  "start_url": ".",
+  "icons": []
+}

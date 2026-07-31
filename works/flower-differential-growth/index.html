@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="description" content="Flower of Life × Differential Growth — 生命の花の格子の上を、分化成長する曲線が這って埋めていく。MQRI ART のインタラクティブ作品。">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Flower of Life">
+  <meta name="theme-color" content="#06040e">
+  <link rel="manifest" href="manifest.webmanifest">
+  <title>Flower of Life × Differential Growth</title>
+  <script src="vendor/p5.min.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #06040e;
+      overflow: hidden;
+      cursor: pointer;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    main {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100vw;
+      height: 100vh;
+    }
+    canvas {
+      display: block;
+      box-shadow: 0 0 60px rgba(80, 60, 140, 0.15);
+      /* 指の操作を作品が受け取る（ブラウザのスクロール・ズームに奪わせない） */
+      touch-action: none;
+    }
+  </style>
+</head>
+<body>
+  <main></main>
+  <script src="sketch.js"></script>
+</body>
+</html>

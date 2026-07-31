@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="description" content="METATRON 立体メタトロン方陣 — 十三の球と七十八の光径。平面のメタトロンキューブとベクトル平衡体を連続変形する純WebGL2作品。MQRI ART。">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="METATRON">
+<meta name="theme-color" content="#050510">
+<link rel="manifest" href="manifest.webmanifest">
+<title>METATRON — 立体メタトロン方陣</title>
+<style>
+  :root{
+    --ink:#e9e4d6; --ink-dim:#a99f8c; --gold:#f0c37a; --line:rgba(240,195,122,.28);
+    --glass:rgba(10,10,24,.55);
+  }
+  html,body{height:100%;}
+  body{
+    margin:0; overflow:hidden; background:#050510; color:var(--ink);
+    font-family:"Hiragino Sans","Yu Gothic Medium",-apple-system,sans-serif;
+    -webkit-user-select:none; user-select:none;
+  }
+  #gl{position:fixed; inset:0; width:100%; height:100%; display:block; cursor:grab; touch-action:none;}
+  #gl.drag{cursor:grabbing;}
+
+  header{position:fixed; top:28px; left:32px; z-index:2; pointer-events:none; mix-blend-mode:screen;}
+  h1{
+    margin:0; font-family:Optima,Candara,"Noto Serif JP",serif;
+    font-size:clamp(20px,2.6vw,30px); font-weight:500; letter-spacing:.52em; color:var(--gold);
+    text-shadow:0 0 24px rgba(240,195,122,.45);
+  }
+  .sub{
+    margin:.7em 0 0; font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    font-size:12px; letter-spacing:.34em; color:var(--ink-dim);
+  }
+  .rule{width:58px; height:1px; background:linear-gradient(90deg,var(--gold),transparent); margin-top:14px;}
+
+  .tategaki{
+    position:fixed; top:50%; right:26px; transform:translateY(-50%); z-index:2; pointer-events:none;
+    writing-mode:vertical-rl; font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    font-size:11px; letter-spacing:.55em; color:rgba(233,228,214,.34); mix-blend-mode:screen;
+  }
+
+  #hint{
+    position:fixed; left:50%; bottom:92px; transform:translateX(-50%); z-index:2; pointer-events:none;
+    font-size:11px; letter-spacing:.28em; color:rgba(233,228,214,.5);
+    transition:opacity 1.6s ease; white-space:nowrap;
+  }
+  #hint.gone{opacity:0;}
+  /* 操作案内は入力デバイスで出し分ける（指にホイールは無い）。
+     メディアクエリは初期推定、実際に触られたら html.is-touch が優先する */
+  .touch-only{display:none;}
+  @media (pointer:coarse){
+    .pointer-only{display:none;}
+    .touch-only{display:inline;}
+  }
+  html.is-touch .pointer-only{display:none;}
+  html.is-touch .touch-only{display:inline;}
+
+  #bar{
+    position:fixed; left:50%; bottom:calc(22px + env(safe-area-inset-bottom,0px));
+    transform:translateX(-50%); z-index:3;
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    padding:10px 16px; border:1px solid var(--line); border-radius:999px;
+    background:var(--glass); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    max-width:calc(100vw - 24px); box-sizing:border-box;
+  }
+  .chip{
+    appearance:none; border:none; background:none; color:var(--ink-dim);
+    font-family:inherit; font-size:11px; letter-spacing:.22em; padding:6px 12px;
+    border-radius:999px; cursor:pointer; transition:color .3s,background .3s; white-space:nowrap;
+  }
+  .chip:hover{color:var(--ink);}
+  .chip:focus-visible{outline:1px solid var(--gold); outline-offset:2px;}
+  .chip.on{color:#0b0a14; background:var(--gold);}
+  .sep{width:1px; height:16px; background:var(--line);}
+
+  .morph{display:flex; align-items:center; gap:10px; flex-shrink:0;}
+  .morph span{font-size:10px; letter-spacing:.2em; color:var(--ink-dim); white-space:nowrap;}
+  input[type=range]{
+    appearance:none; -webkit-appearance:none; width:130px; height:18px; background:none; cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-runnable-track{height:1px; background:var(--line);}
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:11px; height:11px; border-radius:50%;
+    background:var(--gold); box-shadow:0 0 10px rgba(240,195,122,.8); margin-top:-5px;
+  }
+  input[type=range]::-moz-range-track{height:1px; background:var(--line);}
+  input[type=range]::-moz-range-thumb{
+    width:11px; height:11px; border:none; border-radius:50%; background:var(--gold);
+    box-shadow:0 0 10px rgba(240,195,122,.8);
+  }
+  input[type=range]:focus-visible{outline:1px solid var(--gold); outline-offset:4px; border-radius:4px;}
+
+  #fail{
+    position:fixed; inset:0; display:none; place-items:center; z-index:9;
+    font-family:"Hiragino Mincho ProN",serif; letter-spacing:.2em; font-size:13px; color:var(--ink-dim);
+    text-align:center; line-height:2.2;
+  }
+  /* tablet */
+  @media (max-width:900px){
+    .tategaki{right:16px; font-size:10px;}
+    input[type=range]{width:104px;}
+  }
+  /* phone: two-row pill, larger touch targets */
+  @media (max-width:640px){
+    header{top:calc(18px + env(safe-area-inset-top,0px)); left:18px; right:18px;}
+    h1{font-size:22px; letter-spacing:.42em;}
+    .sub{font-size:10px; letter-spacing:.22em;}
+    .tategaki{display:none;}
+    #hint{bottom:132px; font-size:10px; letter-spacing:.18em; max-width:92vw; white-space:normal; text-align:center;}
+    #bar{
+      flex-wrap:wrap; row-gap:2px; column-gap:4px;
+      padding:8px 14px; border-radius:26px; width:calc(100vw - 28px);
+    }
+    .morph{flex-basis:100%; justify-content:center; padding:4px 0 2px;}
+    input[type=range]{flex:1 1 auto; max-width:220px; height:26px;}
+    input[type=range]::-webkit-slider-thumb{width:15px; height:15px; margin-top:-7px;}
+    .chip{padding:9px 10px; font-size:10px; letter-spacing:.16em;}
+    .sep{height:12px;}
+  }
+  /* short landscape phones: single compact row */
+  @media (max-height:450px){
+    header{top:12px; left:16px;}
+    h1{font-size:16px;}
+    .sub{display:none;}
+    .rule{display:none;}
+    #hint{display:none;}
+    #bar{bottom:12px; flex-wrap:nowrap; width:auto; padding:6px 12px;}
+    .morph{flex-basis:auto;}
+    input[type=range]{width:90px;}
+  }
+</style>
+
+<script>addEventListener('touchstart',()=>document.documentElement.classList.add('is-touch'),{once:true,passive:true});</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<header>
+  <h1>METATRON</h1>
+  <p class="sub">立体メタトロン方陣 ｜ 十三の球 · 七十八の光径</p>
+  <div class="rule"></div>
+</header>
+
+<div class="tategaki">万物は幾何にはじまり、光に還る</div>
+<div id="hint"><span class="pointer-only">ドラッグ＝回転 ｜ ホイール＝距離 ｜ クリック＝波動</span><span class="touch-only">なぞる＝回転 ｜ ピンチ＝距離 ｜ タップ＝波動</span></div>
+
+<div id="bar" role="toolbar" aria-label="操作">
+  <div class="morph">
+    <span>平面</span>
+    <input id="morph" type="range" min="0" max="1000" value="1000" aria-label="次元モーフ">
+    <span>立体</span>
+  </div>
+  <div class="sep"></div>
+  <button class="chip on" id="auto">自動運行</button>
+  <div class="sep"></div>
+  <button class="chip" id="pal">彩 · 黄金</button>
+  <div class="sep"></div>
+  <button class="chip" id="snd">音 · 静</button>
+</div>
+
+<div id="fail">この作品は WebGL2 を必要とします。<br>対応ブラウザでご覧ください。</div>
+
+<script>
+'use strict';
+(() => {
+/* ============================================================
+   METATRON — 立体メタトロン方陣
+   WebGL2 / HDR additive pipeline:
+   scene(RGBA16F) → bright pass → 3-level gaussian bloom →
+   ACES tonemap + chromatic aberration + vignette + grain
+   ============================================================ */
+
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl2', {antialias:false, alpha:false});
+if (!gl){ document.getElementById('fail').style.display='grid'; return; }
+const extHF = gl.getExtension('EXT_color_buffer_float');
+const HDR = !!extHF;
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------- geometry: 13 nodes ---------- */
+// node 0 = center, 1..12 = cuboctahedron (vector equilibrium)
+const P3 = [[0,0,0]];
+for (const [a,b] of [[1,1],[1,-1],[-1,1],[-1,-1]]){
+  P3.push([a,b,0]); P3.push([a,0,b]); P3.push([0,a,b]);
+}
+// 2D metatron layout: pair the 12 verts by azimuth → inner/outer hexagons
+const P2 = new Array(13); P2[0]=[0,0,0];
+{
+  const idx = [];
+  for (let i=1;i<13;i++){
+    const [x,y,z]=P3[i];
+    idx.push({i, az:(Math.atan2(y,x)+Math.PI*2)%(Math.PI*2), z});
+  }
+  idx.sort((a,b)=> a.az-b.az || b.z-a.z);
+  for (let k=0;k<6;k++){
+    const a=idx[k*2], b=idx[k*2+1];
+    const ang = k*Math.PI/3 + Math.PI/6;
+    const outer = (a.z>=b.z)? a : b, inner = (outer===a)? b : a;
+    P2[inner.i]=[Math.cos(ang)*0.95, Math.sin(ang)*0.95, 0];
+    P2[outer.i]=[Math.cos(ang)*1.90, Math.sin(ang)*1.90, 0];
+  }
+}
+// 78 edges + length class (from 3D distances: d² ∈ {2,4,6,8})
+const EDGES=[];
+for (let i=0;i<13;i++) for (let j=i+1;j<13;j++){
+  const dx=P3[i][0]-P3[j][0], dy=P3[i][1]-P3[j][1], dz=P3[i][2]-P3[j][2];
+  const d2=Math.round(dx*dx+dy*dy+dz*dz);
+  EDGES.push([i,j,{2:0,4:1,6:2,8:3}[d2]]);
+}
+
+/* ---------- tiny mat4 ---------- */
+const M4={
+  mul(a,b){const o=new Float32Array(16);
+    for(let c=0;c<4;c++)for(let r=0;r<4;r++){let s=0;
+      for(let k=0;k<4;k++)s+=a[k*4+r]*b[c*4+k]; o[c*4+r]=s;} return o;},
+  persp(fov,asp,n,f){const t=1/Math.tan(fov/2),o=new Float32Array(16);
+    o[0]=t/asp;o[5]=t;o[10]=(f+n)/(n-f);o[11]=-1;o[14]=2*f*n/(n-f);return o;},
+  rotX(a){const c=Math.cos(a),s=Math.sin(a);
+    return new Float32Array([1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1]);},
+  rotY(a){const c=Math.cos(a),s=Math.sin(a);
+    return new Float32Array([c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1]);},
+  rotZ(a){const c=Math.cos(a),s=Math.sin(a);
+    return new Float32Array([c,s,0,0, -s,c,0,0, 0,0,1,0, 0,0,0,1]);},
+  trans(x,y,z){const o=new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,x,y,z,1]);return o;},
+  apply(m,v){const w=m[3]*v[0]+m[7]*v[1]+m[11]*v[2]+m[15];
+    return [(m[0]*v[0]+m[4]*v[1]+m[8]*v[2]+m[12])/w,
+            (m[1]*v[0]+m[5]*v[1]+m[9]*v[2]+m[13])/w, w];}
+};
+
+/* ---------- shaders ---------- */
+const VS_FS = `#version 300 es
+out vec2 vUv;
+void main(){
+  vec2 p = vec2(float((gl_VertexID<<1)&2), float(gl_VertexID&2));
+  vUv = p; gl_Position = vec4(p*2.-1., 0., 1.);
+}`;
+
+const FS_BG = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 frag;
+uniform vec2 uRes; uniform float uT;
+uniform mat4 uVP; uniform vec3 uNodes[13];
+uniform vec3 uNebA, uNebB, uEdgeCol;
+uniform float uWaveR[3]; uniform float uWaveA[3];
+
+float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
+float noise(vec2 p){
+  vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f);
+  return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),
+             mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);
+}
+float fbm(vec2 p){
+  float a=.5, s=0.;
+  for(int k=0;k<4;k++){ s+=a*noise(p); p=p*2.07+11.3; a*=.5; }
+  return s;
+}
+void main(){
+  vec2 uv = vUv;
+  vec2 q = (uv-.5)*vec2(uRes.x/uRes.y,1.);
+  // nebula
+  float n1 = fbm(q*1.6 + vec2(uT*.008, -uT*.005));
+  float n2 = fbm(q*3.1 - vec2(uT*.004,  uT*.007) + 40.);
+  vec3 col = vec3(.010,.011,.026);
+  col += uNebA * pow(n1,2.4)*.55;
+  col += uNebB * pow(n2,3.2)*.38 * smoothstep(1.3,.1,length(q));
+  // two star layers with parallax + slow twinkle
+  for(int L=0;L<2;L++){
+    float sc = L==0? 110. : 260.;
+    vec2 sp = uv*uRes/sc + float(L)*7.31 + vec2(uT*.0016*(1.+float(L)),0.);
+    vec2 cell = floor(sp);
+    float h = hash(cell);
+    vec2 off = vec2(hash(cell+.17), hash(cell+.53));
+    float d = length(fract(sp)-off);
+    float tw = .6+.4*sin(uT*(.5+h*2.)+h*40.);
+    col += vec3(.9,.95,1.) * smoothstep(.05,.0,d) * step(.82,h) * tw * (L==0? .35:.18);
+  }
+  // sacred blueprint: faint construction circles around every node
+  float ring = 0.;
+  float f = uVP[1][1];
+  for(int i=0;i<13;i++){
+    vec4 c = uVP*vec4(uNodes[i],1.);
+    if(c.w<.1) continue;
+    vec2 sc2 = (c.xy/c.w*.5+.5)*uRes;
+    float rpx = .62*f/c.w*uRes.y*.5;
+    float d = abs(length(gl_FragCoord.xy - sc2) - rpx);
+    ring += smoothstep(1.6,.0,d);
+  }
+  // one great containing circle
+  {
+    vec4 c = uVP*vec4(0.,0.,0.,1.);
+    vec2 sc2 = (c.xy/c.w*.5+.5)*uRes;
+    float rpx = 2.55*f/c.w*uRes.y*.5;
+    float d = abs(length(gl_FragCoord.xy - sc2) - rpx);
+    ring += smoothstep(1.4,.0,d)*.7;
+  }
+  col += uEdgeCol * ring * .045;
+  // expanding click-waves as luminous rings in space
+  {
+    vec4 c = uVP*vec4(0.,0.,0.,1.);
+    vec2 sc2 = (c.xy/c.w*.5+.5)*uRes;
+    for(int w=0;w<3;w++){
+      if(uWaveA[w]<=0.) continue;
+      float rpx = uWaveR[w]*f/c.w*uRes.y*.5;
+      float d = abs(length(gl_FragCoord.xy - sc2) - rpx);
+      col += uEdgeCol * exp(-d*d*.002) * uWaveA[w]*.30;
+    }
+  }
+  frag = vec4(col,1.);
+}`;
+
+const VS_EDGE = `#version 300 es
+uniform mat4 uVP; uniform vec3 uNodes[13];
+uniform vec2 uRes; uniform float uThick;
+in float aIA; in float aIB; in float aEnd; in float aSide; in float aCls; in float aRnd;
+out float vT; out float vS; out float vCls; out float vRnd; out vec3 vPos; out float vLen;
+void main(){
+  vec3 A = uNodes[int(aIA+.5)], B = uNodes[int(aIB+.5)];
+  vec4 ca = uVP*vec4(A,1.), cb = uVP*vec4(B,1.);
+  vec2 na = ca.xy/ca.w, nb = cb.xy/cb.w;
+  vec2 dir = normalize((nb-na)*uRes);
+  vec2 nrm = vec2(-dir.y, dir.x);
+  vec4 pos = mix(ca, cb, aEnd);
+  pos.xy += nrm * (uThick/uRes) * 2. * aSide * pos.w;
+  vT = aEnd; vS = aSide; vCls = aCls; vRnd = aRnd;
+  vPos = mix(A,B,aEnd); vLen = distance(A,B);
+  gl_Position = pos;
+}`;
+
+const FS_EDGE = `#version 300 es
+precision highp float;
+in float vT; in float vS; in float vCls; in float vRnd; in vec3 vPos; in float vLen;
+out vec4 frag;
+uniform float uT; uniform float uEmph;
+uniform vec3 uColA, uColB, uColPulse;
+uniform float uWaveR[3]; uniform float uWaveA[3];
+void main(){
+  float s = vS;
+  float core = exp(-s*s*22.)*.78;
+  float halo = exp(-s*s*3.2)*.11;
+  // hidden-polyhedra breathing: emphasise one length-class at a time
+  float dcls = abs(mod(vCls - uEmph + 2.5, 5.) - 2.5);
+  float emph = .34 + .95*exp(-dcls*dcls*3.5);
+  // light pulses flowing along the strand
+  float sp = .10 + .16*fract(vRnd*7.31);
+  float ph = fract(vT*vLen*.42 - uT*sp + vRnd);
+  float pulse = exp(-pow((ph-.5)*9.,2.));
+  ph = fract(vT*vLen*.42 + uT*sp*.62 + vRnd*2.7);
+  pulse += .6*exp(-pow((ph-.5)*11.,2.));
+  // click shockwaves travelling outward through space
+  float wave = 0.; float r = length(vPos);
+  for(int w=0;w<3;w++) wave += uWaveA[w]*exp(-pow((r-uWaveR[w])*2.6,2.));
+  vec3 col = mix(uColA, uColB, vCls*.3333);
+  vec3 c = col*(core+halo)*emph
+         + uColPulse*pulse*core*1.9
+         + col*wave*(core*2.2+halo);
+  frag = vec4(c, 1.);
+}`;
+
+const VS_NODE = `#version 300 es
+uniform mat4 uVP; uniform vec3 uNodes[13];
+uniform vec2 uRes; uniform float uT; uniform float uHoverI; uniform float uHoverS;
+in float aIdx; in vec2 aCorner; in float aRnd;
+out vec2 vC; out float vRnd; out vec3 vPos; out float vHov;
+void main(){
+  vec3 Pn = uNodes[int(aIdx+.5)];
+  vec4 c = uVP*vec4(Pn,1.);
+  float breathe = 1.+.12*sin(uT*(.7+aRnd)+aRnd*40.);
+  float hov = (abs(uHoverI-aIdx)<.5)? uHoverS : 0.;
+  float px = (aIdx<.5? 46.:38.)*breathe*(1.+hov*.9);
+  c.xy += aCorner*(px/uRes)*2.*c.w;
+  vC = aCorner; vRnd = aRnd; vPos = Pn; vHov = hov;
+  gl_Position = c;
+}`;
+
+const FS_NODE = `#version 300 es
+precision highp float;
+in vec2 vC; in float vRnd; in vec3 vPos; in float vHov;
+out vec4 frag;
+uniform vec3 uColNode, uColA;
+uniform float uWaveR[3]; uniform float uWaveA[3];
+void main(){
+  float r = length(vC);
+  float core = exp(-r*r*30.)*1.9;
+  float glow = exp(-r*4.2)*.7;
+  float rim  = exp(-pow((r-.62)*9.,2.))*.22;
+  float wave = 0.; float rr = length(vPos);
+  for(int w=0;w<3;w++) wave += uWaveA[w]*exp(-pow((rr-uWaveR[w])*2.6,2.));
+  vec3 c = vec3(1.,.98,.95)*core
+         + uColNode*(glow+rim)*(1.+vHov*1.4)
+         + uColA*wave*glow*2.4;
+  frag = vec4(c,1.);
+}`;
+
+const FS_BRIGHT = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 frag; uniform sampler2D uTex;
+void main(){
+  vec3 c = texture(uTex, vUv).rgb;
+  float l = dot(c, vec3(.2126,.7152,.0722));
+  float k = smoothstep(.62, 1.35, l);
+  frag = vec4(c*k, 1.);
+}`;
+
+const FS_BLUR = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 frag;
+uniform sampler2D uTex; uniform vec2 uDir;
+void main(){
+  float w[5] = float[](.227027,.1945946,.1216216,.054054,.016216);
+  vec3 c = texture(uTex,vUv).rgb*w[0];
+  for(int i=1;i<5;i++){
+    c += texture(uTex, vUv+uDir*float(i)).rgb*w[i];
+    c += texture(uTex, vUv-uDir*float(i)).rgb*w[i];
+  }
+  frag = vec4(c,1.);
+}`;
+
+const FS_COMP = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 frag;
+uniform sampler2D uScene, uB0, uB1, uB2;
+uniform float uT; uniform vec2 uRes;
+vec3 aces(vec3 x){
+  return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14), 0., 1.);
+}
+float hash(vec2 p){ return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453); }
+void main(){
+  vec2 uv = vUv;
+  vec2 d = (uv-.5);
+  // gentle radial chromatic aberration
+  float ca = .0035*dot(d,d)*4.;
+  vec3 scene;
+  scene.r = texture(uScene, uv+d*ca).r;
+  scene.g = texture(uScene, uv).g;
+  scene.b = texture(uScene, uv-d*ca).b;
+  vec3 bloom = texture(uB0,uv).rgb*.38 + texture(uB1,uv).rgb*.30 + texture(uB2,uv).rgb*.26;
+  vec3 c = scene + bloom;
+  c = aces(c*1.12);
+  c = pow(c, vec3(1./1.06));
+  // indigo lift in the shadows
+  c += vec3(.010,.010,.028)*(1.-c);
+  // vignette
+  c *= 1. - .38*pow(length(d)*1.42, 2.4);
+  // grain
+  c += (hash(uv*uRes + fract(uT)*719.)-.5)*.028;
+  frag = vec4(c,1.);
+}`;
+
+/* ---------- GL helpers ---------- */
+function sh(type, src){
+  const s = gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+    throw new Error('shader: '+gl.getShaderInfoLog(s)+'\n'+src.split('\n').map((l,i)=>i+1+': '+l).join('\n'));
+  return s;
+}
+function prog(vs, fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER,vs));
+  gl.attachShader(p, sh(gl.FRAGMENT_SHADER,fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('link: '+gl.getProgramInfoLog(p));
+  const U={}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for(let i=0;i<n;i++){ const info=gl.getActiveUniform(p,i);
+    U[info.name.replace('[0]','')] = gl.getUniformLocation(p, info.name); }
+  return {p,U};
+}
+function target(w,h){
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D,0, HDR?gl.RGBA16F:gl.RGBA8, w,h,0, gl.RGBA, HDR?gl.HALF_FLOAT:gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const f = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  return {f,t,w,h};
+}
+
+const pBg     = prog(VS_FS,  FS_BG);
+const pEdge   = prog(VS_EDGE,FS_EDGE);
+const pNode   = prog(VS_NODE,FS_NODE);
+const pBright = prog(VS_FS,  FS_BRIGHT);
+const pBlur   = prog(VS_FS,  FS_BLUR);
+const pComp   = prog(VS_FS,  FS_COMP);
+
+/* ---------- buffers ---------- */
+const vaoEmpty = gl.createVertexArray();
+
+// edges: 4 verts × [iA,iB,end,side,cls,rnd]
+const vaoEdge = gl.createVertexArray();
+gl.bindVertexArray(vaoEdge);
+{
+  const verts=[], idx=[];
+  EDGES.forEach(([a,b,cls],e)=>{
+    const rnd = (Math.sin(e*127.13)*.5+.5);
+    for(const [end,side] of [[0,-1],[0,1],[1,-1],[1,1]])
+      verts.push(a,b,end,side,cls,rnd);
+    const o=e*4; idx.push(o,o+1,o+2, o+2,o+1,o+3);
+  });
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
+  const names=['aIA','aIB','aEnd','aSide','aCls','aRnd'];
+  names.forEach((nm,i)=>{
+    const loc = gl.getAttribLocation(pEdge.p, nm);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc,1,gl.FLOAT,false,24,i*4);
+  });
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
+}
+const N_EDGE_IDX = EDGES.length*6;
+
+// nodes: 13 quads × [idx, cx, cy, rnd]
+const vaoNode = gl.createVertexArray();
+gl.bindVertexArray(vaoNode);
+{
+  const verts=[];
+  for(let i=0;i<13;i++){
+    const rnd = (Math.sin(i*91.7)*.5+.5);
+    const C=[[-1,-1],[1,-1],[-1,1], [-1,1],[1,-1],[1,1]];
+    for(const [cx,cy] of C) verts.push(i,cx,cy,rnd);
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
+  const li = gl.getAttribLocation(pNode.p,'aIdx');
+  const lc = gl.getAttribLocation(pNode.p,'aCorner');
+  const lr = gl.getAttribLocation(pNode.p,'aRnd');
+  gl.enableVertexAttribArray(li); gl.vertexAttribPointer(li,1,gl.FLOAT,false,16,0);
+  gl.enableVertexAttribArray(lc); gl.vertexAttribPointer(lc,2,gl.FLOAT,false,16,4);
+  gl.enableVertexAttribArray(lr); gl.vertexAttribPointer(lr,1,gl.FLOAT,false,16,12);
+}
+gl.bindVertexArray(null);
+
+/* ---------- render targets ---------- */
+let W=0,H=0,DPR=1, rtScene, bloom=[];
+function resize(){
+  DPR = Math.min(devicePixelRatio||1, 1.75);
+  W = Math.max(2, Math.round(innerWidth*DPR));
+  H = Math.max(2, Math.round(innerHeight*DPR));
+  canvas.width=W; canvas.height=H;
+  rtScene = target(W,H);
+  bloom = [2,4,8].map(d=>({
+    a:target(Math.ceil(W/d), Math.ceil(H/d)),
+    b:target(Math.ceil(W/d), Math.ceil(H/d)),
+  }));
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+}
+addEventListener('resize', resize); resize();
+
+/* ---------- palettes ---------- */
+const PALETTES=[
+  {label:'彩 · 黄金', accent:'#f0c37a',
+   edgeA:[1.00,.76,.42], edgeB:[1.00,.50,.34], node:[.80,.92,1.0],
+   pulse:[1.0,.92,.72],  nebA:[.15,.08,.30],  nebB:[.34,.19,.07]},
+  {label:'彩 · 蒼氷', accent:'#8fd8ff',
+   edgeA:[.50,.83,1.0],  edgeB:[.66,1.0,.94],  node:[1.0,.95,.84],
+   pulse:[.88,.97,1.0],  nebA:[.05,.13,.30],  nebB:[.05,.26,.30]},
+  {label:'彩 · 紫苑', accent:'#c0a0ff',
+   edgeA:[.70,.55,1.0],  edgeB:[1.0,.55,.85],  node:[1.0,.92,.97],
+   pulse:[.93,.85,1.0],  nebA:[.14,.06,.32],  nebB:[.30,.08,.24]},
+];
+let palI = 0;
+
+/* ---------- state / interaction ---------- */
+const st = {
+  yaw:.6, pitch:.42, dist:7.2,
+  vyaw:0, vpitch:0,
+  spin:0, morph:1, morphTarget:1, auto:!reduced,
+  lastInput: performance.now(),
+  hoverI:-1, hoverS:0,
+  waves:[], // {t0}
+};
+const nodesNow = new Float32Array(39);
+let lastMVP = null;
+
+const hint = document.getElementById('hint');
+function touched(){ st.lastInput = performance.now(); hint.classList.add('gone'); }
+
+let drag=null;
+const pointers = new Map();
+canvas.addEventListener('pointerdown', e=>{
+  canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  drag = {x:e.clientX, y:e.clientY, moved:0};
+  canvas.classList.add('drag'); touched();
+});
+canvas.addEventListener('pointermove', e=>{
+  if(pointers.has(e.pointerId)) pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(drag && pointers.size===1){
+    const dx=e.clientX-drag.x, dy=e.clientY-drag.y;
+    drag.moved += Math.abs(dx)+Math.abs(dy);
+    st.yaw   += dx*.005; st.pitch += dy*.005;
+    st.vyaw = dx*.005;   st.vpitch = dy*.005;
+    st.pitch = Math.max(-1.45, Math.min(1.45, st.pitch));
+    drag.x=e.clientX; drag.y=e.clientY; touched();
+  }
+  if(pointers.size===2){
+    const [p1,p2]=[...pointers.values()];
+    const d = Math.hypot(p1.x-p2.x, p1.y-p2.y);
+    if(drag && drag.pinch) st.dist = Math.max(3.4, Math.min(14, st.dist*drag.pinch/d));
+    drag = drag||{moved:99}; drag.pinch = d; touched();
+  }
+  // hover detection
+  if(lastMVP){
+    const mx = e.clientX*DPR, my = (innerHeight-e.clientY)*DPR;
+    let best=-1, bd=1e9;
+    for(let i=0;i<13;i++){
+      const s = M4.apply(lastMVP, [nodesNow[i*3],nodesNow[i*3+1],nodesNow[i*3+2]]);
+      const sx=(s[0]*.5+.5)*W, sy=(s[1]*.5+.5)*H;
+      const d = Math.hypot(sx-mx, sy-my);
+      if(d<bd){bd=d; best=i;}
+    }
+    st.hoverI = (bd < 46*DPR)? best : -1;
+  }
+});
+function endPointer(e){
+  pointers.delete(e.pointerId);
+  if(drag && drag.moved!==undefined && drag.moved<6 && pointers.size===0){
+    st.waves.push({t0:performance.now()});
+    if(st.waves.length>3) st.waves.shift();
+    ping();
+  }
+  if(pointers.size===0){ drag=null; canvas.classList.remove('drag'); }
+  else if(drag) drag.pinch = undefined;
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('wheel', e=>{
+  e.preventDefault();
+  st.dist = Math.max(3.4, Math.min(14, st.dist*Math.exp(e.deltaY*.001)));
+  touched();
+},{passive:false});
+
+/* ---------- UI ---------- */
+const $morph = document.getElementById('morph');
+const $auto = document.getElementById('auto');
+const $pal = document.getElementById('pal');
+const $snd = document.getElementById('snd');
+$morph.addEventListener('input', ()=>{
+  st.auto=false; $auto.classList.remove('on');
+  st.morphTarget = $morph.value/1000; touched();
+});
+$auto.addEventListener('click', ()=>{
+  st.auto=!st.auto; $auto.classList.toggle('on', st.auto); touched();
+});
+$pal.addEventListener('click', ()=>{
+  palI = (palI+1)%PALETTES.length;
+  $pal.textContent = PALETTES[palI].label;
+  document.documentElement.style.setProperty('--gold', PALETTES[palI].accent);
+  touched();
+});
+setTimeout(()=>hint.classList.add('gone'), 9000);
+
+/* ---------- generative audio (WebAudio, no assets) ---------- */
+let actx=null, master=null, delaySend=null, sndOn=false;
+function initAudio(){
+  actx = new (window.AudioContext||window.webkitAudioContext)();
+  master = actx.createGain(); master.gain.value=0;
+  const comp = actx.createDynamicsCompressor();
+  master.connect(comp); comp.connect(actx.destination);
+  // shimmering feedback delay
+  delaySend = actx.createGain(); delaySend.gain.value=.5;
+  const dly = actx.createDelay(2.); dly.delayTime.value=.52;
+  const fb = actx.createGain(); fb.gain.value=.42;
+  const damp = actx.createBiquadFilter(); damp.type='lowpass'; damp.frequency.value=2400;
+  delaySend.connect(dly); dly.connect(damp); damp.connect(fb); fb.connect(dly);
+  damp.connect(master);
+  // drone: three detuned partials through a slowly-breathing lowpass
+  const lp = actx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=420; lp.Q.value=.7;
+  lp.connect(master);
+  [[55,.30,'sine'],[110,.22,'sine'],[164.81,.10,'triangle'],[220.5,.05,'sine']].forEach(([f,g,ty])=>{
+    const o=actx.createOscillator(); o.type=ty; o.frequency.value=f;
+    o.detune.value=(Math.random()*8-4);
+    const gg=actx.createGain(); gg.gain.value=g;
+    o.connect(gg); gg.connect(lp); o.start();
+  });
+  const lfo=actx.createOscillator(); lfo.frequency.value=.06;
+  const lfoG=actx.createGain(); lfoG.gain.value=180;
+  lfo.connect(lfoG); lfoG.connect(lp.frequency); lfo.start();
+}
+const PENTA=[220,261.63,329.63,392,440,523.25];
+function ping(){
+  if(!sndOn||!actx) return;
+  const f = PENTA[Math.floor(Math.random()*PENTA.length)]*2;
+  const o=actx.createOscillator(); o.type='sine'; o.frequency.value=f;
+  const g=actx.createGain();
+  const t=actx.currentTime;
+  g.gain.setValueAtTime(.0001,t);
+  g.gain.exponentialRampToValueAtTime(.22,t+.012);
+  g.gain.exponentialRampToValueAtTime(.0001,t+1.6);
+  o.connect(g); g.connect(master); g.connect(delaySend);
+  o.start(t); o.stop(t+1.7);
+}
+$snd.addEventListener('click', async ()=>{
+  if(!actx) initAudio();
+  await actx.resume();
+  sndOn=!sndOn;
+  master.gain.linearRampToValueAtTime(sndOn?.5:0, actx.currentTime+1.2);
+  $snd.textContent = sndOn? '音 · 響':'音 · 静';
+  $snd.classList.toggle('on', sndOn); touched();
+});
+
+/* ---------- frame ---------- */
+function fsQuad(){ gl.bindVertexArray(vaoEmpty); gl.drawArrays(gl.TRIANGLES,0,3); }
+let t0 = performance.now(), tPrev=t0;
+
+function frame(now){
+  requestAnimationFrame(frame);
+  const t = (now-t0)/1000;
+  const dt = Math.min(.05,(now-tPrev)/1000); tPrev=now;
+  const pal = PALETTES[palI];
+
+  /* -- simulate -- */
+  const idle = (now-st.lastInput)/1000;
+  if(!drag){
+    st.yaw += st.vyaw; st.pitch += st.vpitch;
+    st.vyaw*=.94; st.vpitch*=.94;
+    st.pitch = Math.max(-1.45, Math.min(1.45, st.pitch));
+    const idleK = Math.min(1, Math.max(0,(idle-4)/6));
+    st.yaw += dt*.05*idleK*(reduced?.3:1)*st.morph;
+    // in flat mode, drift gently to a face-on view (only while idle)
+    const flatK = (1-st.morph)*idleK*dt*.9;
+    st.yaw   += (Math.round(st.yaw/(Math.PI*2))*Math.PI*2 - st.yaw)*flatK;
+    st.pitch += (0 - st.pitch)*flatK;
+  }
+  st.spin += dt*(reduced? .015:.05);
+  if(st.auto && !reduced){
+    st.morphTarget = .5-.5*Math.cos(t*2*Math.PI/26);
+    $morph.value = Math.round(st.morphTarget*1000);
+  }
+  st.morph += (st.morphTarget-st.morph)*Math.min(1,dt*2.2);
+  const m = st.morph, e = m*m*(3-2*m);
+  for(let i=0;i<13;i++){
+    for(let k=0;k<3;k++)
+      nodesNow[i*3+k] = P2[i][k]+(P3[i][k]-P2[i][k])*e;
+  }
+  st.hoverS += ((st.hoverI>=0?1:0)-st.hoverS)*Math.min(1,dt*8);
+
+  const waveR=new Float32Array(3), waveA=new Float32Array(3);
+  st.waves = st.waves.filter(w=> now-w.t0 < 4200);
+  st.waves.forEach((w,i)=>{
+    const a=(now-w.t0)/1000;
+    waveR[i]=a*2.1; waveA[i]=Math.exp(-a*1.15)*1.35;
+  });
+
+  /* -- matrices -- */
+  // portrait keeps the horizontal field of view constant so nothing crops
+  const asp = W/H;
+  const fov = asp>=1? .62 : 2*Math.atan(Math.tan(.31)/asp);
+  const proj = M4.persp(fov, asp, .1, 60);
+  let view = M4.mul(M4.trans(0,0,-st.dist), M4.rotX(st.pitch));
+  view = M4.mul(view, M4.rotY(st.yaw));
+  // flat mode keeps only the in-plane rotation so the blueprint stays readable
+  let model = M4.mul(M4.rotZ(st.spin*.7), M4.rotX(st.spin*.35*e));
+  model = M4.mul(M4.rotY(st.spin*e), model);
+  const mvp = M4.mul(M4.mul(proj,view), model);
+  lastMVP = mvp;
+
+  const emph = ((t*.22)%5+5)%5;
+
+  /* -- 1. scene (HDR) -- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, rtScene.f);
+  gl.viewport(0,0,W,H);
+  gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
+  gl.useProgram(pBg.p);
+  gl.uniform2f(pBg.U.uRes,W,H); gl.uniform1f(pBg.U.uT,t);
+  gl.uniformMatrix4fv(pBg.U.uVP,false,mvp);
+  gl.uniform3fv(pBg.U.uNodes,nodesNow);
+  gl.uniform3fv(pBg.U.uNebA,pal.nebA); gl.uniform3fv(pBg.U.uNebB,pal.nebB);
+  gl.uniform3fv(pBg.U.uEdgeCol,pal.edgeA);
+  gl.uniform1fv(pBg.U.uWaveR,waveR); gl.uniform1fv(pBg.U.uWaveA,waveA);
+  fsQuad();
+
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.useProgram(pEdge.p);
+  gl.uniformMatrix4fv(pEdge.U.uVP,false,mvp);
+  gl.uniform3fv(pEdge.U.uNodes,nodesNow);
+  gl.uniform2f(pEdge.U.uRes,W,H);
+  gl.uniform1f(pEdge.U.uThick,10.5*DPR);
+  gl.uniform1f(pEdge.U.uT,t);
+  gl.uniform1f(pEdge.U.uEmph,emph);
+  gl.uniform3fv(pEdge.U.uColA,pal.edgeA);
+  gl.uniform3fv(pEdge.U.uColB,pal.edgeB);
+  gl.uniform3fv(pEdge.U.uColPulse,pal.pulse);
+  gl.uniform1fv(pEdge.U.uWaveR,waveR); gl.uniform1fv(pEdge.U.uWaveA,waveA);
+  gl.bindVertexArray(vaoEdge);
+  gl.drawElements(gl.TRIANGLES, N_EDGE_IDX, gl.UNSIGNED_SHORT, 0);
+
+  gl.useProgram(pNode.p);
+  gl.uniformMatrix4fv(pNode.U.uVP,false,mvp);
+  gl.uniform3fv(pNode.U.uNodes,nodesNow);
+  gl.uniform2f(pNode.U.uRes,W,H);
+  gl.uniform1f(pNode.U.uT,t);
+  gl.uniform1f(pNode.U.uHoverI,st.hoverI);
+  gl.uniform1f(pNode.U.uHoverS,st.hoverS);
+  gl.uniform3fv(pNode.U.uColNode,pal.node);
+  gl.uniform3fv(pNode.U.uColA,pal.edgeA);
+  gl.uniform1fv(pNode.U.uWaveR,waveR); gl.uniform1fv(pNode.U.uWaveA,waveA);
+  gl.bindVertexArray(vaoNode);
+  gl.drawArrays(gl.TRIANGLES,0,13*6);
+  gl.disable(gl.BLEND);
+
+  /* -- 2. bloom chain -- */
+  gl.activeTexture(gl.TEXTURE0);
+  // bright → bloom[0].a
+  gl.bindFramebuffer(gl.FRAMEBUFFER, bloom[0].a.f);
+  gl.viewport(0,0,bloom[0].a.w,bloom[0].a.h);
+  gl.useProgram(pBright.p);
+  gl.bindTexture(gl.TEXTURE_2D, rtScene.t);
+  gl.uniform1i(pBright.U.uTex,0);
+  fsQuad();
+  for(let L=0;L<3;L++){
+    const B=bloom[L];
+    if(L>0){ // downsample previous level into this level's a
+      gl.bindFramebuffer(gl.FRAMEBUFFER,B.a.f);
+      gl.viewport(0,0,B.a.w,B.a.h);
+      gl.useProgram(pBlur.p);
+      gl.bindTexture(gl.TEXTURE_2D, bloom[L-1].a.t);
+      gl.uniform1i(pBlur.U.uTex,0);
+      gl.uniform2f(pBlur.U.uDir, .5/B.a.w, 0);
+      fsQuad();
+    }
+    // two blur passes (H then V), a→b→a
+    gl.useProgram(pBlur.p); gl.uniform1i(pBlur.U.uTex,0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,B.b.f);
+    gl.viewport(0,0,B.b.w,B.b.h);
+    gl.bindTexture(gl.TEXTURE_2D,B.a.t);
+    gl.uniform2f(pBlur.U.uDir, 1.6/B.a.w, 0); fsQuad();
+    gl.bindFramebuffer(gl.FRAMEBUFFER,B.a.f);
+    gl.bindTexture(gl.TEXTURE_2D,B.b.t);
+    gl.uniform2f(pBlur.U.uDir, 0, 1.6/B.a.h); fsQuad();
+  }
+
+  /* -- 3. composite -- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  gl.viewport(0,0,W,H);
+  gl.useProgram(pComp.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, rtScene.t);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, bloom[0].a.t);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, bloom[1].a.t);
+  gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, bloom[2].a.t);
+  gl.uniform1i(pComp.U.uScene,0);
+  gl.uniform1i(pComp.U.uB0,1); gl.uniform1i(pComp.U.uB1,2); gl.uniform1i(pComp.U.uB2,3);
+  gl.uniform1f(pComp.U.uT,t); gl.uniform2f(pComp.U.uRes,W,H);
+  fsQuad();
+  gl.activeTexture(gl.TEXTURE0);
+}
+requestAnimationFrame(frame);
+
+// opening wave
+setTimeout(()=>{ st.waves.push({t0:performance.now()}); }, 700);
+})();
+</script>
+
+</body>
+</html>

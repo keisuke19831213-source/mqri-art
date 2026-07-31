@@ -1,0 +1,10 @@
+{
+  "name": "Flower of Life × Differential Growth",
+  "short_name": "Flower of Life",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#06040e",
+  "theme_color": "#06040e",
+  "start_url": ".",
+  "icons": []
+}
