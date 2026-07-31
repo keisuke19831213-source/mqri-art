@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="description" content="生命と幾何学 — Morphogenesis。黄金角の種子格子にチューリング反応拡散系が芽吹き、珊瑚や脳の襞に似た組織が育っていく。MQRI ART。">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="生命と幾何学">
+<meta name="theme-color" content="#05060a">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Morphogenesis — 生命と幾何学</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: #05060a; cursor: crosshair;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  /* touch-action:none が無いと、指のドラッグ（モルフォゲン散布）をブラウザのスクロールに奪われる */
+  #stage { position: fixed; inset: 0; display: block; width: 100vw; height: 100vh; touch-action: none; }
+  #ui {
+    position: fixed; left: max(20px, env(safe-area-inset-left)); bottom: max(18px, env(safe-area-inset-bottom)); z-index: 10;
+    color: rgba(233,226,210,0.62); font-size: 11px; line-height: 1.7;
+    letter-spacing: 0.06em; pointer-events: none; user-select: none;
+    text-shadow: 0 1px 12px rgba(0,0,0,0.9);
+  }
+  #ui b { color: rgba(226,190,122,0.92); font-weight: 600; letter-spacing: 0.14em; }
+  #ui .k { color: rgba(140,205,205,0.85); }
+  #hint {
+    position: fixed; right: max(20px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom)); z-index: 10;
+    color: rgba(233,226,210,0.34); font-size: 10.5px; line-height: 1.8;
+    letter-spacing: 0.05em; text-align: right; pointer-events: none; user-select: none;
+    text-shadow: 0 1px 12px rgba(0,0,0,0.9);
+  }
+  #title {
+    position: fixed; left: max(20px, env(safe-area-inset-left)); top: max(18px, env(safe-area-inset-top)); z-index: 10;
+    color: rgba(233,226,210,0.9); font-size: 12.5px; letter-spacing: 0.34em;
+    font-weight: 600; pointer-events: none; user-select: none;
+    text-shadow: 0 1px 16px rgba(0,0,0,0.95);
+  }
+  #title span { display:block; color: rgba(226,190,122,0.6); font-size: 9.5px; letter-spacing: 0.28em; margin-top: 5px; font-weight: 400; }
+  #err {
+    position: fixed; inset: 0; z-index: 50; display: none; place-items: center;
+    background: #05060a; color: #e9e2d2; font-size: 14px; text-align:center; padding: 40px;
+  }
+  .fade { animation: fade 2.4s ease-out forwards; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  html, body { -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  /* 操作案内は入力デバイスで出し分ける（指にキーボードは無い） */
+  .touch-only { display: none; }
+  @media (pointer:coarse){ .pointer-only{display:none;} .touch-only{display:inline;} }
+  html.is-touch .pointer-only { display: none; }
+  html.is-touch .touch-only { display: inline; }
+  /* スマホ: 文字が詰まるので縮める（移設前はメディアクエリが1つも無かった） */
+  @media (max-width: 640px) {
+    #title { font-size: 12px; letter-spacing: 0.24em; }
+    #title span { font-size: 8.5px; letter-spacing: 0.16em; }
+    #ui, #hint { font-size: 9px; letter-spacing: 0.12em; line-height: 1.9; }
+    #hint { max-width: 46vw; text-align: right; }
+  }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<div id="title" class="fade">MORPHOGENESIS<span>生命と幾何学 · reaction–diffusion on a phyllotactic field</span></div>
+<div id="ui" class="fade">
+  <b>PHASE</b> <span id="phaselabel">germination</span><br>
+  species drift &amp; anisotropic growth
+</div>
+<div id="hint" class="fade"><span class="pointer-only"><span class="k">drag</span> — sow morphogen &nbsp;·&nbsp; <span class="k">space</span> — new organism<br>
+  <span class="k">1–4</span> — regime &nbsp;·&nbsp; <span class="k">S</span> — save frame</span><span class="touch-only"><span class="k">なぞる</span> — sow morphogen &nbsp;·&nbsp; <span class="k">タップ</span> — new organism<br><span class="k">2本指タップ</span> — regime</span></div>
+<div id="err"></div>
+
+<script type="text/javascript">
+"use strict";
+(function () {
+  const canvas = document.getElementById("stage");
+  const errBox = document.getElementById("err");
+  function fail(msg) {
+    errBox.style.display = "grid";
+    errBox.textContent = msg;
+    throw new Error(msg);
+  }
+
+  const gl = canvas.getContext("webgl2", {
+    antialias: false, alpha: false, depth: false, stencil: false,
+    premultipliedAlpha: false, preserveDrawingBuffer: true,
+    powerPreference: "high-performance"
+  });
+  if (!gl) fail("WebGL2 is required for this piece — please use a modern browser.");
+  const extCBF = gl.getExtension("EXT_color_buffer_float");
+  const extLF  = gl.getExtension("OES_texture_float_linear");
+  if (!extCBF) fail("EXT_color_buffer_float unavailable — float render targets are required.");
+
+  // ---------- shader helpers ----------
+  function sh(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+      const log = gl.getShaderInfoLog(s);
+      fail("Shader compile error:\n" + log);
+    }
+    return s;
+  }
+  function prog(vsSrc, fsSrc) {
+    const p = gl.createProgram();
+    gl.attachShader(p, sh(gl.VERTEX_SHADER, vsSrc));
+    gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fsSrc));
+    gl.bindAttribLocation(p, 0, "a_pos");
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      fail("Program link error:\n" + gl.getProgramInfoLog(p));
+    }
+    return p;
+  }
+  function uni(p, names) {
+    const o = {};
+    for (const n of names) o[n] = gl.getUniformLocation(p, n);
+    return o;
+  }
+
+  // fullscreen triangle
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  const vbo = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+  const VS = `#version 300 es
+  layout(location=0) in vec2 a_pos;
+  out vec2 v_uv;
+  void main(){ v_uv = a_pos*0.5+0.5; gl_Position = vec4(a_pos,0.0,1.0); }`;
+
+  // ---------- simulation shader (anisotropic Gray-Scott) ----------
+  // State: R = u (substrate), G = v (activator).
+  // feed/kill vary spatially across a phyllotactic field so the geometry
+  // literally seeds where life takes hold.
+  const SIM_FS = `#version 300 es
+  precision highp float;
+  in vec2 v_uv;
+  out vec4 o_col;
+  uniform sampler2D u_state;
+  uniform vec2  u_texel;      // 1/resolution
+  uniform vec2  u_res;
+  uniform float u_time;
+  uniform float u_dt;
+  uniform vec2  u_mouse;      // uv, or (-1,-1)
+  uniform float u_mouseDown;
+  uniform float u_regime;     // 0..3 selects parameter family
+  uniform float u_aniso;      // anisotropy strength
+
+  const float PI  = 3.14159265359;
+  const float TAU = 6.28318530718;
+  const float GA  = 2.39996322973; // golden angle (radians)
+
+  // rotate a vec2
+  vec2 rot(vec2 p, float a){ float c=cos(a), s=sin(a); return mat2(c,-s,s,c)*p; }
+
+  // Phyllotactic field: distance to nearest Fibonacci-spiral seed, plus a
+  // smooth orientation field flowing along the parastichies.
+  // Returns: x = closeness (0..1) to a seed centre, y = flow angle.
+  vec2 phyllo(vec2 p){
+    // p in centred coords, aspect-corrected, roughly [-1,1]
+    float best = 1e9;
+    float ang  = 0.0;
+    float scale = 0.10;               // seed spacing
+    // sample a window of indices near the query radius to keep it cheap
+    float r = length(p);
+    float nGuess = (r*r)/(scale*scale);
+    float lo = max(1.0, nGuess-14.0);
+    float hi = nGuess+14.0;
+    for(float i=0.0;i<28.0;i+=1.0){
+      float n = lo+i;
+      if(n>hi) break;
+      float rr = scale*sqrt(n);
+      float th = n*GA;
+      vec2 s = rr*vec2(cos(th),sin(th));
+      float d = distance(p,s);
+      if(d<best){ best=d; ang = th + PI*0.5; }
+    }
+    float closeness = 1.0 - smoothstep(0.0, scale*0.9, best);
+    return vec2(closeness, ang);
+  }
+
+  void main(){
+    vec2 uv = v_uv;
+    // aspect-corrected centred coords for the geometry field
+    float aspect = u_res.x/u_res.y;
+    vec2 c = (uv-0.5)*vec2(aspect,1.0)*2.0;
+
+    vec2 ph = phyllo(c);
+    float seed = ph.x;
+    float flow = ph.y;
+
+    // --- anisotropic Laplacian ---
+    // Diffusion is stretched along the local flow direction so growth
+    // follows the parastichy curves — geometry guiding life.
+    vec2 dir = vec2(cos(flow), sin(flow));
+    vec2 e = u_texel;
+
+    // 9-point stencil weights
+    vec2 s = texture(u_state, uv).rg;
+    vec2 n  = texture(u_state, uv+vec2(0.0, e.y)).rg;
+    vec2 so = texture(u_state, uv+vec2(0.0,-e.y)).rg;
+    vec2 ea = texture(u_state, uv+vec2( e.x,0.0)).rg;
+    vec2 we = texture(u_state, uv+vec2(-e.x,0.0)).rg;
+    vec2 ne = texture(u_state, uv+vec2( e.x, e.y)).rg;
+    vec2 nw = texture(u_state, uv+vec2(-e.x, e.y)).rg;
+    vec2 se = texture(u_state, uv+vec2( e.x,-e.y)).rg;
+    vec2 sw = texture(u_state, uv+vec2(-e.x,-e.y)).rg;
+
+    vec2 lap = (n+so+ea+we)*0.2 + (ne+nw+se+sw)*0.05 - s;
+
+    // directional (anisotropic) second derivative along flow
+    vec2 pDir = texture(u_state, uv + dir*e).rg;
+    vec2 mDir = texture(u_state, uv - dir*e).rg;
+    vec2 lapDir = pDir + mDir - 2.0*s;
+
+    float aniso = u_aniso * seed;      // only anisotropic where geometry is present
+    vec2 L = mix(lap, lap + lapDir*0.5, aniso);
+
+    // --- diffusion rates ---
+    float Du = 0.20;
+    float Dv = 0.105;
+
+    // --- feed / kill fields, spatially modulated by geometry ---
+    float f, k;
+    // base regime
+    if(u_regime < 0.5){ f = 0.0360; k = 0.0630; }       // coral / worms
+    else if(u_regime < 1.5){ f = 0.0545; k = 0.0620; }  // mitosis (dividing cells)
+    else if(u_regime < 2.5){ f = 0.0295; k = 0.0561; }  // solitons / u-skate
+    else { f = 0.0392; k = 0.0649; }                     // fingerprints / maze
+
+    // geometry writes gradients into the parameter field:
+    float rad = length(c);
+    f += 0.006*seed;                        // seeds are more fertile
+    f += 0.004*sin(rad*7.0 - u_time*0.15);  // slow radial breathing
+    k += 0.0035*(seed-0.5);
+    k += 0.0016*cos(flow*3.0);
+
+    float u = s.r, v = s.g;
+    float uvv = u*v*v;
+    float du = Du*L.r - uvv + f*(1.0-u);
+    float dv = Dv*L.g + uvv - (f+k)*v;
+
+    u += du*u_dt;
+    v += dv*u_dt;
+
+    // --- interaction: sow activator under the cursor ---
+    if(u_mouseDown > 0.5){
+      float d = distance(uv, u_mouse);
+      float b = smoothstep(0.035, 0.0, d);
+      v += b*0.6;
+    }
+
+    u = clamp(u, 0.0, 1.0);
+    v = clamp(v, 0.0, 1.0);
+    o_col = vec4(u, v, seed, 1.0);
+  }`;
+
+  // ---------- render / composite shader ----------
+  const RENDER_FS = `#version 300 es
+  precision highp float;
+  in vec2 v_uv;
+  out vec4 o_col;
+  uniform sampler2D u_state;
+  uniform vec2  u_res;
+  uniform vec2  u_texel;
+  uniform float u_time;
+  uniform float u_regime;
+
+  const float PI = 3.14159265359;
+
+  // --- palette (cosine gradient, Inigo Quilez style) ---
+  vec3 pal(float t, vec3 a, vec3 b, vec3 c, vec3 d){
+    return a + b*cos(6.28318*(c*t+d));
+  }
+
+  // organic pearlescent palette — hand-tuned control ramp
+  // deep blue-black ground -> jade flesh -> copper-gold membrane -> ivory bloom
+  vec3 colorMap(float t, float glow){
+    vec3 c0 = vec3(0.018, 0.024, 0.038);  // near-black ground
+    vec3 c1 = vec3(0.045, 0.105, 0.120);  // deep teal shadow
+    vec3 c2 = vec3(0.090, 0.300, 0.300);  // jade tissue
+    vec3 c3 = vec3(0.760, 0.520, 0.230);  // copper gold membrane
+    vec3 c4 = vec3(0.985, 0.945, 0.820);  // ivory bloom
+    vec3 col = c0;
+    col = mix(col, c1, smoothstep(0.00, 0.28, t));
+    col = mix(col, c2, smoothstep(0.22, 0.52, t));
+    col = mix(col, c3, smoothstep(0.48, 0.78, t));
+    col = mix(col, c4, smoothstep(0.72, 1.00, t));
+    // iridescent film, confined to membrane edges via glow
+    vec3 irid = 0.5+0.5*cos(vec3(0.0,2.1,4.2) + t*6.0 + glow*3.0);
+    col = mix(col, mix(col, irid, 0.5), glow*0.28);
+    return col;
+  }
+
+  void main(){
+    vec2 uv = v_uv;
+    vec2 e = u_texel;
+    vec4 st = texture(u_state, uv);
+    float v = st.g;
+    float seed = st.b;
+
+    // --- surface normal from concentration field (v as height) ---
+    float hx = texture(u_state, uv+vec2(e.x,0.0)).g - texture(u_state, uv-vec2(e.x,0.0)).g;
+    float hy = texture(u_state, uv+vec2(0.0,e.y)).g - texture(u_state, uv-vec2(0.0,e.y)).g;
+    vec3 N = normalize(vec3(-hx, -hy, 0.028));
+
+    // --- lighting (key + rim + subsurface) ---
+    vec3 L1 = normalize(vec3(-0.55, 0.65, 0.62));
+    vec3 L2 = normalize(vec3(0.6, -0.35, 0.5));
+    vec3 V  = vec3(0.0,0.0,1.0);
+    float diff = max(dot(N,L1),0.0);
+    float diff2= max(dot(N,L2),0.0)*0.4;
+    vec3 H = normalize(L1+V);
+    float spec = pow(max(dot(N,H),0.0), 42.0);
+    float rim  = pow(1.0 - max(dot(N,V),0.0), 3.0);
+
+    // slope magnitude = membrane edges glow
+    float slope = length(vec2(hx,hy));
+    float glow = clamp(slope*22.0, 0.0, 1.0);
+
+    // tone value drives palette position; keep cell bodies in the
+    // jade/copper band and let only true crests reach ivory
+    float t = clamp(v*1.55 + slope*0.9, 0.0, 1.0);
+    vec3 base = colorMap(t, glow);
+
+    vec3 col = base * (0.22 + diff*0.9 + diff2);
+    col += vec3(1.0,0.95,0.82) * spec * 0.8;             // gold specular
+    col += vec3(0.35,0.75,0.85) * rim * glow * 0.7;      // teal rim on membranes
+    // subsurface bloom in dense activator
+    col += colorMap(t,glow) * pow(v,2.0) * 0.7;
+
+    // --- faint underlying geometry (phyllotactic ghost) ---
+    col += vec3(0.55,0.44,0.26) * seed * (0.05 + 0.08*sin(u_time*0.3));
+
+    // --- post: subtle vignette, grain, tonemap ---
+    vec2 q = uv-0.5;
+    float vig = smoothstep(1.15, 0.35, length(q*vec2(1.0,1.15))*1.35);
+    col *= vig;
+
+    // ACES-ish filmic tonemap
+    col = (col*(2.51*col+0.03))/(col*(2.43*col+0.59)+0.14);
+    col = clamp(col,0.0,1.0);
+    col = pow(col, vec3(0.9)); // gentle contrast
+
+    // film grain
+    float g = fract(sin(dot(uv*u_res + u_time, vec2(12.9898,78.233)))*43758.5453);
+    col += (g-0.5)*0.02;
+
+    o_col = vec4(col, 1.0);
+  }`;
+
+  // ---------- seed shader (phyllotactic initial condition) ----------
+  const SEED_FS = `#version 300 es
+  precision highp float;
+  in vec2 v_uv;
+  out vec4 o_col;
+  uniform vec2 u_res;
+  uniform float u_seedN;
+  uniform float u_scatter;
+  const float PI = 3.14159265359;
+  const float GA = 2.39996322973;
+
+  float hash(vec2 p){ return fract(sin(dot(p,vec2(41.3,289.1)))*43758.5453); }
+
+  void main(){
+    vec2 uv = v_uv;
+    float aspect = u_res.x/u_res.y;
+    vec2 c = (uv-0.5)*vec2(aspect,1.0)*2.0;
+
+    float u = 1.0;
+    float v = 0.0;
+    float scale = 0.10;
+    // stamp activator at Fibonacci-spiral seed points
+    float r = length(c);
+    float nGuess = (r*r)/(scale*scale);
+    float lo = max(1.0, nGuess-16.0);
+    for(float i=0.0;i<34.0;i+=1.0){
+      float n = lo+i;
+      float rr = scale*sqrt(n);
+      float th = n*GA;
+      vec2 s = rr*vec2(cos(th),sin(th));
+      float d = distance(c,s);
+      float dot_ = smoothstep(0.028, 0.0, d);
+      v = max(v, dot_);
+    }
+    // scattered noise ignition for organic asymmetry
+    float noise = step(1.0-u_scatter, hash(floor(uv*u_res*0.35)));
+    v = max(v, noise*0.55);
+    u = 1.0 - v*0.5;
+    o_col = vec4(u, v, 0.0, 1.0);
+  }`;
+
+  const pSim    = prog(VS, SIM_FS);
+  const pRender = prog(VS, RENDER_FS);
+  const pSeed   = prog(VS, SEED_FS);
+
+  const uSim = uni(pSim, ["u_state","u_texel","u_res","u_time","u_dt","u_mouse","u_mouseDown","u_regime","u_aniso"]);
+  const uRen = uni(pRender, ["u_state","u_res","u_texel","u_time","u_regime"]);
+  const uSeed= uni(pSeed, ["u_res","u_seedN","u_scatter"]);
+
+  // ---------- framebuffers (ping-pong) ----------
+  let SIM_W = 0, SIM_H = 0;
+  let texA, texB, fboA, fboB;
+
+  function makeTex(w,h){
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.FLOAT, null);
+    const filt = extLF ? gl.LINEAR : gl.NEAREST;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filt);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filt);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  }
+  function makeFbo(t){
+    const f = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+    return f;
+  }
+
+  function allocate() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const cssW = window.innerWidth, cssH = window.innerHeight;
+    canvas.width  = Math.floor(cssW*dpr);
+    canvas.height = Math.floor(cssH*dpr);
+    canvas.style.width = cssW+"px";
+    canvas.style.height= cssH+"px";
+
+    // simulation resolution: cap for performance, keep aspect
+    const target = 700; // long edge of sim grid
+    const ar = cssW/cssH;
+    if (ar >= 1) { SIM_W = target; SIM_H = Math.round(target/ar); }
+    else { SIM_H = target; SIM_W = Math.round(target*ar); }
+
+    if (texA) { gl.deleteTexture(texA); gl.deleteTexture(texB); gl.deleteFramebuffer(fboA); gl.deleteFramebuffer(fboB); }
+    texA = makeTex(SIM_W, SIM_H); fboA = makeFbo(texA);
+    texB = makeTex(SIM_W, SIM_H); fboB = makeFbo(texB);
+    reseed();
+  }
+
+  function reseed() {
+    gl.useProgram(pSeed);
+    gl.bindVertexArray(vao);
+    gl.uniform2f(uSeed.u_res, SIM_W, SIM_H);
+    gl.uniform1f(uSeed.u_seedN, 400.0);
+    gl.uniform1f(uSeed.u_scatter, 0.006 + Math.random()*0.01);
+    gl.viewport(0,0,SIM_W,SIM_H);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fboA);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    // clear B to substrate
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fboB);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  // ---------- interaction ----------
+  let mouse = [-1,-1], mouseDown = 0;
+  let regime = 0.0;
+  let aniso  = 1.0;
+  const phaseNames = ["germination","mitosis","filament drift","labyrinth"];
+  const phaseLabel = document.getElementById("phaselabel");
+
+  function setPointer(ev, down) {
+    const r = canvas.getBoundingClientRect();
+    const x = (ev.clientX - r.left)/r.width;
+    const y = 1.0 - (ev.clientY - r.top)/r.height;
+    mouse = [x,y];
+    if (down !== undefined) mouseDown = down;
+  }
+  canvas.addEventListener("pointerdown", e=>{ setPointer(e,1); });
+  canvas.addEventListener("pointermove", e=>{ setPointer(e); });
+  window.addEventListener("pointerup", ()=>{ mouseDown = 0; });
+  canvas.addEventListener("pointerleave", ()=>{ mouseDown = 0; });
+
+  // ---- タッチ: タップ=新しい生命 / 2本指タップ=レジーム送り ----
+  // なぞってモルフォゲンを撒くのは pointer 系がそのまま拾う（#stage の touch-action:none が前提）。
+  // 指にはキーボードが無いので、space と 1–4 に相当する入口をここで用意する。
+  {
+    let tapAt = 0, moved = false, maxTouches = 0;
+    canvas.addEventListener("touchstart", e=>{
+      document.documentElement.classList.add("is-touch");
+      maxTouches = Math.max(maxTouches, e.touches.length);
+      if (e.touches.length === 1) { tapAt = performance.now(); moved = false; maxTouches = 1; }
+    }, { passive: true });
+    canvas.addEventListener("touchmove", ()=>{ moved = true; }, { passive: true });
+    canvas.addEventListener("touchend", e=>{
+      // 指が全部離れたときだけ確定する（2本指の片方を離した瞬間に誤発火させない）
+      if (e.touches.length === 0) {
+        if (tapAt && !moved && performance.now() - tapAt < 300) {
+          if (maxTouches >= 2) {
+            regime = (regime + 1) % 4;
+            phaseLabel.textContent = phaseNames[regime];
+          } else {
+            reseed();
+          }
+        }
+        mouseDown = 0; tapAt = 0; maxTouches = 0;
+      }
+    }, { passive: true });
+  }
+
+  window.addEventListener("keydown", (e)=>{
+    if (e.code === "Space") { e.preventDefault(); reseed(); }
+    else if (e.key === "1") { regime = 0; }
+    else if (e.key === "2") { regime = 1; }
+    else if (e.key === "3") { regime = 2; }
+    else if (e.key === "4") { regime = 3; }
+    else if (e.key.toLowerCase() === "s") { saveFrame(); }
+    if (["1","2","3","4"].includes(e.key)) phaseLabel.textContent = phaseNames[regime];
+  });
+
+  function saveFrame() {
+    // ensure current frame is rendered to default fb then read
+    render(performance.now(), true);
+    const a = document.createElement("a");
+    a.download = "morphogenesis_" + Date.now() + ".png";
+    a.href = canvas.toDataURL("image/png");
+    a.click();
+  }
+
+  // ---------- main loop ----------
+  let start = performance.now();
+  const STEPS_PER_FRAME = 14;
+
+  function simulate(now) {
+    const t = (now - start)*0.001;
+    gl.useProgram(pSim);
+    gl.bindVertexArray(vao);
+    gl.viewport(0,0,SIM_W,SIM_H);
+    gl.uniform2f(uSim.u_texel, 1.0/SIM_W, 1.0/SIM_H);
+    gl.uniform2f(uSim.u_res, SIM_W, SIM_H);
+    gl.uniform1f(uSim.u_dt, 1.0);
+    gl.uniform1f(uSim.u_regime, regime);
+    gl.uniform1f(uSim.u_aniso, aniso);
+
+    for (let i=0;i<STEPS_PER_FRAME;i++){
+      gl.uniform1f(uSim.u_time, t);
+      gl.uniform2f(uSim.u_mouse, mouse[0], mouse[1]);
+      gl.uniform1f(uSim.u_mouseDown, mouseDown);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, texA);
+      gl.uniform1i(uSim.u_state, 0);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fboB);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      // swap
+      let tt=texA; texA=texB; texB=tt;
+      let ff=fboA; fboA=fboB; fboB=ff;
+    }
+  }
+
+  function render(now, skipSim) {
+    const t = (now - start)*0.001;
+    gl.useProgram(pRender);
+    gl.bindVertexArray(vao);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0,0,canvas.width, canvas.height);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texA);
+    gl.uniform1i(uRen.u_state, 0);
+    gl.uniform2f(uRen.u_res, canvas.width, canvas.height);
+    gl.uniform2f(uRen.u_texel, 1.0/SIM_W, 1.0/SIM_H);
+    gl.uniform1f(uRen.u_time, t);
+    gl.uniform1f(uRen.u_regime, regime);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  let raf;
+  function frame(now) {
+    simulate(now);
+    render(now);
+    raf = requestAnimationFrame(frame);
+  }
+
+  let resizeTimer;
+  window.addEventListener("resize", ()=>{
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(allocate, 180);
+  });
+
+  allocate();
+  phaseLabel.textContent = phaseNames[0];
+  raf = requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

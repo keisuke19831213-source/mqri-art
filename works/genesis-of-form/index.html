@@ -27,17 +27,17 @@
     color:rgba(214,222,246,0.62);transition:opacity .6s ease;}
   #hud.hidden{opacity:0;}
   .corner{position:absolute;letter-spacing:.18em;}
-  #title{top:26px;left:30px;font-size:12px;line-height:1.9;}
+  #title{top:max(26px, env(safe-area-inset-top));left:max(30px, env(safe-area-inset-left));font-size:12px;line-height:1.9;}
   #title .en{font-family:"Optima","Avenir Next",sans-serif;font-size:10px;
     letter-spacing:.34em;opacity:.66;}
-  #stage{bottom:30px;left:30px;font-size:13px;line-height:1.8;}
+  #stage{bottom:max(30px, env(safe-area-inset-bottom));left:max(30px, env(safe-area-inset-left));font-size:13px;line-height:1.8;}
   #stage .en{font-family:"Optima","Avenir Next",sans-serif;font-size:9.5px;
     letter-spacing:.4em;opacity:.6;}
   #dots{display:flex;gap:7px;margin-top:10px;}
   #dots i{width:4px;height:4px;border-radius:50%;
     background:rgba(214,222,246,.22);transition:all .5s;}
   #dots i.on{background:rgba(255,214,150,.95);box-shadow:0 0 8px rgba(255,200,120,.8);}
-  #help{bottom:30px;right:30px;font-size:10px;letter-spacing:.14em;opacity:.5;
+  #help{bottom:max(30px, env(safe-area-inset-bottom));right:max(30px, env(safe-area-inset-right));font-size:10px;letter-spacing:.14em;opacity:.5;
     font-family:"Hiragino Kaku Gothic ProN",sans-serif;text-align:right;line-height:2;}
 </style>
 </head>

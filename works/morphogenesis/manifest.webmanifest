@@ -1,0 +1,10 @@
+{
+  "name": "生命と幾何学 — Morphogenesis",
+  "short_name": "生命と幾何学",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#05060a",
+  "theme_color": "#05060a",
+  "start_url": ".",
+  "icons": []
+}

@@ -34,7 +34,7 @@
   }
   .ui.hidden { opacity: 0; }
 
-  #title { top: 34px; left: 40px; }
+  #title { top: max(34px, env(safe-area-inset-top)); left: max(40px, env(safe-area-inset-left)); }
   #title h1 {
     margin: 0; font-size: 26px; font-weight: 500; letter-spacing: 0.35em;
     text-shadow: 0 0 24px rgba(120, 160, 255, 0.35);
@@ -44,11 +44,11 @@
     color: rgba(190, 200, 226, 0.62);
   }
 
-  #hint { bottom: 26px; left: 40px; font-size: 11px; letter-spacing: 0.14em;
+  #hint { bottom: max(26px, env(safe-area-inset-bottom)); left: max(40px, env(safe-area-inset-left)); font-size: 11px; letter-spacing: 0.14em;
           color: rgba(180, 190, 216, 0.55); line-height: 1.9; }
   #hint b { color: rgba(226, 232, 250, 0.8); font-weight: 500; }
 
-  #depth { bottom: 26px; right: 40px; font-size: 11px; letter-spacing: 0.2em;
+  #depth { bottom: max(26px, env(safe-area-inset-bottom)); right: max(40px, env(safe-area-inset-right)); font-size: 11px; letter-spacing: 0.2em;
            color: rgba(180, 190, 216, 0.55); text-align: right; font-variant-numeric: tabular-nums; }
 
   #fallback { position: fixed; inset: 0; display: none; place-items: center;

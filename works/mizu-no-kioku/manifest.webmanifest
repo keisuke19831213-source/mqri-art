@@ -1,0 +1,10 @@
+{
+  "name": "水の記憶 — Memory of Water",
+  "short_name": "水の記憶",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#05060a",
+  "theme_color": "#05060a",
+  "start_url": ".",
+  "icons": []
+}

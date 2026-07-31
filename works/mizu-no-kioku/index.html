@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="水の記憶 — Memory of Water。月夜の石鉢。浅水波をGPUで解き、200万個の光子を屈折させて椀の底に本物のコースティクスを結ぶ。MQRI ART。">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="水の記憶">
+<meta name="theme-color" content="#05060a">
+<link rel="manifest" href="manifest.webmanifest">
+<title>水の記憶 — Memory of Water</title>
+<style>
+  :root { color-scheme: dark; }
+  html,body { margin:0; padding:0; height:100%; background:#05060a; overflow:hidden; }
+  body { font-family:"Hiragino Mincho ProN","Yu Mincho",serif; }
+  canvas { display:block; width:100vw; height:100vh; touch-action:none; cursor:crosshair; }
+  #ui { position:fixed; inset:0; pointer-events:none; color:#cfd6e2; }
+  #title {
+    position:absolute; left:max(min(5vw,48px), env(safe-area-inset-left)); top:max(min(5vh,42px), env(safe-area-inset-top));
+    opacity:0; animation:fadein 4s 1.2s ease forwards;
+  }
+  #title .ja { font-size:clamp(20px,2.6vw,34px); letter-spacing:.42em; font-weight:400; }
+  #title .en {
+    font-family:"Times New Roman",serif; font-size:clamp(9px,.9vw,12px);
+    letter-spacing:.34em; opacity:.5; margin-top:.9em; text-transform:uppercase;
+  }
+  #hint {
+    position:absolute; left:max(min(5vw,48px), env(safe-area-inset-left)); bottom:max(min(5vh,42px), env(safe-area-inset-bottom));
+    font-size:clamp(9px,.85vw,11.5px); letter-spacing:.2em; line-height:2.1; opacity:0;
+    animation:fadein 3s 3s ease forwards, fadeout 4s 13s ease forwards;
+  }
+  #hint b { font-weight:400; color:#f0f2f6; }
+  #stat {
+    position:absolute; right:max(min(5vw,48px), env(safe-area-inset-right)); bottom:max(min(5vh,42px), env(safe-area-inset-bottom));
+    font-family:ui-monospace,Menlo,monospace; font-size:10px; letter-spacing:.14em;
+    opacity:.28; text-align:right; line-height:1.9;
+  }
+  #err {
+    position:fixed; inset:0; display:none; place-items:center; padding:8vw;
+    text-align:center; font-size:14px; line-height:2; color:#e8b9b9; background:#05060a;
+  }
+  .hidden { display:none !important; }
+  @keyframes fadein  { from{opacity:0; transform:translateY(6px)} to{opacity:.92; transform:none} }
+  @keyframes fadeout { from{opacity:.92} to{opacity:.14} }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="title">
+    <div class="ja">水の記憶</div>
+    <div class="en">Memory&nbsp;of&nbsp;Water</div>
+  </div>
+  <div id="hint">
+    <b>CLICK</b> — 一滴を落とす<br>
+    <b>SPACE</b> 雨 &nbsp;/&nbsp; <b>M</b> 記憶の層 &nbsp;/&nbsp; <b>R</b> 忘却 &nbsp;/&nbsp; <b>S</b> 保存 &nbsp;/&nbsp; <b>H</b> 文字
+  </div>
+  <div id="stat"></div>
+</div>
+<div id="err"></div>
+
+<script type="x-shader" id="vs-quad">#version 300 es
+out vec2 vUv;
+void main(){
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}
+</script>
+
+<script>
+"use strict";
+
+/* ============================================================================
+   水の記憶 / Memory of Water
+   ---------------------------------------------------------------------------
+   物理
+     ・可変水深の浅水波      h_tt = ∇·(c²∇h)          （椀状の鉢 → 縁で浅水変形）
+     ・毛細管分散            −σ∇⁴h                     （ω² = c²k² + σk⁴）
+     ・粘性減衰              +ν∇²v                     （高波数ほど速く消える）
+     ・記憶場                m ← m·decay + |h|·rate     （堆積）
+     ・痕跡場                e ← max(e·decay, |h|)      （包絡線＝干渉の刻印）
+   光学
+     ・Yuksel&Keyser 2009 方式の高さ場コースティクス
+       水面グリッドを屈折させ着地点へ貼り直し、強度 = 1/|det J|（面積比）
+     ・Schlick フレネル + 手続き環境反射 + 分散つき屈折 + Beer-Lambert 吸収
+   ========================================================================= */
+
+const CFG = {
+  SIM: 1024,          // シミュレーション格子
+  CAU: 768,           // コースティクスマップ（1テクセルあたり十分な光子数を確保）
+  GRID: 1408,         // 光子格子（GRID^2 個を射出）
+  PSIZE: 2.0,         // 光子1個のフットプリント（テクセル）
+  SUBSTEPS: 2,
+  DPR_MAX: 2.0,
+
+  // 安定条件：最悪モード (π,π) で ∇²→-8, ∇⁴→+64 なので 8*C2 + 64*S4 < 4。
+  // 余裕をとって 2.3 前後に収める（超えると格子スケールの市松振動が出る）。
+  C2: 0.220,          // 波速²（基準）
+  S4: 0.0085,         // 毛細管（双調和）係数
+  NU: 0.0150,         // 粘性（高波数ほど速く消える → 細波が先に凪ぐ）
+  DAMP: 0.99988,      // 全体減衰
+  K: 0.00022,         // k=0 モードの復元（水位ドリフト防止）
+  DT: 1.0,
+
+  MEM_DECAY: 0.999885, // 記憶の忘却（半減期およそ 50 秒）
+  MEM_RATE: 0.00125,   // 記憶の堆積
+  ENV_DECAY: 0.99978,  // 痕跡の忘却
+
+  SLOPE: 17.0,        // 高さ→勾配スケール
+  ETA: 1.0 / 1.333,
+  // 平坦な水面で 1.0 になるよう正規化（強度 = 1/|det J|）。
+  // グリッド1セルがコースティクスマップの1テクセル以上を覆う必要がある。
+  CAU_GAIN: 1.0,
+};
+
+/* --- 共通 GLSL（鉢の形状） ------------------------------------------------ */
+const GLSL_BASIN = `
+const float RB    = 0.940;          // 鉢の半径（p 単位）
+const float DEPTH = 0.430;          // 中心水深（深いほどコースティクスが伸びる）
+
+float depthAt(vec2 p){
+  float r = length(p) / RB;
+  float b = sqrt(max(0.0, 1.0 - min(r*r, 1.0)));   // 半球の椀
+  return DEPTH * pow(b, 0.55) + 0.0045;
+}
+float c2Scale(vec2 p){              // c² ∝ 水深（浅水波）
+  return 0.10 + 0.90 * (depthAt(p) / DEPTH);
+}
+`;
+
+/* --- ノイズ --------------------------------------------------------------- */
+const GLSL_NOISE = `
+float hash21(vec2 p){
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  float a = hash21(i), b = hash21(i + vec2(1,0));
+  float c = hash21(i + vec2(0,1)), d = hash21(i + vec2(1,1));
+  return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
+}
+float fbm(vec2 p){
+  float s = 0.0, a = 0.5;
+  for(int i = 0; i < 4; i++){ s += a * vnoise(p); p *= 2.03; p += 17.1; a *= 0.5; }
+  return s;
+}
+`;
+
+/* ========================= シミュレーション ================================ */
+const FS_SIM = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outState;
+
+uniform sampler2D uState;
+uniform vec2  uTexel;
+uniform float uC2, uS4, uNu, uDamp, uDt, uK;
+uniform float uMemDecay, uMemRate, uEnvDecay;
+uniform vec4  uDrops[12];
+uniform int   uNDrops;
+
+${GLSL_BASIN}
+
+void main(){
+  vec2 uv = vUv;
+  vec2 p  = uv * 2.0 - 1.0;
+  vec2 t  = uTexel;
+  vec2 dp = t * 2.0;                       // 1 テクセル = p 単位で 2*texel
+
+  vec4 C = texture(uState, uv);
+  vec4 L = texture(uState, uv - vec2(t.x, 0.0));
+  vec4 R = texture(uState, uv + vec2(t.x, 0.0));
+  vec4 D = texture(uState, uv - vec2(0.0, t.y));
+  vec4 U = texture(uState, uv + vec2(0.0, t.y));
+
+  float hLD = texture(uState, uv + vec2(-t.x, -t.y)).r;
+  float hRD = texture(uState, uv + vec2( t.x, -t.y)).r;
+  float hLU = texture(uState, uv + vec2(-t.x,  t.y)).r;
+  float hRU = texture(uState, uv + vec2( t.x,  t.y)).r;
+  float hLL = texture(uState, uv - vec2(2.0 * t.x, 0.0)).r;
+  float hRR = texture(uState, uv + vec2(2.0 * t.x, 0.0)).r;
+  float hDD = texture(uState, uv - vec2(0.0, 2.0 * t.y)).r;
+  float hUU = texture(uState, uv + vec2(0.0, 2.0 * t.y)).r;
+
+  // ∇·(c²∇h) : 面での平均係数（保存形）
+  float sC = c2Scale(p);
+  float fx = 0.5 * (sC + c2Scale(p - vec2(dp.x, 0.0))) * (L.r - C.r)
+           + 0.5 * (sC + c2Scale(p + vec2(dp.x, 0.0))) * (R.r - C.r)
+           + 0.5 * (sC + c2Scale(p - vec2(0.0, dp.y))) * (D.r - C.r)
+           + 0.5 * (sC + c2Scale(p + vec2(0.0, dp.y))) * (U.r - C.r);
+
+  // ∇⁴h : 13点ステンシル（毛細管分散）
+  float bil = 20.0 * C.r
+            - 8.0 * (L.r + R.r + D.r + U.r)
+            + 2.0 * (hLD + hRD + hLU + hRU)
+            + (hLL + hRR + hDD + hUU);
+
+  // ∇²v : 粘性
+  float lapV = L.g + R.g + D.g + U.g - 4.0 * C.g;
+
+  float h = C.r, v = C.g;
+  // uK は k=0 モードの復元項。波動方程式は一様な水位変化に力を及ぼさないため、
+  // これが無いと外力のわずかな直流成分で水位が際限なくドリフトする。
+  v += uDt * (uC2 * fx - uS4 * bil + uNu * lapV - uK * h);
+  v *= uDamp;
+
+  for(int i = 0; i < 12; i++){
+    if(i >= uNDrops) break;
+    vec4 d = uDrops[i];
+    vec2 q = p - d.xy;
+    v -= d.w * exp(-dot(q, q) / (d.z * d.z));
+  }
+
+  h += uDt * v;
+
+  // 鉢の縁：ピン留め境界（滑らかに）
+  float m = 1.0 - smoothstep(RB - 0.115, RB - 0.010, length(p));
+  h *= m; v *= m;
+  h = clamp(h, -8.0, 8.0);
+  v = clamp(v, -8.0, 8.0);
+
+  float a = abs(h);
+  float mem = min(C.b * uMemDecay + a * uMemRate, 8.0);   // 堆積する記憶
+  float env = max(C.a * uEnvDecay, a);                    // 干渉の刻印
+
+  outState = vec4(h, v, mem, env);
+}
+`;
+
+/* ================== 法線＋記憶の抽出（線形補間できる 16F へ） ============== */
+const FS_NRM = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outN;
+
+uniform sampler2D uState;
+uniform vec2  uTexel;
+uniform float uSlope;
+
+void main(){
+  vec2 t = uTexel;
+  float hL  = texture(uState, vUv - vec2(t.x, 0.0)).r;
+  float hR  = texture(uState, vUv + vec2(t.x, 0.0)).r;
+  float hD  = texture(uState, vUv - vec2(0.0, t.y)).r;
+  float hU  = texture(uState, vUv + vec2(0.0, t.y)).r;
+  float hLD = texture(uState, vUv + vec2(-t.x, -t.y)).r;
+  float hRD = texture(uState, vUv + vec2( t.x, -t.y)).r;
+  float hLU = texture(uState, vUv + vec2(-t.x,  t.y)).r;
+  float hRU = texture(uState, vUv + vec2( t.x,  t.y)).r;
+
+  // Sobel 勾配（ノイズに強い）
+  vec2 g = vec2((hR - hL) * 2.0 + (hRU - hLU) + (hRD - hLD),
+                (hU - hD) * 2.0 + (hRU - hRD) + (hLU - hLD)) * (uSlope / 8.0);
+
+  vec4 c = texture(uState, vUv);
+  outN = vec4(g, c.b, c.a);
+}
+`;
+
+/* ======================= コースティクス（頂点で屈折） ====================== */
+const VS_CAUSTIC = `#version 300 es
+precision highp float;
+out float vI;
+
+uniform sampler2D uState;
+uniform vec2  uTexel;
+uniform int   uG;
+uniform float uSlope, uEta, uGain, uPointSize;
+uniform vec3  uLdir;      // 光の進行方向（z<0）
+
+${GLSL_BASIN}
+
+float hash11(float x){ return fract(sin(x * 127.1) * 43758.5453123); }
+
+vec3 nrmAt(vec2 uv){
+  vec2 t = uTexel * 2.0;
+  float hL = texture(uState, uv - vec2(t.x, 0.0)).r;
+  float hR = texture(uState, uv + vec2(t.x, 0.0)).r;
+  float hD = texture(uState, uv - vec2(0.0, t.y)).r;
+  float hU = texture(uState, uv + vec2(0.0, t.y)).r;
+  vec2 g = vec2(hR - hL, hU - hD) * (uSlope * 0.25);
+  return normalize(vec3(-g, 1.0));
+}
+
+// 水面 uv から光線を屈折させ、椀の底との交点（p 単位）を返す
+vec2 land(vec2 uv){
+  vec2 p = uv * 2.0 - 1.0;
+  vec3 n = nrmAt(uv);
+  vec3 T = refract(uLdir, n, uEta);
+  if(T.z > -0.25) T = uLdir;                       // 全反射・浅角ガード
+  float t = depthAt(p) / (-T.z);
+  t = depthAt(p + T.xy * t) / (-T.z);              // 曲面床へ 1 回反復
+  vec2 off = T.xy * t;
+  float L = length(off);
+  if(L > 0.24) off *= 0.24 / L;                    // 暴走防止
+  return p + off;
+}
+
+void main(){
+  // 等エネルギー光子を格子状に射出し、着地点の「密度」でコースティクスを作る。
+  // 面積比 1/|det J| を陽に計算する方式は、折り返しでセルが針状に潰れたとき
+  // ラスタライザが部分被覆を表せず破綻する。密度方式なら折り返しは
+  // 単純な重ね合わせとして正しく積算される。
+  int q = gl_VertexID;
+  // セル内をジッタして確率的サンプリングにする。規則格子のままだと
+  // 出力グリッドとのモアレが「虫食い状の暗線」として現れる。
+  vec2 j = vec2(hash11(float(q) * 1.618), hash11(float(q) * 3.301 + 7.77));
+  vec2 gp = (vec2(float(q - (q / uG) * uG), float(q / uG)) + j) / float(uG);
+
+  float r = length(gp * 2.0 - 1.0);
+  float mask = 1.0 - smoothstep(RB - 0.070, RB - 0.008, r);
+
+  vI = uGain * mask;
+  gl_PointSize = uPointSize;
+  gl_Position = vec4(land(gp), 0.0, 1.0);
+}
+`;
+
+const FS_CAUSTIC = `#version 300 es
+precision highp float;
+in float vI;
+out vec4 o;
+void main(){ o = vec4(max(vI, 0.0)); }
+`;
+
+/* ------------------------------ ぼかし ------------------------------------ */
+const FS_BLUR = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uTex;
+uniform vec2 uDir;                       // テクセル単位の方向
+void main(){
+  vec4 s = texture(uTex, vUv) * 0.2270270;
+  s += (texture(uTex, vUv + uDir * 1.3846153) +
+        texture(uTex, vUv - uDir * 1.3846153)) * 0.3162162;
+  s += (texture(uTex, vUv + uDir * 3.2307692) +
+        texture(uTex, vUv - uDir * 3.2307692)) * 0.0702702;
+  o = s;
+}
+`;
+
+const FS_BRIGHT = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uTex;
+uniform float uThresh;
+void main(){
+  vec3 c = texture(uTex, vUv).rgb;
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  o = vec4(c * smoothstep(uThresh, uThresh * 2.2, l), 1.0);
+}
+`;
+
+const FS_DOWN = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uTex;
+uniform vec2 uTexel;
+void main(){
+  vec4 s = texture(uTex, vUv + uTexel * vec2(-1.0, -1.0))
+         + texture(uTex, vUv + uTexel * vec2( 1.0, -1.0))
+         + texture(uTex, vUv + uTexel * vec2(-1.0,  1.0))
+         + texture(uTex, vUv + uTexel * vec2( 1.0,  1.0));
+  o = s * 0.25;
+}
+`;
+
+/* ================================ 本描画 ================================== */
+const FS_SCENE = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+
+uniform sampler2D uNrm;        // (gx, gy, mem, env)
+uniform sampler2D uCau;
+uniform vec2  uRes;
+uniform float uTime;
+uniform float uMemShow;
+uniform float uCauLod;         // 1x1 まで縮約したミップの段
+
+// 鉢の面積 / マップ全体（π·RB²/4）。マップ平均から鉢内平均を復元する係数。
+const float BASIN_FRAC = 0.6936;
+
+${GLSL_BASIN}
+${GLSL_NOISE}
+
+const vec3 KEY = vec3(-0.330, 0.420, 0.845);   // 主光源（正規化前）
+
+vec3 envColor(vec3 d){
+  float up = clamp(d.z * 0.5 + 0.5, 0.0, 1.0);
+  vec3 c = mix(vec3(0.0030, 0.0042, 0.0070), vec3(0.020, 0.027, 0.040), pow(up, 1.35));
+
+  vec3 kd = normalize(KEY);
+  float s = max(dot(d, kd), 0.0);
+  c += vec3(1.00, 0.965, 0.900) * pow(s, 4200.0) * 34.0;   // 鋭い月
+  c += vec3(0.52, 0.585, 0.700) * pow(s,  420.0) * 0.34;   // 暈
+  c += vec3(0.24, 0.300, 0.420) * pow(s,   14.0) * 0.016;
+
+  // 対岸の淡い帯
+  float band = pow(max(0.0, 1.0 - abs(d.z + 0.05) * 6.5), 4.0);
+  c += vec3(0.011, 0.014, 0.021) * band;
+  return c;
+}
+
+// 床（堆積した記憶）
+vec3 floorAlbedo(vec2 fp, float mem, float env){
+  float grain = fbm(fp * 118.0) * 0.55 + fbm(fp * 41.0) * 0.45;
+  vec3 stone = mix(vec3(0.085, 0.092, 0.110), vec3(0.185, 0.190, 0.205), grain);
+  stone *= 0.72 + 0.28 * fbm(fp * 7.0 + 3.1);
+
+  // 記憶＝堆積：粒状の鉱物
+  float m  = 1.0 - exp(-mem * 2.4);
+  float mg = m * (0.45 + 0.55 * grain);
+  vec3 silver = vec3(0.62, 0.68, 0.78);
+  vec3 gold   = vec3(0.72, 0.575, 0.335);
+  vec3 dep = mix(gold, silver, smoothstep(0.15, 0.85, m));
+
+  // 痕跡＝干渉の刻印（細い線）
+  float e  = 1.0 - exp(-env * 9.0);
+  float et = smoothstep(0.06, 0.55, e) * (0.35 + 0.65 * grain);
+
+  return stone + dep * mg * 0.34 * uMemShow + vec3(0.55, 0.60, 0.68) * et * 0.075 * uMemShow;
+}
+
+// 鉢のまわりの石
+vec3 stoneSurround(vec2 p){
+  float r = length(p);
+  float g = fbm(p * 26.0) * 0.6 + fbm(p * 90.0) * 0.4;
+  vec3 c = mix(vec3(0.00230, 0.00250, 0.00320), vec3(0.00600, 0.00640, 0.00760), g);
+
+  // 同心の彫り
+  float ring = sin((r - RB) * 74.0);
+  c += vec3(0.00090, 0.00098, 0.00125) * smoothstep(0.62, 1.0, ring)
+                                       * (1.0 - smoothstep(0.98, 1.34, r));
+
+  // 主光源による面の起伏（勾配は 1 オクターブで足りる）
+  vec2 gd = vec2(vnoise(p * 14.0 + vec2(0.6, 0.0)) - vnoise(p * 14.0 - vec2(0.6, 0.0)),
+                 vnoise(p * 14.0 + vec2(0.0, 0.6)) - vnoise(p * 14.0 - vec2(0.0, 0.6)));
+  c *= 1.0 + clamp(dot(normalize(vec3(-gd * 1.5, 1.0)), normalize(KEY)), -0.7, 1.0) * 0.42;
+
+  // 縁の接地影
+  c *= 0.22 + 0.78 * smoothstep(RB, RB + 0.085, r);
+  return max(c, vec3(0.0));
+}
+
+void main(){
+  float asp = uRes.x / uRes.y;
+  vec2 p = (vUv * 2.0 - 1.0) * vec2(asp, 1.0) * 1.06;
+  float r = length(p);
+
+  vec3 col;
+
+  if(r > RB + 0.0015){
+    col = stoneSurround(p);
+
+    // 水際のメニスカス（きらり）
+    float mn = (1.0 - smoothstep(RB + 0.001, RB + 0.020, r)) * smoothstep(RB - 0.004, RB + 0.004, r);
+    float side = clamp(dot(normalize(p), normalize(KEY.xy)), 0.0, 1.0);
+    col += vec3(0.55, 0.60, 0.70) * mn * (0.06 + 0.94 * pow(side, 2.6)) * 0.075;
+  } else {
+    vec2 suv = p * 0.5 + 0.5;
+    vec4 N4 = texture(uNrm, suv);
+    vec3 n  = normalize(vec3(-N4.xy, 1.0));
+
+    // 総光量は水面の荒れ方によらず一定 → マップ平均で正規化して露出を安定させる
+    float cauNorm = BASIN_FRAC / max(textureLod(uCau, vec2(0.5), uCauLod).r, 1e-4);
+
+    // 少し傾いた視線（手前から覗きこむ）
+    vec3 V = normalize(vec3(0.0, -0.55, 3.00) - vec3(p, 0.0));
+
+    // ---- 屈折（波長ごとに屈折率をずらして分散を出す）
+    float d0 = depthAt(p);
+    vec3 etas = vec3(0.7440, 0.7502, 0.7572);   // R,G,B
+    vec2 fps[3];
+    float pathAvg = 0.0;
+    for(int i = 0; i < 3; i++){
+      vec3 T = refract(-V, n, etas[i]);
+      if(T.z > -0.25) T = vec3(0.0, 0.0, -1.0);
+      float t = d0 / (-T.z);
+      t = depthAt(p + T.xy * t) / (-T.z);
+      vec2 off = T.xy * t;
+      float L = length(off);
+      if(L > 0.22) off *= 0.22 / L;
+      vec2 fp = p + off;
+      float fr = length(fp);
+      if(fr > RB - 0.02) fp *= (RB - 0.02) / fr;   // 床は鉢の内側にしか無い
+      fps[i] = fp;
+      pathAvg += t;
+    }
+    pathAvg /= 3.0;
+
+    // 床の材質は 3 波長でほぼ同じ位置 → 1 回だけ評価する（fbm が支配的なので効く）
+    vec2 fpM = fps[1];
+    vec4 fs   = texture(uNrm, fpM * 0.5 + 0.5);
+    vec3 alb  = floorAlbedo(fpM, fs.b, fs.a);
+    float amb = 0.008 + 0.014 * smoothstep(0.0, 0.48, depthAt(fpM) / DEPTH);
+
+    vec3 base;
+    for(int i = 0; i < 3; i++){
+      float cau = texture(uCau, fps[i] * 0.5 + 0.5).r * cauNorm;
+      base[i] = alb[i] * (amb + cau * 0.290);
+    }
+
+    // Beer-Lambert（下りの光路 + 上りの視線路）
+    float path = pathAvg + d0;
+    vec3 sigma = vec3(2.05, 0.90, 0.44);   // 藍に沈む（赤→緑→青の順に吸われる）
+    vec3 trans = exp(-sigma * path);
+    vec3 refr = base * trans;
+
+    // 散乱による僅かな身（藍）
+    refr += vec3(0.0016, 0.0042, 0.0078) * (1.0 - trans);
+
+    // ---- 反射
+    vec3 Rv = reflect(-V, n);
+    vec3 refl = envColor(Rv);
+
+    // ---- フレネル（Schlick）
+    float ct = clamp(dot(n, V), 0.0, 1.0);
+    float F = 0.02 + 0.98 * pow(1.0 - ct, 5.0);
+
+    col = mix(refr, refl, F);
+
+    // ---- 鏡面のきらめき（月光の道）
+    vec3 H = normalize(normalize(KEY) + V);
+    float nh = max(dot(n, H), 0.0);
+    float spec = pow(nh, 2600.0) * 1.05 + pow(nh, 210.0) * 0.045;
+    col += vec3(1.0, 0.97, 0.92) * spec * F * 26.0;
+
+    // 縁の内影（水際を締める）
+    col *= 1.0 - smoothstep(RB - 0.075, RB, r) * 0.72;
+  }
+
+  o = vec4(col, 1.0);
+}
+`;
+
+/* ============================== 合成 ====================================== */
+const FS_POST = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+
+uniform sampler2D uScene, uBloomA, uBloomB, uCauDbg, uNrmDbg;
+uniform vec2  uRes;
+uniform float uTime, uFade;
+uniform int   uDebug;
+
+${GLSL_NOISE}
+
+vec3 aces(vec3 x){
+  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+void main(){
+  vec2 uv = vUv;
+  vec2 q  = uv * 2.0 - 1.0;
+  float r2 = dot(q, q);
+
+  if(uDebug > 0){
+    vec3 d;
+    if(uDebug == 1)      d = vec3(texture(uCauDbg, uv).r * 0.25);
+    else if(uDebug == 2) d = vec3(texture(uNrmDbg, uv).xy * 3.0 + 0.5, 0.5);
+    else if(uDebug == 3) d = texture(uScene, uv).rgb * 24.0;
+    else                 d = vec3(texture(uNrmDbg, uv).b * 0.4, texture(uNrmDbg, uv).a * 0.4, 0.0);
+    o = vec4(pow(clamp(d, 0.0, 1.0), vec3(1.0 / 2.2)), 1.0);
+    return;
+  }
+
+  // 周辺の色収差
+  vec2 ca = q * r2 * 0.0013;
+  vec3 c;
+  c.r = texture(uScene, uv + ca).r;
+  c.g = texture(uScene, uv).g;
+  c.b = texture(uScene, uv - ca).b;
+
+  c += texture(uBloomA, uv).rgb * 0.52;
+  c += texture(uBloomB, uv).rgb * 0.62;
+
+  c *= 1.0 - 0.42 * smoothstep(0.28, 1.85, r2);         // ヴィネット
+  c = aces(c * 1.05);
+  c = pow(c, vec3(1.0 / 2.2));
+
+  // 粒子と量子化ディザ
+  float g = hash21(gl_FragCoord.xy + fract(uTime) * 137.0) - 0.5;
+  c += g * 0.016;
+  c += (hash21(gl_FragCoord.yx * 1.7 + fract(uTime * 0.37) * 51.0) - 0.5) / 255.0;
+
+  o = vec4(max(c, vec3(0.0)) * uFade, 1.0);
+}
+`;
+
+/* ========================================================================== */
+/*                                  実装                                       */
+/* ========================================================================== */
+
+const canvas = document.getElementById("c");
+const errBox = document.getElementById("err");
+const DEBUG = parseInt(new URLSearchParams(location.search).get("d") || "0", 10) | 0;
+
+function fail(msg){
+  errBox.style.display = "grid";
+  errBox.textContent = msg;
+  canvas.style.display = "none";
+}
+
+const gl = canvas.getContext("webgl2", {
+  alpha: false, antialias: false, depth: false, stencil: false,
+  powerPreference: "high-performance", preserveDrawingBuffer: true,
+});
+if(!gl) fail("この環境では WebGL2 が使えません。");
+
+const extCBF = gl && gl.getExtension("EXT_color_buffer_float");
+const extFL  = gl && gl.getExtension("OES_texture_float_linear");
+if(gl && !extCBF) fail("浮動小数点レンダーターゲット（EXT_color_buffer_float）が使えません。");
+
+/* ------------------------------ GL ヘルパ --------------------------------- */
+const VS_QUAD = document.getElementById("vs-quad").textContent.trim();
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+    const log = gl.getShaderInfoLog(s);
+    console.error(log, src.split("\n").map((l, i) => (i + 1) + ": " + l).join("\n"));
+    throw new Error("shader: " + log);
+  }
+  return s;
+}
+function program(vsSrc, fsSrc){
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vsSrc));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fsSrc));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error("link: " + gl.getProgramInfoLog(p));
+  const u = {};
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for(let i = 0; i < n; i++){
+    const info = gl.getActiveUniform(p, i);
+    const name = info.name.replace(/\[0\]$/, "");
+    u[name] = gl.getUniformLocation(p, name);
+  }
+  return { p, u };
+}
+function texture(w, h, internal, format, type, filter){
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, format, type, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return { t, w, h };
+}
+function fbo(tex){
+  const f = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex.t, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return { f, tex, w: tex.w, h: tex.h };
+}
+function target(w, h, internal, format, type, filter){ return fbo(texture(w, h, internal, format, type, filter)); }
+function bindT(prog, name, tex, unit){
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, tex.t);
+  if(prog.u[name]) gl.uniform1i(prog.u[name], unit);
+}
+function useTarget(t){
+  gl.bindFramebuffer(gl.FRAMEBUFFER, t ? t.f : null);
+  if(t) gl.viewport(0, 0, t.w, t.h);
+  else  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+function quad(){ gl.drawArrays(gl.TRIANGLES, 0, 3); }
+
+/* ------------------------------ 資源 -------------------------------------- */
+let prSim, prNrm, prCau, prScene, prPost, prBlur, prBright, prDown;
+let simA, simB, nrmT, cauT, cauTmp;
+let sceneT, brightT, blurA1, blurA2, blurB1, blurB2;
+let vao;
+
+try {
+  prSim    = program(VS_QUAD, FS_SIM);
+  prNrm    = program(VS_QUAD, FS_NRM);
+  prCau    = program(VS_CAUSTIC, FS_CAUSTIC);
+  prScene  = program(VS_QUAD, FS_SCENE);
+  prPost   = program(VS_QUAD, FS_POST);
+  prBlur   = program(VS_QUAD, FS_BLUR);
+  prBright = program(VS_QUAD, FS_BRIGHT);
+  prDown   = program(VS_QUAD, FS_DOWN);
+} catch(e){ fail("シェーダの初期化に失敗しました: " + e.message); }
+
+if(gl && extCBF){
+  vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+
+  const S = CFG.SIM;
+  simA = target(S, S, gl.RGBA32F, gl.RGBA, gl.FLOAT, gl.NEAREST);
+  simB = target(S, S, gl.RGBA32F, gl.RGBA, gl.FLOAT, gl.NEAREST);
+  nrmT = target(S, S, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
+
+  const C = CFG.CAU;
+  cauT   = target(C, C, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
+  cauTmp = target(C, C, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
+
+  // 平均輝度用にミップ連鎖を確保しておく（初回に作らないとテクスチャ不完全になる）
+  gl.bindTexture(gl.TEXTURE_2D, cauT.tex.t);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  gl.generateMipmap(gl.TEXTURE_2D);
+
+  for(const t of [simA, simB]){
+    useTarget(t);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+  }
+}
+
+/* ------------------------------ サイズ ------------------------------------ */
+let W = 0, H = 0;
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio || 1, CFG.DPR_MAX);
+  const w = Math.max(2, Math.round(canvas.clientWidth  * dpr));
+  const h = Math.max(2, Math.round(canvas.clientHeight * dpr));
+  if(w === W && h === H) return;
+  W = canvas.width = w; H = canvas.height = h;
+
+  const mk = (a, b) => target(Math.max(2, a), Math.max(2, b),
+                              gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
+  sceneT  = mk(W, H);
+  brightT = mk(W >> 1, H >> 1);
+  blurA1  = mk(W >> 2, H >> 2);
+  blurA2  = mk(W >> 2, H >> 2);
+  blurB1  = mk(W >> 4, H >> 4);
+  blurB2  = mk(W >> 4, H >> 4);
+}
+
+/* ------------------------------ 波の源 ------------------------------------ */
+const drops = [];
+function addDrop(x, y, radius, amp){
+  if(drops.length >= 12) return;
+  drops.push([x, y, radius, amp]);
+}
+function randomPointInBasin(bias){
+  const a = Math.random() * Math.PI * 2;
+  const r = Math.pow(Math.random(), bias) * 0.80;
+  return [Math.cos(a) * r, Math.sin(a) * r];
+}
+
+let nextDrop = 1.2, nextRain = 26.0;
+function schedule(t, dt){
+  // 微風：水面は決して完全には静止しない（常時の細波＝きらめきの源）
+  for(let i = 0; i < 2; i++){
+    const [x, y] = randomPointInBasin(0.45);
+    addDrop(x, y, 0.020 + Math.random() * 0.062, (Math.random() - 0.5) * 0.0092);
+  }
+  nextDrop -= dt;
+  if(nextDrop <= 0){
+    const [x, y] = randomPointInBasin(0.62);
+    addDrop(x, y, 0.012 + Math.random() * 0.016, 0.024 + Math.random() * 0.042);
+    nextDrop = 1.6 + Math.random() * 2.9;
+  }
+  nextRain -= dt;
+  if(nextRain <= 0){
+    const n = 5 + (Math.random() * 6 | 0);
+    for(let i = 0; i < n; i++){
+      const [x, y] = randomPointInBasin(0.5);
+      addDrop(x, y, 0.008 + Math.random() * 0.007, 0.008 + Math.random() * 0.014);
+    }
+    nextRain = 30.0 + Math.random() * 42.0;
+  }
+}
+
+/* ------------------------------ 入力 -------------------------------------- */
+function pointerToBasin(ev){
+  const r = canvas.getBoundingClientRect();
+  const u = (ev.clientX - r.left) / r.width;
+  const v = 1.0 - (ev.clientY - r.top) / r.height;
+  const asp = r.width / r.height;
+  return [(u * 2 - 1) * asp * 1.06, (v * 2 - 1) * 1.06];
+}
+canvas.addEventListener("pointerdown", (ev) => {
+  const [x, y] = pointerToBasin(ev);
+  if(Math.hypot(x, y) < 0.93) addDrop(x, y, 0.018, 0.076);
+});
+canvas.addEventListener("pointermove", (ev) => {
+  if(ev.buttons !== 1) return;
+  const [x, y] = pointerToBasin(ev);
+  if(Math.hypot(x, y) < 0.93) addDrop(x, y, 0.012, 0.011);
+});
+
+let memShow = 1.0, uiHidden = false, capture = false;
+addEventListener("keydown", (e) => {
+  const k = e.key.toLowerCase();
+  if(k === " " || e.code === "Space"){
+    e.preventDefault();
+    for(let i = 0; i < 8; i++){
+      const [x, y] = randomPointInBasin(0.5);
+      addDrop(x, y, 0.008 + Math.random() * 0.007, 0.011 + Math.random() * 0.018);
+    }
+  } else if(k === "m"){ memShow = memShow > 0.5 ? 0.0 : 1.0; }
+  else if(k === "r"){
+    for(const t of [simA, simB]){ useTarget(t); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT); }
+  }
+  else if(k === "h"){ uiHidden = !uiHidden; document.getElementById("ui").classList.toggle("hidden", uiHidden); }
+  else if(k === "s"){ capture = true; }
+});
+
+/* ------------------------------ ループ ------------------------------------ */
+const statEl = document.getElementById("stat");
+let t0 = performance.now(), tPrev = t0, frames = 0, fps = 0, fpsT = 0;
+let memShowSmooth = 1.0;
+let fade = 0.0;
+let quality = 0;
+
+function pass(prog, tgt){ gl.useProgram(prog.p); useTarget(tgt); }
+
+const dropBuf = new Float32Array(48);
+
+/* 波の時間発展。待機中の drops は最初のサブステップでのみ注入する。 */
+function stepSim(steps){
+  gl.useProgram(prSim.p);
+  gl.uniform2f(prSim.u.uTexel, 1 / CFG.SIM, 1 / CFG.SIM);
+  gl.uniform1f(prSim.u.uC2, CFG.C2);
+  gl.uniform1f(prSim.u.uS4, CFG.S4);
+  gl.uniform1f(prSim.u.uNu, CFG.NU);
+  gl.uniform1f(prSim.u.uDamp, CFG.DAMP);
+  gl.uniform1f(prSim.u.uDt, CFG.DT);
+  gl.uniform1f(prSim.u.uK, CFG.K);
+  gl.uniform1f(prSim.u.uMemDecay, CFG.MEM_DECAY);
+  gl.uniform1f(prSim.u.uMemRate, CFG.MEM_RATE);
+  gl.uniform1f(prSim.u.uEnvDecay, CFG.ENV_DECAY);
+
+  for(let s = 0; s < steps; s++){
+    useTarget(simB);
+    bindT(prSim, "uState", simA.tex, 0);
+    if(s === 0 && drops.length){
+      dropBuf.fill(0);
+      for(let i = 0; i < drops.length; i++) dropBuf.set(drops[i], i * 4);
+      gl.uniform4fv(prSim.u.uDrops, dropBuf);
+      gl.uniform1i(prSim.u.uNDrops, drops.length);
+    } else {
+      gl.uniform1i(prSim.u.uNDrops, 0);
+    }
+    quad();
+    const tmp = simA; simA = simB; simB = tmp;
+  }
+  drops.length = 0;
+}
+
+function blurInto(src, tmp, dst, radius){
+  pass(prBlur, tmp);
+  bindT(prBlur, "uTex", src.tex, 0);
+  gl.uniform2f(prBlur.u.uDir, radius / tmp.w, 0.0);
+  quad();
+  pass(prBlur, dst);
+  bindT(prBlur, "uTex", tmp.tex, 0);
+  gl.uniform2f(prBlur.u.uDir, 0.0, radius / dst.h);
+  quad();
+}
+
+function frame(now){
+  requestAnimationFrame(frame);
+  if(!gl || !extCBF || errBox.style.display === "grid") return;
+
+  const dt = Math.min((now - tPrev) / 1000, 0.05);
+  tPrev = now;
+  const time = (now - t0) / 1000;
+  fade = Math.min(1.0, time * 0.55);      // 壁時計基準（フレーム落ちに影響されない）
+  memShowSmooth += (memShow - memShowSmooth) * Math.min(1, dt * 4.0);
+
+  resize();
+  gl.bindVertexArray(vao);
+  gl.disable(gl.BLEND);
+
+  schedule(time, dt);
+
+  // フレーム時間に追随（落ちても水は同じ速さで進む）。上限で安定性を担保。
+  stepSim(Math.max(1, Math.min(6, Math.round(dt * 60 * CFG.SUBSTEPS))));
+
+  /* --- 2. 法線＋記憶 --- */
+  pass(prNrm, nrmT);
+  bindT(prNrm, "uState", simA.tex, 0);
+  gl.uniform2f(prNrm.u.uTexel, 1 / CFG.SIM, 1 / CFG.SIM);
+  gl.uniform1f(prNrm.u.uSlope, CFG.SLOPE);
+  quad();
+
+  /* --- 3. コースティクス（面積比） --- */
+  pass(prCau, cauT);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  bindT(prCau, "uState", simA.tex, 0);
+  gl.uniform2f(prCau.u.uTexel, 1 / CFG.SIM, 1 / CFG.SIM);
+  gl.uniform1i(prCau.u.uG, CFG.GRID);
+  gl.uniform1f(prCau.u.uSlope, CFG.SLOPE);
+  gl.uniform1f(prCau.u.uEta, CFG.ETA);
+  gl.uniform1f(prCau.u.uGain, CFG.CAU_GAIN);
+  gl.uniform1f(prCau.u.uPointSize, CFG.PSIZE);
+  gl.uniform3f(prCau.u.uLdir, 0.115, -0.070, -0.9906);
+  gl.drawArrays(gl.POINTS, 0, CFG.GRID * CFG.GRID);
+  gl.disable(gl.BLEND);
+
+  blurInto(cauT, cauTmp, cauT, 1.15);
+
+  // 平均輝度をミップ縮約で求める（露出の自動正規化に使う）
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, cauT.tex.t);
+  gl.generateMipmap(gl.TEXTURE_2D);
+
+  /* --- 4. 本描画 --- */
+  pass(prScene, sceneT);
+  bindT(prScene, "uNrm", nrmT.tex, 0);
+  bindT(prScene, "uCau", cauT.tex, 1);
+  gl.uniform2f(prScene.u.uRes, W, H);
+  gl.uniform1f(prScene.u.uTime, time);
+  gl.uniform1f(prScene.u.uMemShow, memShowSmooth);
+  gl.uniform1f(prScene.u.uCauLod, Math.log2(CFG.CAU));
+  quad();
+
+  /* --- 5. ブルーム（2 段） --- */
+  pass(prBright, brightT);
+  bindT(prBright, "uTex", sceneT.tex, 0);
+  gl.uniform1f(prBright.u.uThresh, 0.085);
+  quad();
+
+  pass(prDown, blurA1);
+  bindT(prDown, "uTex", brightT.tex, 0);
+  gl.uniform2f(prDown.u.uTexel, 1 / brightT.w, 1 / brightT.h);
+  quad();
+  blurInto(blurA1, blurA2, blurA1, 1.6);
+
+  pass(prDown, blurB1);
+  bindT(prDown, "uTex", blurA1.tex, 0);
+  gl.uniform2f(prDown.u.uTexel, 1 / blurA1.w, 1 / blurA1.h);
+  quad();
+  blurInto(blurB1, blurB2, blurB1, 2.4);
+
+  /* --- 6. 合成 --- */
+  pass(prPost, null);
+  bindT(prPost, "uScene",  sceneT.tex, 0);
+  bindT(prPost, "uBloomA", blurA1.tex, 1);
+  bindT(prPost, "uBloomB", blurB1.tex, 2);
+  bindT(prPost, "uCauDbg", cauT.tex, 3);
+  bindT(prPost, "uNrmDbg", nrmT.tex, 4);
+  gl.uniform2f(prPost.u.uRes, W, H);
+  gl.uniform1f(prPost.u.uTime, time);
+  gl.uniform1f(prPost.u.uFade, fade);
+  gl.uniform1i(prPost.u.uDebug, DEBUG);
+  quad();
+
+  if(capture){
+    capture = false;
+    canvas.toBlob((b) => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(b);
+      a.download = "mizu-no-kioku-" + Math.floor(Date.now() / 1000) + ".png";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    }, "image/png");
+  }
+
+  frames++; fpsT += dt;
+  if(fpsT > 0.6){
+    fps = frames / fpsT; frames = 0; fpsT = 0;
+    statEl.textContent = fps.toFixed(0) + " fps　/　" + Math.floor(time) + "s";
+
+    // 非力な環境では光子数を落として滑らかさを優先する（最大 2 段）
+    if(time > 4.0 && fps < 38 && quality < 2){
+      quality++;
+      CFG.GRID = Math.round(CFG.GRID * 0.72);
+      CFG.PSIZE = Math.min(3.0, CFG.PSIZE * 1.4);
+    }
+  }
+}
+
+if(gl && extCBF){
+  resize();
+  gl.bindVertexArray(vao);
+
+  // ウォームアップ：幕が上がったとき、水はすでに息をしている
+  const warm = Math.max(0, Math.min(4000,
+    parseInt(new URLSearchParams(location.search).get("warm") || "900", 10) | 0));
+  for(let i = 0; i < warm; i++){
+    if(i % CFG.SUBSTEPS === 0) schedule(i / 120, 1 / 60);
+    if(i === 60) addDrop(0.0, 0.0, 0.024, 0.062);
+    stepSim(1);
+  }
+
+  requestAnimationFrame(frame);
+}
+</script>
+</body>
+</html>

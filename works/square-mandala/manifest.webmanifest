@@ -1,0 +1,10 @@
+{
+  "name": "方壇曼荼羅 — Square Mandala",
+  "short_name": "方壇曼荼羅",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#050304",
+  "theme_color": "#050304",
+  "start_url": ".",
+  "icons": []
+}

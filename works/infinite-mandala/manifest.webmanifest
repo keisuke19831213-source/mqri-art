@@ -1,0 +1,10 @@
+{
+  "name": "無限曼荼羅 — Infinite Mandala",
+  "short_name": "無限曼荼羅",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#030308",
+  "theme_color": "#030308",
+  "start_url": ".",
+  "icons": []
+}

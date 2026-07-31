@@ -15,6 +15,11 @@
 | [/works/quintessence/](https://art.mqri.or.jp/works/quintessence/) | QUINTESSENCE 内接するプラトン立体 | 一つの立方体に五つの正多面体が内接。体対角線に整列すると13点のメタトロンキューブが結晶。純WebGL2 |
 | [/works/metatron/](https://art.mqri.or.jp/works/metatron/) | METATRON 立体メタトロン方陣 | 十三の球・七十八の光径。平面の方陣とベクトル平衡体を連続変形。純WebGL2 |
 | [/works/nijushisekki-ring/](https://art.mqri.or.jp/works/nijushisekki-ring/) | 二十四節気の円環 | 太陽黄経360°を24等分した暦の幾何学。**もとはNext.js+D1のアプリだったが、実行時に使われていないことを確かめて単一HTMLに書き直した**（[経緯と検算](works/nijushisekki-ring/README.md)） |
+| [/works/senko/](https://art.mqri.or.jp/works/senko/) | 旋光 Senkō | 光渦（軌道角運動量）。角運動量に比例して周波数をずらすと場全体が厳密な剛体として回る。移設時に**touch-action欠落を修正**＋ピンチ・タップ・2本指タップ・長押しを実装 |
+| [/works/mizu-no-kioku/](https://art.mqri.or.jp/works/mizu-no-kioku/) | 水の記憶 Memory of Water | 浅水波をGPUで解き200万個の光子を屈折させて本物のコースティクスを結ぶ。移設時はsafe-areaと展示用metaのみ追加（タッチは元から対応済み） |
+| [/works/infinite-mandala/](https://art.mqri.or.jp/works/infinite-mandala/) | 無限曼荼羅 Infinite Mandala | 対数極座標の無限ズーム。中心のビンドゥには永遠に届かない。ピンチは元から実装済みで、safe-areaと展示用metaのみ追加 |
+| [/works/square-mandala/](https://art.mqri.or.jp/works/square-mandala/) | 方壇曼荼羅 Square Mandala | チェビシェフ距離の対数ズームで密教方壇の伽藍が無限に湧く。無限曼荼羅の姉妹作（旧 infinite-mandala/art02） |
+| [/works/morphogenesis/](https://art.mqri.or.jp/works/morphogenesis/) | 生命と幾何学 Morphogenesis | 黄金角の種子格子にチューリング反応拡散系が芽吹く。**7/13にギャラリーから外していた作品**（7/31に復帰）。移設時にtouch-action・スマホ用レイアウト・タップ操作を実装 |
 | [/works/cymatic-resonance/](https://art.mqri.or.jp/works/cymatic-resonance/) | 共鳴譜 Cymatic Resonance | 52万粒の砂が音を見るクラドニ図形。**唯一マイクを使う作品**（拒否時はヒント欄で知らせ、内蔵音に誘導）。移設時にスマホ用レイアウトを新設 |
 | [/works/infinite-geometry/](https://art.mqri.or.jp/works/infinite-geometry/) | 無限幾何回廊 Infinite Geometry | アポロニウスのガスケットを永遠に潜行。移設時にピンチ=潜行速度・タップ=停止・2本指タップ=配色を実装 |
 | [/works/genesis-of-form/](https://art.mqri.or.jp/works/genesis-of-form/) | 幾何の創世 Genesis of Form | 聖なる幾何学の生成順序を68秒の創世神話に。移設時にピンチ=拡縮・タップ=一時停止を実装 |

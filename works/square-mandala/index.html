@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="方壇曼荼羅 — Square Mandala。密教方壇（胎蔵界/金剛界）様式の四角い無限曼荼羅。チェビシェフ距離の対数ズームで方形の伽藍が無限に湧く。MQRI ART。">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="方壇曼荼羅">
+<meta name="theme-color" content="#050304">
+<link rel="manifest" href="manifest.webmanifest">
+<title>方壇曼荼羅 — Square Mandala</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #050304; overflow: hidden; }
+  canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  canvas#c.drag { cursor: grabbing; }
+  #hud {
+    position: fixed; inset: 0; pointer-events: none; user-select: none;
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic Medium", system-ui, sans-serif;
+    color: rgba(248, 240, 228, 0.85); transition: opacity 1.6s ease;
+  }
+  #hud.hidden { opacity: 0; }
+  .title { position: absolute; top: max(30px, env(safe-area-inset-top)); left: max(34px, env(safe-area-inset-left)); letter-spacing: 0.16em; }
+  .title h1 { font-size: 15px; font-weight: 500; margin: 0; text-shadow: 0 0 16px rgba(255,150,90,.30); }
+  .title .en { font-size: 9.5px; letter-spacing: 0.34em; opacity: 0.5; margin-top: 7px; text-transform: uppercase; }
+  .status { position: absolute; top: max(32px, env(safe-area-inset-top)); right: max(34px, env(safe-area-inset-right)); text-align: right; font-size: 11px; letter-spacing: 0.14em; opacity: 0.72; line-height: 2.0; }
+  .keys { position: absolute; bottom: max(26px, env(safe-area-inset-bottom)); left: max(34px, env(safe-area-inset-left)); font-size: 10.5px; letter-spacing: 0.1em; opacity: 0.5; line-height: 1.95; }
+  .keys b { font-weight: 500; opacity: 0.95; }
+  #err { position: fixed; inset: 0; display: none; place-items: center; color: #edd; font: 13px/1.8 system-ui; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+  <div class="title">
+    <h1>方壇曼荼羅 — 楼門は幾重にも開く</h1>
+    <div class="en">Square Mandala &nbsp;·&nbsp; ccf5 / 260723 art 02</div>
+  </div>
+  <div class="status">
+    <div id="stMode"></div>
+    <div id="stPal"></div>
+    <div id="stTrail"></div>
+    <div id="stVel"></div>
+  </div>
+  <div class="keys">
+    <b>[Space]</b> 停止 / Pause &nbsp; <b>[M]</b> 界 / Realm &nbsp; <b>[C]</b> 配色 / Palette &nbsp; <b>[T]</b> 残像 / Trail &nbsp; <b>[S]</b> 保存 / Save &nbsp; <b>[R]</b> 初期化 / Reset &nbsp; <b>[H]</b> 表示 / HUD<br>
+    クリック: 方形の波紋 / Tap: Square ripple &nbsp;&nbsp; ドラッグ: ひねる（離すと軸へ戻る） / Drag: Twist &nbsp;&nbsp; ホイール: 落下速度 / Wheel: Dive speed
+  </div>
+</div>
+<div id="err">WebGL2 を初期化できませんでした / Failed to initialize WebGL2</div>
+
+<script>
+'use strict';
+
+/* ============================== Shaders ============================== */
+
+const VS = `#version 300 es
+layout(location=0) in vec2 aPos;
+out vec2 vUv;
+void main(){ vUv = aPos*0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
+
+/* --- Scene: log-Chebyshev infinite-zoom SQUARE mandala (密教方壇).
+   Square courts live at integer steps of log(max(|x|,|y|))/BAND + uZoom.
+   Space folds into one octant of the square (x>=y>=0); t runs 0 (side
+   center) → 1 (corner). Each court draws gates (楼門) at side centers,
+   ornaments at corners, and hash-chosen cell motifs along the walls.
+   The fixed eight-petal lotus (中台八葉院) waits at the unreachable
+   center. uZoom wraps at PERIOD so the descent never loses precision. --- */
+const FS_SCENE = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outCol;
+
+uniform vec2  uRes;
+uniform float uTime;
+uniform float uZoom;
+uniform float uRot;
+uniform vec3  uMode;        // realm_from, realm_to, mix (0 胎蔵 / 1 金剛 / 2 遊戯)
+uniform int   uPal;
+uniform vec2  uPtr;
+uniform vec4  uPulse[6];    // x: age(s), y: active, z: strength, w: seed
+
+#define TAU 6.28318530718
+const float BAND   = 0.50;
+const float PERIOD = 64.0;
+
+float hashn(float n){
+  n = mod(n, PERIOD);
+  return fract(sin(n*157.31 + 113.1)*43758.5453123);
+}
+
+vec3 cosPal(float t, vec3 a, vec3 b, vec3 c, vec3 d){
+  return a + b*cos(TAU*(c*t + d));
+}
+/* 五色 (esoteric five colors), stepped */
+vec3 goshiki(float t){
+  float i = mod(floor(t*5.0), 5.0);
+  if (i < 0.5) return vec3(0.92,0.87,0.78);   // 白
+  if (i < 1.5) return vec3(0.88,0.28,0.20);   // 赤
+  if (i < 2.5) return vec3(0.92,0.72,0.24);   // 黄
+  if (i < 3.5) return vec3(0.22,0.58,0.44);   // 緑
+  return vec3(0.28,0.40,0.82);                // 青
+}
+vec3 pal(float t){
+  if (uPal == 0) return cosPal(t, vec3(0.52,0.37,0.27), vec3(0.44,0.33,0.25), vec3(1.0), vec3(0.02,0.15,0.31));   // 胎蔵朱
+  if (uPal == 1) return cosPal(t, vec3(0.44,0.42,0.46), vec3(0.40,0.37,0.40), vec3(1.0), vec3(0.08,0.16,0.45));   // 金剛金
+  if (uPal == 2) return cosPal(t, vec3(0.27,0.40,0.51), vec3(0.27,0.36,0.44), vec3(1.0), vec3(0.59,0.45,0.23));   // 瑠璃
+  return goshiki(t);                                                                                               // 五彩
+}
+
+float lineA(float ds, float w){ return 1.0 - smoothstep(w*0.35, w, ds); }
+float haloA(float ds, float g){ return g*g/(ds*ds + g*g); }
+float sdBox(vec2 p, vec2 b){ vec2 d = abs(p)-b; return length(max(d,vec2(0.0))) + min(max(d.x,d.y),0.0); }
+
+/* one full square-court evaluation for realm mode m (0/1/2) */
+vec3 courts(vec2 p, float mode, float pxw){
+  vec2 q = abs(p);
+  float s = max(q.x, q.y);            // Chebyshev radius: which square we stand on
+  s = max(s, 1e-6);
+  float t = min(q.x, q.y) / s;        // 0 = side center, 1 = corner
+
+  float lr = log(s)/BAND + uZoom;
+  float n = floor(lr);
+  float u = lr - n;
+
+  float h0 = hashn(n*9.0 + 1.0);
+  float h1 = hashn(n*9.0 + 2.0);
+  float h2 = hashn(n*9.0 + 3.0);
+  float h3 = hashn(n*9.0 + 4.0);
+  float h4 = hashn(n*9.0 + 5.0);
+  float h5 = hashn(n*9.0 + 6.0);
+
+  /* realm personalities */
+  float gateTh  = mode < 0.5 ? 0.45 : (mode < 1.5 ? 0.16 : 0.34);   // gate probability
+  float gridTh  = mode < 0.5 ? 0.55 : (mode < 1.5 ? 0.50 : 0.42);   // cell-row probability (h > th)
+  float petalW  = mode < 0.5 ? 1.0  : (mode < 1.5 ? 0.25 : 0.7);    // petal vs diamond preference
+  float density = mode < 0.5 ? 0.0  : (mode < 1.5 ? 2.0  : 1.0);    // extra cells per side
+
+  float bandPx = s*BAND;
+  float vis = smoothstep(pxw*2.5, pxw*10.0, bandPx);
+  float w = pxw*1.6;
+
+  float hueBase = uTime*0.010 + n*0.161803 + u*0.10;
+  vec3 col = vec3(0.0);
+
+  /* --- court walls: double square outlines --- */
+  {
+    float ds = bandPx*min(u, 1.0-u);
+    float br = 0.45 + 0.4*h0;
+    col += pal(hueBase) * (lineA(ds, w)*br + haloA(ds, pxw*3.0)*0.12*br);
+    /* inner parallel wall */
+    if (h1 > 0.35) {
+      float ds2 = bandPx*abs(u - 0.14);
+      col += pal(hueBase + 0.05) * lineA(ds2, w*0.7) * 0.4;
+    }
+  }
+
+  /* --- 楼門: two-tier gate at each side center --- */
+  if (h2 < gateTh) {
+    vec2 g = vec2(t, (u - 0.40)*BAND)*s;
+    float d1 = abs(sdBox(g, vec2(s*0.105, s*BAND*0.16)));
+    vec2 g2 = vec2(t, (u - 0.66)*BAND)*s;
+    float d2 = abs(sdBox(g2, vec2(s*0.055, s*BAND*0.11)));
+    vec3 gc = pal(hueBase + 0.12);
+    col += gc * (lineA(d1, w)*0.95 + haloA(d1, pxw*2.4)*0.13);
+    col += gc * (lineA(d2, w)*0.85 + haloA(d2, pxw*2.0)*0.10);
+    /* finial: the jewel above the gate */
+    float dj = length(vec2(t, (u - 0.86)*BAND)*s) - s*0.022;
+    col += pal(hueBase + 0.45) * (lineA(abs(dj), w)*0.8 + haloA(abs(dj), pxw*2.2)*0.22);
+  }
+
+  /* --- wall cells: deities seated along the court --- */
+  if (h3 > 1.0 - gridTh || h3 < 0.08) {
+    float m = 3.0 + floor(h4*3.0) + density;
+    float t0 = 0.20, t1 = 0.86;
+    if (t > t0 && t < t1) {
+      float cc = (t - t0)/(t1 - t0)*m;
+      float cf = fract(cc) - 0.5;
+      float ci = floor(cc);
+      float uc = 0.32 + 0.28*h5;
+      vec2 e = vec2(cf*(t1-t0)/m, (u - uc)*BAND)*s;
+      float shimmer = 0.75 + 0.25*sin(uTime*0.7 + ci*1.7 + n);
+      vec3 ccol = pal(hueBase + 0.30 + 0.04*ci);
+      if (h5*petalW > 0.30) {
+        /* lotus petal pointing outward */
+        float R = s*(t1-t0)/m*0.42;
+        float ee = R*0.62;
+        float d = max(length(e-vec2(ee,0.0)), length(e+vec2(ee,0.0))) - R;
+        col += ccol * (lineA(abs(d), w)*0.75 + haloA(abs(d), pxw*1.8)*0.10) * shimmer;
+      } else {
+        /* vajra diamond */
+        float R = s*(t1-t0)/m*0.36;
+        float d = abs(e.x) + abs(e.y) - R;
+        col += ccol * (lineA(abs(d), w)*0.75 + haloA(abs(d), pxw*1.8)*0.10) * shimmer;
+      }
+      /* seed dot in every cell */
+      float dd = length(e) - s*0.014;
+      col += pal(hueBase + 0.52) * lineA(abs(dd), w*0.9) * 0.55 * shimmer;
+    }
+  }
+
+  /* --- corner ornament: 隅飾り --- */
+  if (h4 > 0.30) {
+    float dc = s*(1.0 - t)*0.7071;                       // distance to the diagonal
+    float mask = smoothstep(0.10, 0.30, u) * (1.0 - smoothstep(0.62, 0.86, u));
+    col += pal(hueBase + 0.22) * lineA(dc, w*0.8) * 0.5 * mask;
+    /* small diamond riding the corner */
+    vec2 e = vec2((1.0 - t)*0.7071, (u - 0.5)*BAND)*s;
+    float d = abs(e.x) + abs(e.y) - s*0.045;
+    col += pal(hueBase + 0.38) * lineA(abs(d), w*0.8) * 0.55;
+  }
+
+  return col * vis;
+}
+
+void main(){
+  vec2 p = (gl_FragCoord.xy*2.0 - uRes) / uRes.y;
+  float pxw = 2.0/uRes.y;
+
+  p -= uPtr * 0.06;
+  p *= 1.0 + 0.012*sin(uTime*0.20);
+
+  float cs = cos(uRot), sn = sin(uRot);
+  p = mat2(cs,-sn,sn,cs) * p;
+
+  vec3 col;
+  if (uMode.z < 0.001)      col = courts(p, uMode.x, pxw);
+  else if (uMode.z > 0.999) col = courts(p, uMode.y, pxw);
+  else                      col = mix(courts(p, uMode.x, pxw), courts(p, uMode.y, pxw), uMode.z);
+
+  float r = length(p);
+
+  /* dim the flow beneath the lotus so the still center reads */
+  col *= 1.0 - 0.60*exp(-r*r/0.028);
+
+  /* --- 中台八葉院: fixed eight-petal lotus at the unreachable center --- */
+  {
+    float breathe = 0.72 + 0.20*sin(uTime*0.42);
+    vec3 lc = pal(uTime*0.010 + 0.08);
+    float ang = atan(p.y, p.x);
+    float a8 = mod(ang + TAU/16.0, TAU/8.0) - TAU/16.0;
+    vec2 ql = vec2(a8*r, r - 0.088);
+    float R = 0.052, e = R*0.60;
+    float d = max(length(ql-vec2(e,0.0)), length(ql+vec2(e,0.0))) - R;
+    col += lc * (lineA(abs(d), pxw*1.6)*0.9 + haloA(abs(d), pxw*2.6)*0.16) * breathe;
+    float fill = clamp(-d/0.05, 0.0, 1.0);
+    col += lc * fill * 0.055 * breathe;
+    /* core: the seed syllable's glow */
+    float dcore = abs(r - 0.034);
+    col += pal(uTime*0.010 + 0.5) * (lineA(dcore, pxw*1.6)*0.85 + haloA(dcore, pxw*2.4)*0.2) * breathe;
+    col += lc * exp(-r*r*420.0) * (1.15 + 0.3*sin(uTime*0.9));
+  }
+
+  /* --- fixed outer 結界: one still circle around the square infinity --- */
+  {
+    float ga = 0.10 + 0.05*sin(uTime*0.12);
+    float dsC = abs(r - 0.94);
+    col += pal(uTime*0.010 + 0.62) * (lineA(dsC, pxw*1.4) + haloA(dsC, pxw*3.0)*0.3) * ga;
+  }
+
+  /* --- square ripple pulses --- */
+  float sCheb = max(abs(p.x), abs(p.y));
+  for (int i = 0; i < 6; i++) {
+    if (uPulse[i].y < 0.5) continue;
+    float age = uPulse[i].x;
+    float pr = age*0.55;
+    float g = exp(-(sCheb-pr)*(sCheb-pr)/0.012) * uPulse[i].z * exp(-age*0.9);
+    col *= 1.0 + 2.6*g;
+    col += pal(uPulse[i].w + 0.2) * g * 0.45;
+  }
+
+  outCol = vec4(col, 1.0);
+}`;
+
+const FS_FEEDBACK = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outCol;
+uniform sampler2D uScene;
+uniform sampler2D uPrev;
+uniform vec2  uRes;
+uniform float uDecay;
+uniform float uDRot;
+uniform float uDScale;
+void main(){
+  vec3 scene = texture(uScene, vUv).rgb;
+  float aspect = uRes.x/uRes.y;
+  vec2 p = (vUv*2.0 - 1.0) * vec2(aspect, 1.0);
+  float cs = cos(uDRot), sn = sin(uDRot);
+  p = mat2(cs,-sn,sn,cs) * p * uDScale;
+  vec2 uv2 = (p / vec2(aspect, 1.0))*0.5 + 0.5;
+  vec3 prev = texture(uPrev, uv2).rgb;
+  vec2 m = step(vec2(0.0), uv2) * step(uv2, vec2(1.0));
+  prev *= m.x*m.y;
+  outCol = vec4(mix(scene, prev, uDecay), 1.0);
+}`;
+
+const FS_DISPLAY = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outCol;
+uniform sampler2D uAcc;
+uniform vec2  uRes;
+uniform float uTime;
+void main(){
+  vec3 c = texture(uAcc, vUv).rgb;
+  c *= 1.45;
+  c = 1.0 - exp(-c);
+  vec2 p = (vUv*2.0 - 1.0) * vec2(uRes.x/uRes.y, 1.0);
+  float vig = 1.0 - smoothstep(0.62, 1.65, length(p))*0.55;
+  c *= vig;
+  float gr = fract(sin(dot(vUv*uRes + uTime*61.7, vec2(12.9898,78.233)))*43758.5453);
+  c += (gr - 0.5) * 0.012;
+  c = pow(max(c, 0.0), vec3(1.0/1.25));
+  outCol = vec4(c, 1.0);
+}`;
+
+/* ============================== GL setup ============================== */
+
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false });
+if (!gl) { document.getElementById('err').style.display = 'grid'; throw new Error('no webgl2'); }
+
+const halfFloat = !!gl.getExtension('EXT_color_buffer_float');
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+function program(fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, VS));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+const progScene = program(FS_SCENE);
+const progFeed  = program(FS_FEEDBACK);
+const progDisp  = program(FS_DISPLAY);
+
+const quad = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+function makeTarget(w, h){
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  if (halfFloat) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return { tex, fbo };
+}
+
+let W = 0, H = 0, sceneT, accA, accB;
+function resize(){
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  const w = Math.round(innerWidth*dpr), h = Math.round(innerHeight*dpr);
+  if (w === W && h === H) return;
+  W = w; H = h;
+  canvas.width = W; canvas.height = H;
+  sceneT = makeTarget(W, H);
+  accA = makeTarget(W, H);
+  accB = makeTarget(W, H);
+  accSrc = null; accDst = null;
+}
+addEventListener('resize', resize);
+
+/* ============================== State ============================== */
+
+const PALETTES = ['胎蔵朱', '金剛金', '瑠璃', '五彩'];
+const MODES = ['胎蔵', '金剛', '遊戯'];
+const TRAILS = [
+  { name: 'なし', decay: 0.0 },
+  { name: '淡',   decay: 0.55 },
+  { name: '深',   decay: 0.80 },
+  { name: '溶',   decay: 0.92 },
+];
+
+const HALF_PI = Math.PI/2;
+
+const st = {
+  time: 0, paused: false,
+  zoom: 0, zoomVel: 0.08, zoomBase: 0.08,
+  rot: 0, rotVel: 0,
+  modeIdx: 0, modePrev: 0, modeMix: 1,
+  pal: 0, trail: 2,
+  ptr: [0, 0], ptrSm: [0, 0],
+  pulses: [],
+  saveFlag: false,
+};
+
+/* ============================== HUD ============================== */
+
+const hud = document.getElementById('hud');
+const stMode = document.getElementById('stMode');
+const stPal = document.getElementById('stPal');
+const stTrail = document.getElementById('stTrail');
+const stVel = document.getElementById('stVel');
+let hudTimer = 0, hudOn = true, hudManual = true;
+
+function updateHud(){
+  stMode.textContent = `界「${MODES[st.modeIdx]}」`;
+  stPal.textContent = `配色「${PALETTES[st.pal]}」`;
+  stTrail.textContent = `残像「${TRAILS[st.trail].name}」`;
+  const v = st.zoomVel;
+  stVel.textContent = `落下 ${v >= 0 ? '↓' : '↑'}${Math.abs(v).toFixed(2)}`;
+}
+function wakeHud(){
+  hudTimer = 0;
+  if (hudManual && !hudOn) { hudOn = true; hud.classList.remove('hidden'); }
+}
+updateHud();
+
+/* ============================== Input ============================== */
+
+let dragging = false, lastX = 0, lastY = 0, dragDist = 0;
+const pointers = new Map();
+let pinchDist = 0;
+
+function clamp(x, a, b){ return Math.min(b, Math.max(a, x)); }
+
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  if (pointers.size === 1) {
+    dragging = true; dragDist = 0;
+    lastX = e.clientX; lastY = e.clientY;
+    canvas.classList.add('drag');
+  } else if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    pinchDist = Math.hypot(a[0]-b[0], a[1]-b[1]);
+  }
+  wakeHud();
+});
+canvas.addEventListener('pointermove', e => {
+  st.ptr[0] = (e.clientX/innerWidth)*2 - 1;
+  st.ptr[1] = -((e.clientY/innerHeight)*2 - 1);
+  wakeHud();
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(a[0]-b[0], a[1]-b[1]);
+    st.zoomVel = clamp(st.zoomVel + (d - pinchDist)*0.004, -0.6, 1.2);
+    pinchDist = d;
+    updateHud();
+    return;
+  }
+  if (dragging) {
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    dragDist += Math.abs(dx) + Math.abs(dy);
+    st.rot += dx * 0.0035;
+    st.rotVel = dx * 0.09;
+    lastX = e.clientX; lastY = e.clientY;
+  }
+});
+function endPointer(e){
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinchDist = 0;
+  if (pointers.size === 0) {
+    canvas.classList.remove('drag');
+    if (dragging && dragDist < 6) spawnPulse(1.0);
+    dragging = false;
+  }
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  st.zoomVel = clamp(st.zoomVel + e.deltaY*0.0009, -0.6, 1.2);
+  updateHud(); wakeHud();
+}, { passive: false });
+
+function spawnPulse(strength){
+  st.pulses.push({ t0: st.time, strength, seed: Math.random() });
+  if (st.pulses.length > 6) st.pulses.shift();
+}
+
+addEventListener('keydown', e => {
+  wakeHud();
+  switch (e.key) {
+    case ' ': st.paused = !st.paused; e.preventDefault(); break;
+    case 'm': case 'M':
+      st.modePrev = st.modeIdx;
+      st.modeIdx = (st.modeIdx + 1) % MODES.length;
+      st.modeMix = 0;
+      break;
+    case 'c': case 'C': st.pal = (st.pal + 1) % PALETTES.length; break;
+    case 't': case 'T': st.trail = (st.trail + 1) % TRAILS.length; break;
+    case 's': case 'S': st.saveFlag = true; break;
+    case 'r': case 'R':
+      st.zoom = 0; st.zoomVel = st.zoomBase; st.rot = 0; st.rotVel = 0;
+      st.pulses = []; break;
+    case 'h': case 'H':
+      hudManual = !hudManual;
+      hudOn = hudManual;
+      hud.classList.toggle('hidden', !hudOn);
+      break;
+  }
+  updateHud();
+});
+
+/* ============================== Render loop ============================== */
+
+function setUniforms(p, pairs){
+  for (const [name, fn] of pairs) fn(gl.getUniformLocation(p, name));
+}
+
+let prev = performance.now();
+let accSrc = null, accDst = null;
+resize();
+
+function frame(now){
+  requestAnimationFrame(frame);
+  const dt = Math.min((now - prev)/1000, 0.05);
+  prev = now;
+
+  if (!st.paused) {
+    st.time += dt;
+    st.zoom += st.zoomVel * dt;
+    st.zoom = ((st.zoom % 64) + 64) % 64;
+    st.zoomVel += (st.zoomBase - st.zoomVel) * (1 - Math.exp(-dt*0.06));
+    if (!dragging) {
+      /* the temple door swings back to its hinge: nearest 90-degree axis */
+      st.rot += st.rotVel * dt;
+      st.rotVel *= Math.exp(-dt*3.0);
+      const target = Math.round(st.rot/HALF_PI)*HALF_PI;
+      st.rot += (target - st.rot) * (1 - Math.exp(-dt*1.8));
+    }
+    if (st.modeMix < 1) st.modeMix = Math.min(1, st.modeMix + dt/1.4);
+  }
+  st.ptrSm[0] += (st.ptr[0] - st.ptrSm[0]) * (1 - Math.exp(-dt*2.5));
+  st.ptrSm[1] += (st.ptr[1] - st.ptrSm[1]) * (1 - Math.exp(-dt*2.5));
+
+  hudTimer += dt;
+  if (hudManual && hudOn && hudTimer > 6) { hudOn = false; hud.classList.add('hidden'); }
+
+  /* --- pass 1: scene --- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, sceneT.fbo);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(progScene);
+  const ease = t => t*t*(3-2*t);
+  setUniforms(progScene, [
+    ['uRes',  l => gl.uniform2f(l, W, H)],
+    ['uTime', l => gl.uniform1f(l, st.time)],
+    ['uZoom', l => gl.uniform1f(l, st.zoom)],
+    ['uRot',  l => gl.uniform1f(l, st.rot)],
+    ['uMode', l => gl.uniform3f(l, st.modePrev, st.modeIdx, ease(st.modeMix))],
+    ['uPal',  l => gl.uniform1i(l, st.pal)],
+    ['uPtr',  l => gl.uniform2f(l, st.ptrSm[0]*(W/H), st.ptrSm[1])],
+  ]);
+  {
+    const data = new Float32Array(24);
+    for (let i = 0; i < 6; i++) {
+      const p = st.pulses[i];
+      if (p && st.time - p.t0 < 4.0) {
+        data[i*4+0] = st.time - p.t0;
+        data[i*4+1] = 1;
+        data[i*4+2] = p.strength;
+        data[i*4+3] = p.seed;
+      }
+    }
+    gl.uniform4fv(gl.getUniformLocation(progScene, 'uPulse'), data);
+  }
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  /* --- pass 2: feedback accumulate --- */
+  if (!accSrc) { accSrc = accA; accDst = accB; }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, accDst.fbo);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(progFeed);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, sceneT.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, accSrc.tex);
+  setUniforms(progFeed, [
+    ['uScene',  l => gl.uniform1i(l, 0)],
+    ['uPrev',   l => gl.uniform1i(l, 1)],
+    ['uRes',    l => gl.uniform2f(l, W, H)],
+    ['uDecay',  l => gl.uniform1f(l, st.paused ? 0.96 : TRAILS[st.trail].decay)],
+    ['uDRot',   l => gl.uniform1f(l, st.rotVel*dt*0.55)],
+    ['uDScale', l => gl.uniform1f(l, Math.exp(st.zoomVel*dt*0.50*0.6))],
+  ]);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  /* --- pass 3: display --- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(progDisp);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, accDst.tex);
+  setUniforms(progDisp, [
+    ['uAcc',  l => gl.uniform1i(l, 0)],
+    ['uRes',  l => gl.uniform2f(l, W, H)],
+    ['uTime', l => gl.uniform1f(l, st.time)],
+  ]);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  [accSrc, accDst] = [accDst, accSrc];
+
+  if (st.saveFlag) {
+    st.saveFlag = false;
+    const a = document.createElement('a');
+    a.download = `square-mandala-${Date.now()}.png`;
+    a.href = canvas.toDataURL('image/png');
+    a.click();
+  }
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

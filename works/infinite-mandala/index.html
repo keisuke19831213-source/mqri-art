@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="無限曼荼羅 — Infinite Mandala。対数極座標の無限ズーム曼荼羅。環ごとに紋様が生まれ変わり、中心（ビンドゥ）には永遠に届かない。MQRI ART。">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="無限曼荼羅">
+<meta name="theme-color" content="#030308">
+<link rel="manifest" href="manifest.webmanifest">
+<title>無限曼荼羅 — Infinite Mandala</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #030308; overflow: hidden; }
+  canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  canvas#c.drag { cursor: grabbing; }
+  #hud {
+    position: fixed; inset: 0; pointer-events: none; user-select: none;
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic Medium", system-ui, sans-serif;
+    color: rgba(236, 238, 250, 0.85); transition: opacity 1.6s ease;
+  }
+  #hud.hidden { opacity: 0; }
+  .title { position: absolute; top: max(30px, env(safe-area-inset-top)); left: max(34px, env(safe-area-inset-left)); letter-spacing: 0.16em; }
+  .title h1 { font-size: 15px; font-weight: 500; margin: 0; text-shadow: 0 0 16px rgba(255,190,120,.30); }
+  .title .en { font-size: 9.5px; letter-spacing: 0.34em; opacity: 0.5; margin-top: 7px; text-transform: uppercase; }
+  .status { position: absolute; top: max(32px, env(safe-area-inset-top)); right: max(34px, env(safe-area-inset-right)); text-align: right; font-size: 11px; letter-spacing: 0.14em; opacity: 0.72; line-height: 2.0; }
+  .keys { position: absolute; bottom: max(26px, env(safe-area-inset-bottom)); left: max(34px, env(safe-area-inset-left)); font-size: 10.5px; letter-spacing: 0.1em; opacity: 0.5; line-height: 1.95; }
+  .keys b { font-weight: 500; opacity: 0.95; }
+  #err { position: fixed; inset: 0; display: none; place-items: center; color: #dde; font: 13px/1.8 system-ui; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+  <div class="title">
+    <h1>無限曼荼羅 — 中心は常にその先にある</h1>
+    <div class="en">Infinite Mandala &nbsp;·&nbsp; ccf5 / 260723 art 01</div>
+  </div>
+  <div class="status">
+    <div id="stPal"></div>
+    <div id="stSym"></div>
+    <div id="stTrail"></div>
+    <div id="stVel"></div>
+  </div>
+  <div class="keys">
+    <b>[Space]</b> 停止 / Pause &nbsp; <b>[M]</b> 対称 / Symmetry &nbsp; <b>[C]</b> 配色 / Palette &nbsp; <b>[T]</b> 残像 / Trail &nbsp; <b>[S]</b> 保存 / Save &nbsp; <b>[R]</b> 初期化 / Reset &nbsp; <b>[H]</b> 表示 / HUD<br>
+    クリック: 波紋 / Tap: Ripple &nbsp;&nbsp; ドラッグ: 回転 / Drag: Rotate &nbsp;&nbsp; ホイール: 落下速度 / Wheel: Dive speed
+  </div>
+</div>
+<div id="err">WebGL2 を初期化できませんでした / Failed to initialize WebGL2</div>
+
+<script>
+'use strict';
+
+/* ============================== Shaders ============================== */
+
+const VS = `#version 300 es
+layout(location=0) in vec2 aPos;
+out vec2 vUv;
+void main(){ vUv = aPos*0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
+
+/* --- Scene: log-polar infinite-zoom mandala.
+   Ring bands live at integer steps of log(r)/BAND + uZoom. Each band draws a
+   hash-parameterized motif family (vesica petals, dot rosettes, spokes, arcs)
+   inside an N-fold mirrored wedge. uZoom wraps at PERIOD so the dive never
+   loses float precision — the mandala truly has no bottom. --- */
+const FS_SCENE = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outCol;
+
+uniform vec2  uRes;
+uniform float uTime;
+uniform float uZoom;        // log-space offset, wrapped to [0, PERIOD)
+uniform float uRot;
+uniform vec3  uSym;         // N_from, N_to, mix
+uniform int   uPal;
+uniform vec2  uPtr;         // smoothed pointer, -1..1 (aspect corrected)
+uniform vec4  uPulse[6];    // x: age(s), y: active, z: strength, w: seed
+
+#define TAU 6.28318530718
+const float BAND   = 0.46;
+const float PERIOD = 64.0;
+
+float hashn(float n){
+  n = mod(n, PERIOD);
+  return fract(sin(n*157.31 + 113.1)*43758.5453123);
+}
+
+vec3 cosPal(float t, vec3 a, vec3 b, vec3 c, vec3 d){
+  return a + b*cos(TAU*(c*t + d));
+}
+vec3 pal(float t){
+  if (uPal == 0) return cosPal(t, vec3(0.46,0.40,0.33), vec3(0.44,0.36,0.34), vec3(1.0), vec3(0.02,0.14,0.34));      // 夜金
+  if (uPal == 1) return cosPal(t, vec3(0.55,0.33,0.37), vec3(0.42,0.32,0.34), vec3(1.0), vec3(0.00,0.19,0.44));      // 朱華
+  if (uPal == 2) return cosPal(t, vec3(0.30,0.42,0.54), vec3(0.28,0.36,0.42), vec3(1.0), vec3(0.62,0.46,0.24));      // 瑠璃
+  return           cosPal(t, vec3(0.52,0.50,0.50), vec3(0.48,0.48,0.48), vec3(1.0,1.0,1.0), vec3(0.00,0.33,0.67));   // 極彩
+}
+
+/* thin crisp line + soft halo, ds in screen units (1 = half viewport height) */
+float lineA(float ds, float w){ return 1.0 - smoothstep(w*0.35, w, ds); }
+float haloA(float ds, float g){ return g*g/(ds*ds + g*g); }
+
+/* one full mandala evaluation for symmetry N */
+vec3 mandala(vec2 p, float N, float pxw){
+  float r = max(length(p), 1e-6);
+  float ang = atan(p.y, p.x);
+  float lr = log(r)/BAND + uZoom;
+
+  float n = floor(lr);
+  float u = lr - n;                 // 0..1 across the ring band
+  float sector = TAU/N;
+
+  float a1 = mod(ang, sector) - sector*0.5;              // wedge-centered fold
+  float a2 = mod(ang + sector*0.5, sector) - sector*0.5; // half-offset fold
+
+  /* per-band personality */
+  float h0 = hashn(n*7.0 + 1.0);
+  float h1 = hashn(n*7.0 + 2.0);
+  float h2 = hashn(n*7.0 + 3.0);
+  float h3 = hashn(n*7.0 + 4.0);
+  float h4 = hashn(n*7.0 + 5.0);
+  float h5 = hashn(n*7.0 + 6.0);
+
+  /* fade bands whose on-screen thickness collapses (near bindu) */
+  float bandPx = r*BAND;
+  float vis = smoothstep(pxw*2.5, pxw*10.0, bandPx);
+
+  float hueBase = uTime*0.010 + n*0.161803 + u*0.10;
+  vec3 col = vec3(0.0);
+
+  float w = pxw*1.6;   // core line width
+
+  /* --- band boundary circles (the skeleton of the mandala) --- */
+  {
+    float ds = bandPx*min(u, 1.0-u);
+    float br = 0.35 + 0.5*h0;
+    col += pal(hueBase) * (lineA(ds, w)*br + haloA(ds, pxw*3.0)*0.10*br);
+  }
+
+  /* --- vesica petal, radially pointed, at wedge center --- */
+  if (h1 > 0.18) {
+    float uc = 0.42 + 0.22*h2;
+    vec2 q = vec2(a1, (u-uc)*BAND)*r;
+    float R = r*sector*(0.62 + 0.30*h2);
+    float e = R*(0.50 + 0.34*h3);
+    float d = max(length(q-vec2(e,0.0)), length(q+vec2(e,0.0))) - R;
+    float ds = abs(d);
+    vec3 pc = pal(hueBase + 0.13);
+    col += pc * (lineA(ds, w)*0.9 + haloA(ds, pxw*2.5)*0.14);
+    /* translucent inner fill, breathing */
+    float fill = clamp(-d/(r*0.10), 0.0, 1.0);
+    col += pc * fill * (0.05 + 0.035*sin(uTime*0.45 + n));
+  }
+
+  /* --- offset petal ring (second layer, half-phase) --- */
+  if (h3 > 0.45) {
+    float uc = 0.30 + 0.18*h4;
+    vec2 q = vec2(a2, (u-uc)*BAND)*r;
+    float R = r*sector*(0.40 + 0.22*h5);
+    float e = R*(0.58 + 0.26*h1);
+    float d = max(length(q-vec2(e,0.0)), length(q+vec2(e,0.0))) - R;
+    col += pal(hueBase + 0.31) * (lineA(abs(d), w)*0.55 + haloA(abs(d), pxw*2.0)*0.08);
+  }
+
+  /* --- dot rosette --- */
+  if (h2 > 0.30) {
+    float uc = 0.70 + 0.16*h0;
+    vec2 q = vec2(a2, (u-uc)*BAND)*r;
+    float dotR = r*sector*(0.055 + 0.05*h4);
+    float ds = abs(length(q) - dotR);
+    vec3 dc = pal(hueBase + 0.47);
+    col += dc * (lineA(ds, w)*0.8 + haloA(length(q), dotR*1.6)*0.30);
+  }
+
+  /* --- radial spokes at wedge boundaries --- */
+  if (h4 > 0.42) {
+    float ds = (sector*0.5 - abs(a1))*r;
+    float mask = smoothstep(0.06, 0.22, u) * (1.0 - smoothstep(0.78, 0.94, u));
+    col += pal(hueBase + 0.24) * lineA(ds, w*0.8) * 0.45 * mask;
+  }
+
+  /* --- accent concentric arc, angularly dashed --- */
+  if (h5 > 0.36) {
+    float uc = 0.5 + 0.36*(h1-0.5);
+    float ds = abs(u-uc)*bandPx;
+    float dash = 0.5 + 0.5*cos(ang*N*(1.0 + floor(h0*2.0)));
+    col += pal(hueBase + 0.58) * lineA(ds, w*0.7) * dash * 0.5;
+  }
+
+  return col * vis;
+}
+
+void main(){
+  vec2 p = (gl_FragCoord.xy*2.0 - uRes) / uRes.y;
+  float pxw = 2.0/uRes.y;
+
+  /* subtle parallax toward the pointer — the mandala leans as you look */
+  p -= uPtr * 0.07;
+
+  /* slow global breath */
+  p *= 1.0 + 0.015*sin(uTime*0.22);
+
+  float cs = cos(uRot), sn = sin(uRot);
+  p = mat2(cs,-sn,sn,cs) * p;
+
+  vec3 col;
+  if (uSym.z < 0.001)      col = mandala(p, uSym.x, pxw);
+  else if (uSym.z > 0.999) col = mandala(p, uSym.y, pxw);
+  else                     col = mix(mandala(p, uSym.x, pxw), mandala(p, uSym.y, pxw), uSym.z);
+
+  float r = length(p);
+
+  /* --- bindu: the luminous seed at the unreachable center --- */
+  vec3 bpc = pal(uTime*0.010 + 0.05);
+  col += bpc * exp(-r*r*260.0) * (1.1 + 0.25*sin(uTime*0.9));
+  col += bpc * exp(-r*r*22.0) * 0.10;
+
+  /* --- fixed outer gate (結界): circle + twin squares, the still frame
+         through which the infinite falls --- */
+  {
+    float ga = 0.10 + 0.05*sin(uTime*0.13);
+    vec3 gc = pal(uTime*0.010 + 0.62);
+    float dsC = abs(r - 0.88);
+    col += gc * lineA(dsC, pxw*1.4) * ga;
+    vec2 q1 = abs(p);
+    float dsQ1 = abs(max(q1.x, q1.y) - 0.92);
+    vec2 q2 = abs(mat2(0.7071,-0.7071,0.7071,0.7071)*p);
+    float dsQ2 = abs(max(q2.x, q2.y) - 0.92);
+    col += gc * (lineA(dsQ1, pxw*1.2) + lineA(dsQ2, pxw*1.2)) * ga * 0.7;
+  }
+
+  /* --- ripple pulses --- */
+  for (int i = 0; i < 6; i++) {
+    if (uPulse[i].y < 0.5) continue;
+    float age = uPulse[i].x;
+    float pr = age*0.55;
+    float g = exp(-(r-pr)*(r-pr)/0.012) * uPulse[i].z * exp(-age*0.9);
+    col *= 1.0 + 2.6*g;
+    col += pal(uPulse[i].w + 0.2) * g * 0.45;
+  }
+
+  outCol = vec4(col, 1.0);
+}`;
+
+/* --- Feedback: exponential moving average against the previous frame,
+   sampled through a slight rotation+scale so echoes flow rather than stick. --- */
+const FS_FEEDBACK = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outCol;
+uniform sampler2D uScene;
+uniform sampler2D uPrev;
+uniform vec2  uRes;
+uniform float uDecay;
+uniform float uDRot;    // echo rotation per frame
+uniform float uDScale;  // echo scale per frame
+void main(){
+  vec3 scene = texture(uScene, vUv).rgb;
+  float aspect = uRes.x/uRes.y;
+  vec2 p = (vUv*2.0 - 1.0) * vec2(aspect, 1.0);
+  float cs = cos(uDRot), sn = sin(uDRot);
+  p = mat2(cs,-sn,sn,cs) * p * uDScale;
+  vec2 uv2 = (p / vec2(aspect, 1.0))*0.5 + 0.5;
+  vec3 prev = texture(uPrev, uv2).rgb;
+  vec2 m = step(vec2(0.0), uv2) * step(uv2, vec2(1.0));
+  prev *= m.x*m.y;
+  outCol = vec4(mix(scene, prev, uDecay), 1.0);
+}`;
+
+/* --- Display: exposure, tone map, vignette, faint grain --- */
+const FS_DISPLAY = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outCol;
+uniform sampler2D uAcc;
+uniform vec2  uRes;
+uniform float uTime;
+void main(){
+  vec3 c = texture(uAcc, vUv).rgb;
+  c *= 1.45;
+  c = 1.0 - exp(-c);                       // filmic-ish rolloff
+  vec2 p = (vUv*2.0 - 1.0) * vec2(uRes.x/uRes.y, 1.0);
+  float vig = 1.0 - smoothstep(0.62, 1.65, length(p))*0.55;
+  c *= vig;
+  float gr = fract(sin(dot(vUv*uRes + uTime*61.7, vec2(12.9898,78.233)))*43758.5453);
+  c += (gr - 0.5) * 0.012;
+  c = pow(max(c, 0.0), vec3(1.0/1.25));
+  outCol = vec4(c, 1.0);
+}`;
+
+/* ============================== GL setup ============================== */
+
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false });
+if (!gl) { document.getElementById('err').style.display = 'grid'; throw new Error('no webgl2'); }
+
+const halfFloat = !!gl.getExtension('EXT_color_buffer_float');
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+function program(fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, VS));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+const progScene = program(FS_SCENE);
+const progFeed  = program(FS_FEEDBACK);
+const progDisp  = program(FS_DISPLAY);
+
+const quad = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+function makeTarget(w, h){
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  if (halfFloat) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return { tex, fbo };
+}
+
+let W = 0, H = 0, sceneT, accA, accB;
+function resize(){
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  const w = Math.round(innerWidth*dpr), h = Math.round(innerHeight*dpr);
+  if (w === W && h === H) return;
+  W = w; H = h;
+  canvas.width = W; canvas.height = H;
+  sceneT = makeTarget(W, H);
+  accA = makeTarget(W, H);
+  accB = makeTarget(W, H);
+}
+addEventListener('resize', resize);
+resize();
+
+/* ============================== State ============================== */
+
+const PALETTES = ['夜金', '朱華', '瑠璃', '極彩'];
+const SYMS = [8, 10, 12, 16, 24];
+const TRAILS = [
+  { name: 'なし', decay: 0.0 },
+  { name: '淡',   decay: 0.55 },
+  { name: '深',   decay: 0.80 },
+  { name: '溶',   decay: 0.92 },
+];
+
+const st = {
+  time: 0, paused: false,
+  zoom: 0, zoomVel: 0.10, zoomBase: 0.10,
+  rot: 0, rotVel: 0.015, rotBase: 0.015,
+  symIdx: 2, symPrev: 2, symMix: 1,
+  pal: 0, trail: 2,
+  ptr: [0, 0], ptrSm: [0, 0],
+  pulses: [],                 // { t0, strength, seed }
+  saveFlag: false,
+};
+
+/* ============================== HUD ============================== */
+
+const hud = document.getElementById('hud');
+const stPal = document.getElementById('stPal');
+const stSym = document.getElementById('stSym');
+const stTrail = document.getElementById('stTrail');
+const stVel = document.getElementById('stVel');
+let hudTimer = 0, hudOn = true, hudManual = true;
+
+function updateHud(){
+  stPal.textContent = `配色「${PALETTES[st.pal]}」`;
+  stSym.textContent = `対称 ${SYMS[st.symIdx]}`;
+  stTrail.textContent = `残像「${TRAILS[st.trail].name}」`;
+  const v = st.zoomVel;
+  stVel.textContent = `落下 ${v >= 0 ? '↓' : '↑'}${Math.abs(v).toFixed(2)}`;
+}
+function wakeHud(){
+  hudTimer = 0;
+  if (hudManual && !hudOn) { hudOn = true; hud.classList.remove('hidden'); }
+}
+updateHud();
+
+/* ============================== Input ============================== */
+
+let dragging = false, lastX = 0, lastY = 0, dragDist = 0;
+const pointers = new Map();
+let pinchDist = 0;
+
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  if (pointers.size === 1) {
+    dragging = true; dragDist = 0;
+    lastX = e.clientX; lastY = e.clientY;
+    canvas.classList.add('drag');
+  } else if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    pinchDist = Math.hypot(a[0]-b[0], a[1]-b[1]);
+  }
+  wakeHud();
+});
+canvas.addEventListener('pointermove', e => {
+  st.ptr[0] = (e.clientX/innerWidth)*2 - 1;
+  st.ptr[1] = -((e.clientY/innerHeight)*2 - 1);
+  wakeHud();
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(a[0]-b[0], a[1]-b[1]);
+    st.zoomVel = clamp(st.zoomVel + (d - pinchDist)*0.004, -0.6, 1.2);
+    pinchDist = d;
+    updateHud();
+    return;
+  }
+  if (dragging) {
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    dragDist += Math.abs(dx) + Math.abs(dy);
+    st.rot += dx * 0.0035;
+    st.rotVel = dx * 0.10;
+    lastX = e.clientX; lastY = e.clientY;
+  }
+});
+function endPointer(e){
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinchDist = 0;
+  if (pointers.size === 0) {
+    canvas.classList.remove('drag');
+    if (dragging && dragDist < 6) spawnPulse(1.0);
+    dragging = false;
+  }
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  st.zoomVel = clamp(st.zoomVel + e.deltaY*0.0009, -0.6, 1.2);
+  updateHud(); wakeHud();
+}, { passive: false });
+
+function spawnPulse(strength){
+  st.pulses.push({ t0: st.time, strength, seed: Math.random() });
+  if (st.pulses.length > 6) st.pulses.shift();
+}
+
+function clamp(x, a, b){ return Math.min(b, Math.max(a, x)); }
+
+addEventListener('keydown', e => {
+  wakeHud();
+  switch (e.key) {
+    case ' ': st.paused = !st.paused; e.preventDefault(); break;
+    case 'm': case 'M':
+      st.symPrev = st.symIdx;
+      st.symIdx = (st.symIdx + 1) % SYMS.length;
+      st.symMix = 0;
+      break;
+    case 'c': case 'C': st.pal = (st.pal + 1) % PALETTES.length; break;
+    case 't': case 'T': st.trail = (st.trail + 1) % TRAILS.length; break;
+    case 's': case 'S': st.saveFlag = true; break;
+    case 'r': case 'R':
+      st.zoom = 0; st.zoomVel = st.zoomBase; st.rot = 0; st.rotVel = st.rotBase;
+      st.pulses = []; break;
+    case 'h': case 'H':
+      hudManual = !hudManual;
+      hudOn = hudManual;
+      hud.classList.toggle('hidden', !hudOn);
+      break;
+  }
+  updateHud();
+});
+
+/* ============================== Render loop ============================== */
+
+function setUniforms(p, pairs){
+  for (const [name, fn] of pairs) fn(gl.getUniformLocation(p, name));
+}
+
+let prev = performance.now();
+let accSrc, accDst;
+
+function frame(now){
+  requestAnimationFrame(frame);
+  const dt = Math.min((now - prev)/1000, 0.05);
+  prev = now;
+
+  if (!st.paused) {
+    st.time += dt;
+    st.zoom += st.zoomVel * dt;
+    st.zoom = ((st.zoom % 64) + 64) % 64;
+    st.rot += st.rotVel * dt;
+    /* gentle return toward the base drift */
+    st.rotVel += (st.rotBase - st.rotVel) * (1 - Math.exp(-dt*0.5));
+    st.zoomVel += (st.zoomBase - st.zoomVel) * (1 - Math.exp(-dt*0.06));
+    if (st.symMix < 1) st.symMix = Math.min(1, st.symMix + dt/1.4);
+  }
+  st.ptrSm[0] += (st.ptr[0] - st.ptrSm[0]) * (1 - Math.exp(-dt*2.5));
+  st.ptrSm[1] += (st.ptr[1] - st.ptrSm[1]) * (1 - Math.exp(-dt*2.5));
+
+  hudTimer += dt;
+  if (hudManual && hudOn && hudTimer > 6) { hudOn = false; hud.classList.add('hidden'); }
+
+  /* --- pass 1: scene --- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, sceneT.fbo);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(progScene);
+  const ease = t => t*t*(3-2*t);
+  setUniforms(progScene, [
+    ['uRes',  l => gl.uniform2f(l, W, H)],
+    ['uTime', l => gl.uniform1f(l, st.time)],
+    ['uZoom', l => gl.uniform1f(l, st.zoom)],
+    ['uRot',  l => gl.uniform1f(l, st.rot)],
+    ['uSym',  l => gl.uniform3f(l, SYMS[st.symPrev], SYMS[st.symIdx], ease(st.symMix))],
+    ['uPal',  l => gl.uniform1i(l, st.pal)],
+    ['uPtr',  l => gl.uniform2f(l, st.ptrSm[0]*(W/H), st.ptrSm[1])],
+  ]);
+  {
+    const data = new Float32Array(24);
+    for (let i = 0; i < 6; i++) {
+      const p = st.pulses[i];
+      if (p && st.time - p.t0 < 4.0) {
+        data[i*4+0] = st.time - p.t0;
+        data[i*4+1] = 1;
+        data[i*4+2] = p.strength;
+        data[i*4+3] = p.seed;
+      }
+    }
+    gl.uniform4fv(gl.getUniformLocation(progScene, 'uPulse'), data);
+  }
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  /* --- pass 2: feedback accumulate --- */
+  if (!accSrc) { accSrc = accA; accDst = accB; }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, accDst.fbo);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(progFeed);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, sceneT.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, accSrc.tex);
+  setUniforms(progFeed, [
+    ['uScene',  l => gl.uniform1i(l, 0)],
+    ['uPrev',   l => gl.uniform1i(l, 1)],
+    ['uRes',    l => gl.uniform2f(l, W, H)],
+    ['uDecay',  l => gl.uniform1f(l, st.paused ? 0.96 : TRAILS[st.trail].decay)],
+    ['uDRot',   l => gl.uniform1f(l, st.rotVel*dt*0.55)],
+    ['uDScale', l => gl.uniform1f(l, Math.exp(st.zoomVel*dt*0.46*0.6))],
+  ]);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  /* --- pass 3: display --- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(progDisp);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, accDst.tex);
+  setUniforms(progDisp, [
+    ['uAcc',  l => gl.uniform1i(l, 0)],
+    ['uRes',  l => gl.uniform2f(l, W, H)],
+    ['uTime', l => gl.uniform1f(l, st.time)],
+  ]);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  [accSrc, accDst] = [accDst, accSrc];
+
+  if (st.saveFlag) {
+    st.saveFlag = false;
+    const a = document.createElement('a');
+    a.download = `infinite-mandala-${Date.now()}.png`;
+    a.href = canvas.toDataURL('image/png');
+    a.click();
+  }
+}
+requestAnimationFrame(frame);
+
+/* resize also needs to reset feedback ping-pong */
+addEventListener('resize', () => { accSrc = null; accDst = null; });
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "name": "旋光 — Senkō / The Rotation of Light",
+  "short_name": "旋光",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "start_url": ".",
+  "icons": []
+}

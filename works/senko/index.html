@@ -1,0 +1,1215 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="旋光 Senkō — 光渦（軌道角運動量）の数式で、闇を軸に回る光の花窓を建てる。角運動量に比例して周波数をずらすと場全体が厳密な剛体として回る。MQRI ART。">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="旋光">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.webmanifest">
+<title>旋光 — Senkō / The Rotation of Light</title>
+<style>
+  :root{
+    --ink: rgba(236,232,226,.92);
+    --ink-dim: rgba(236,232,226,.42);
+    --ink-faint: rgba(236,232,226,.22);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;background:#000;overflow:hidden}
+  body{
+    font-family:"Hiragino Mincho ProN","Yu Mincho",'Times New Roman',serif;
+    -webkit-font-smoothing:antialiased;
+    color:var(--ink);
+    cursor:crosshair;
+  }
+  /* touch-action:none が無いと、指の視点ドラッグをブラウザのスクロールに奪われる */
+  #gl{display:block;width:100vw;height:100vh;touch-action:none}
+  html,body{-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+  /* 操作案内は入力デバイスで出し分ける（指にキーボードもホイールも無い） */
+  .touch-only{display:none}
+  @media (pointer:coarse){.pointer-only{display:none}.touch-only{display:block}}
+  html.is-touch .pointer-only{display:none}
+  html.is-touch .touch-only{display:block}
+
+  .ui{position:fixed;z-index:10;pointer-events:none;user-select:none;
+      transition:opacity .8s cubic-bezier(.2,.6,.2,1)}
+  body.bare .ui{opacity:0}
+
+  /* --- title --- */
+  #title{top:max(clamp(22px,4.2vh,52px), env(safe-area-inset-top));left:max(clamp(22px,4vw,60px), env(safe-area-inset-left))}
+  #title h1{
+    font-size:clamp(26px,3.1vw,44px);font-weight:400;
+    letter-spacing:.42em;line-height:1;
+    text-shadow:0 0 34px rgba(190,205,255,.28);
+  }
+  #title .rom{
+    margin-top:1.15em;font-size:clamp(9px,.72vw,11px);
+    letter-spacing:.34em;color:var(--ink-dim);
+    font-family:ui-monospace,"SF Mono",Menlo,monospace;text-transform:uppercase;
+  }
+  #title .sub{
+    margin-top:.85em;font-size:clamp(10.5px,.82vw,13px);
+    letter-spacing:.18em;color:var(--ink-faint);line-height:1.9;
+  }
+
+  /* --- readout --- */
+  #readout{
+    bottom:max(clamp(20px,3.4vh,40px), env(safe-area-inset-bottom));left:max(clamp(22px,4vw,60px), env(safe-area-inset-left));
+    font-family:ui-monospace,"SF Mono",Menlo,monospace;
+    font-size:10px;letter-spacing:.13em;line-height:2.05;color:var(--ink-faint);
+  }
+  #readout b{font-weight:400;color:var(--ink-dim)}
+  #readout .k{display:inline-block;min-width:5.2em;color:rgba(236,232,226,.16)}
+
+  /* --- hint --- */
+  #hint{
+    bottom:max(clamp(20px,3.4vh,40px), env(safe-area-inset-bottom));right:max(clamp(22px,4vw,60px), env(safe-area-inset-right));text-align:right;
+    font-family:ui-monospace,"SF Mono",Menlo,monospace;
+    font-size:9.5px;letter-spacing:.16em;line-height:2.1;color:rgba(236,232,226,.17);
+  }
+  #hint kbd{
+    font:inherit;color:rgba(236,232,226,.34);
+    border:1px solid rgba(236,232,226,.14);border-radius:2px;
+    padding:.05em .38em;margin-right:.3em;
+  }
+
+  /* --- physics note --- */
+  #note{
+    top:max(clamp(22px,4.2vh,52px), env(safe-area-inset-top));right:max(clamp(22px,4vw,60px), env(safe-area-inset-right));
+    max-width:min(34ch,32vw);text-align:right;
+    font-size:11px;letter-spacing:.06em;line-height:2.1;color:rgba(236,232,226,.32);
+    opacity:0;transition:opacity .7s
+  }
+  body.note #note{opacity:1}
+  #note hr{border:0;border-top:1px solid rgba(236,232,226,.1);margin:.9em 0}
+  #note code{font-family:ui-monospace,Menlo,monospace;font-size:10px;color:rgba(190,205,255,.5)}
+
+  /* --- flash label on preset change --- */
+  #flash{
+    left:50%;top:50%;transform:translate(-50%,-50%);
+    font-size:clamp(30px,4.4vw,62px);letter-spacing:.3em;
+    opacity:0;transition:opacity 1.4s ease-out;
+    text-shadow:0 0 60px rgba(190,205,255,.35);
+  }
+  #flash.on{opacity:.9;transition:opacity .18s}
+
+  #err{
+    position:fixed;inset:0;display:none;place-content:center;
+    padding:12vw;z-index:99;background:#000;
+    font-size:14px;line-height:2;letter-spacing:.06em;color:#c9c3ba
+  }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div class="ui" id="title">
+  <h1>旋光</h1>
+  <div class="rom">Sen&#183;kō &nbsp;/&nbsp; the rotation of light</div>
+  <div class="sub">光は、闇を軸にして回る。</div>
+</div>
+
+<div class="ui" id="note">
+  <div>ラゲール・ガウスモードの重ね合わせ。各モードの角運動量 <code>ℓħ</code> に比例して周波数を <code>ω = ω₀ + ℓΔ</code> とずらすと、強度分布は <code>φ − Δt</code> だけの関数になる。場の全体が<b>剛体のように回る</b>。</div>
+  <hr>
+  <div>共役な対 <code>LG(p,+ℓ) ⊕ LG(p,−ℓ)</code> は<code>2p+|ℓ|+1</code> が等しく、ねじれずに立つ。花弁は <code>2|ℓ|</code> 枚、その間の暗線は場の厳密なゼロ。</div>
+  <hr>
+  <div>中心の闇は渦の芯。位相が定義できず、振幅が厳密に消える一本の線 — 光がつくる闇。</div>
+  <hr>
+  <div>レイリー長 <code>z_R = πw₀²/λ</code> は波長ごとに違う。広がる速さが色ごとに異なり、花弁の縁に色が分かれて出る。分光サンプリング → CIE 1931 → AgX。</div>
+</div>
+
+<div class="ui" id="readout"></div>
+
+<div class="ui" id="hint">
+  <div class="pointer-only"><kbd>1</kbd>–<kbd>5</kbd> 位相配置</div>
+  <div class="pointer-only"><kbd>Q</kbd> 光源スペクトル</div>
+  <div class="pointer-only"><kbd>drag</kbd> 視点 &nbsp; <kbd>scroll</kbd> 距離</div>
+  <div class="pointer-only"><kbd>A</kbd> 軸上へ &nbsp; <kbd>space</kbd> 静止</div>
+  <div class="pointer-only"><kbd>H</kbd> 解説 &nbsp; <kbd>F</kbd> 無地 &nbsp; <kbd>S</kbd> 保存</div>
+  <div class="touch-only"><kbd>なぞる</kbd> 視点 &nbsp; <kbd>ピンチ</kbd> 距離</div>
+  <div class="touch-only"><kbd>タップ</kbd> 位相配置を送る</div>
+  <div class="touch-only"><kbd>2本指タップ</kbd> 軸上⇄側面</div>
+  <div class="touch-only"><kbd>長押し</kbd> 静止</div>
+</div>
+
+<div class="ui" id="flash"></div>
+<div id="err"></div>
+
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════════════════
+   旋光 — Senkō / The Rotation of Light
+   ---------------------------------------------------------------------------
+   A coherent superposition of Laguerre–Gaussian modes, rendered as a
+   single-scattering volume in mist, integrated spectrally.
+
+   Physics
+     · LG_{p,ℓ}(r,φ,z;λ) evaluated exactly in the paraxial regime, including
+       the beam-waist expansion w(z), the wavefront-curvature phase and the
+       Gouy phase (2p+|ℓ|+1)·arctan(z/z_R).
+     · Rotational frequency comb: mode ℓ is detuned by ω = ω₀ + ℓΔ. The
+       intensity then depends on azimuth only through (φ − Δt), so the whole
+       interference pattern is an exact rigid rotor turning at Δ — the real
+       mechanism behind the rotational-Doppler / spin-to-orbital experiments.
+     · The vortex core is a true zero of the field: light manufacturing dark.
+
+   Colour
+     · Stratified spectral sampling, Wyman–Sloan–Shirley (JCGT 2013) multi-lobe
+       piecewise-Gaussian fits to the CIE 1931 standard observer, illuminant
+       adaptation, XYZ → linear sRGB, minimal AgX display transform.
+
+   Craft
+     · RGBA16F pipeline, temporal accumulation, GPU auto-exposure (no readback
+       stall), 6-level dual-filter bloom, blue-noise dither, adaptive
+       resolution.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── 1. spectral / colour science (CPU side) ──────────────────────────── */
+
+// Wyman, Sloan & Shirley 2013 — multi-lobe piecewise Gaussian fit, CIE 1931.
+const pg = (w, mu, g, d) => { const t = (w - mu) * (w < mu ? g : d); return Math.exp(-0.5 * t * t); };
+const xBar = w => 0.362 * pg(w, 442.0, .0624, .0374) + 1.056 * pg(w, 599.8, .0264, .0323) - 0.065 * pg(w, 501.1, .0490, .0382);
+const yBar = w => 0.821 * pg(w, 568.8, .0213, .0247) + 0.286 * pg(w, 530.9, .0613, .0322);
+const zBar = w => 1.217 * pg(w, 437.0, .0845, .0278) + 0.681 * pg(w, 459.0, .0385, .0725);
+
+const D65 = [0.95047, 1.0, 1.08883];
+
+// Source spectra. `support` mirrors exactly how the shader importance-samples λ,
+// so the CPU-side normalisation and the GPU estimator agree.
+const SPECTRA = [
+  { id: 0, name: '白光', rom: 'broadband 400–700', support: [[400, 700]], balance: true },
+  { id: 1, name: '三線', rom: 'laser lines 450·532·633', support: [[443, 457], [525, 539], [626, 640]], balance: true },
+  { id: 2, name: '単色', rom: 'monochromatic 532', support: [[532, 532]], balance: false },
+  { id: 3, name: '墨', rom: 'achromatic', support: null, balance: false },
+];
+
+/** Integrate ∫S·x̄ , ∫S·ȳ , ∫S·z̄ over the spectrum's support (top-hat S=1). */
+function spectrumWhite(sp) {
+  if (!sp.support) return [1, 1, 1];
+  let X = 0, Y = 0, Z = 0;
+  for (const [a, b] of sp.support) {
+    if (b - a < 1e-6) { X += xBar(a); Y += yBar(a); Z += zBar(a); continue; }
+    const dl = 0.25;
+    for (let l = a + dl * 0.5; l < b; l += dl) { X += xBar(l) * dl; Y += yBar(l) * dl; Z += zBar(l) * dl; }
+  }
+  return [X, Y, Z];
+}
+
+/** norm = 1/Y so a flat unit-intensity field renders at Y=1; whiteScale adapts
+ *  the source illuminant onto D65 so "white light" actually reads as white. */
+function spectrumCalibration(sp) {
+  const [X, Y, Z] = spectrumWhite(sp);
+  const norm = 1 / Math.max(Y, 1e-6);
+  let ws = [1, 1, 1];
+  if (sp.balance) {
+    const w = [X * norm, Y * norm, Z * norm];
+    ws = D65.map((d, i) => Math.min(4, Math.max(0.25, d / Math.max(w[i], 1e-4))));
+  }
+  return { norm, ws };
+}
+
+/* ─── 2. the modal presets ─────────────────────────────────────────────── */
+/* mode = [ℓ, p, amplitude];  omega = Δ, the rigid-rotor angular velocity.
+ *
+ * The Gouy index G = 2p+|ℓ|+1 sets how fast a mode's phase advances along z.
+ * When two modes share the same G their relative phase is z-invariant, so the
+ * interference pattern is a straight, untwisted column of petals that rotates
+ * rigidly in time — |Δℓ| of them. Those sets stay long and slender.
+ * When G differs the pattern screws along the axis; those sets are kept short,
+ * because a long twisted volume integrates its own structure away. */
+/* The conjugate pair LG(p,+ℓ) ⊕ LG(p,−ℓ) is the heart of the piece: equal G, so
+ * no twist, and equal amplitude, so the interference is a clean cos²(ℓ(φ−Δt)) —
+ * 2|ℓ| petals separated by exact zeros, in p+1 concentric rings, the whole
+ * rosette turning rigidly. Every dark line in it is a true null of the field. */
+const PRESETS = [
+  { name: '双', rom: 'dyad · LG(0,±1) · 2 petals',
+    modes: [[1, 0, 1.00], [-1, 0, 1.00]],
+    omega: 0.150, w0: 1.00, mist: 0.052, long: true },
+  { name: '花', rom: 'rosette · LG(0,±4) · 8 petals',
+    modes: [[4, 0, 1.00], [-4, 0, 1.00]],
+    omega: 0.062, w0: 1.05, mist: 0.048, long: true },
+  { name: '輪', rom: 'annular rosette · LG(1,±5) · 10×2',
+    modes: [[5, 1, 1.00], [-5, 1, 1.00]],
+    omega: 0.050, w0: 1.05, mist: 0.044, long: true },
+  { name: '曼', rom: 'mandala · LG(2,±9) · 18×3',
+    modes: [[9, 2, 1.00], [-9, 2, 1.00]],
+    omega: 0.030, w0: 1.00, mist: 0.038, long: true },
+  { name: '螺', rom: 'helix · LG(0,1)⊕LG(0,5) · twisted',
+    modes: [[1, 0, 1.00], [5, 0, 0.94]],
+    omega: 0.086, w0: 1.10, mist: 0.060, long: false },
+];
+
+/** Generalised Laguerre L_p^a(x) — same recurrence as the shader. */
+function laguerre(p, a, x) {
+  if (p <= 0) return 1;
+  let lm = 1, l = 1 + a - x;
+  for (let k = 1; k < p; k++) {
+    const ln = ((2 * k + 1 + a - x) * l - (k + a) * lm) / (k + 1);
+    lm = l; l = ln;
+  }
+  return l;
+}
+
+/** The transverse amplitude the shader evaluates, in u = √2·r/w:
+ *  u^|ℓ| · L_p^|ℓ|(u²) · e^(−u²/2).
+ *  A closed-form peak only exists for p=0, and using it for p>0 lets the
+ *  amplitude run away by orders of magnitude — so find the peak numerically
+ *  and hand the shader 1/peak. Every mode then peaks at unity. */
+function modeNorm(l, p) {
+  const L = Math.abs(l);
+  const uMax = Math.sqrt(4 * (L + 2 * p + 2));
+  let peak = 0;
+  for (let i = 1; i <= 3000; i++) {
+    const u = (uMax * i) / 3000;
+    const a = Math.abs(Math.pow(u, L) * laguerre(p, L, u * u) * Math.exp(-0.5 * u * u));
+    if (a > peak) peak = a;
+  }
+  return peak > 1e-30 ? 1 / peak : 1;
+}
+
+const TAN_HALF_FOV = Math.tan(0.31);
+const LAMBDA_SCALE = 1.32;      // nm→world; sets the beam's waist-to-λ ratio
+
+/* A charge-ℓ ring peaks at r = w·√(|ℓ|/2), and the Rayleigh range z_R = πw₀²/λ
+ * sets the length over which the Gouy phase acts. Both follow from the mode
+ * set, so derive the framing from the physics rather than eyeballing it. */
+PRESETS.forEach(pr => {
+  // outer edge of the p-th radial lobe of x^|ℓ|·L_p^|ℓ|(x)·e^(−x/2), x = 2r²/w²
+  let rpk = 0, petals = 0;
+  for (const [l, p] of pr.modes) {
+    rpk = Math.max(rpk, 1.05 * pr.w0 * Math.sqrt((Math.abs(l) + 3.2 * p + 1) / 2));
+  }
+  for (const a of pr.modes) for (const b of pr.modes) petals = Math.max(petals, Math.abs(a[0] - b[0]));
+  pr.rpk = rpk;
+  pr.petals = petals;
+  pr.rcyl = 2.1 * rpk + 1.0;
+
+  const zR = Math.PI * pr.w0 * pr.w0 / (550e-3 * LAMBDA_SCALE);
+  pr.zR = zR;
+  /* How much of the beam is dusted with mist is a staging choice — the lit
+   * extent, not the beam. On axis a thin slab keeps w(z) nearly constant, so
+   * the cross-section stays sharp; from the side a long volume gives the
+   * column its body. Twisted sets stay short in both, or a fraction of a Gouy
+   * turn averages the petals away. */
+  pr.zEnvAxial = zR * (pr.long ? 0.50 : 0.34);
+  pr.zEnvSide = zR * (pr.long ? 1.60 : 0.50);
+
+  // On axis, azimuth is exactly constant along every ray, so the petals stay
+  // sharp — but perspective still smears them radially by (d+zEnv)/(d−zEnv).
+  // Standing well back with a long lens drives that ratio to ~1.25 and the
+  // rose reads as its true cross-section.
+  const flare = Math.sqrt(1 + (pr.zEnvAxial / zR) ** 2);   // w(±zEnv)/w₀
+  pr.distAxial = 11 * pr.zEnvAxial;
+  pr.tanAxial = rpk * flare / (0.50 * pr.distAxial);
+  // from the side the subject is the column's length, not its radius: frame the
+  // lit extent and let the shaft stay slender against the dark
+  pr.distSide = Math.max(9.0, 1.85 * pr.zEnvSide / TAN_HALF_FOV);
+
+  // uModes staging, built once: (ℓ, p, amplitude, 1/peak)
+  pr.flat = new Float32Array(32);
+  pr.modes.forEach(([l, p, a], i) => {
+    pr.flat.set([l, p, a, modeNorm(l, p)], i * 4);
+  });
+});
+
+/* ─── 3. shaders ───────────────────────────────────────────────────────── */
+
+const VS = `#version 300 es
+void main(){
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+const COMMON = `
+float hash12(vec2 p){
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+float hash13(vec3 p){
+  p = fract(p * 0.1031);
+  p += dot(p, p.zyx + 31.32);
+  return fract((p.x + p.y) * p.z);
+}
+/* Interleaved gradient noise (Jimenez). Spatially far better behaved than a
+   hash: neighbouring pixels get well-spread offsets, so the residual Monte
+   Carlo error reads as fine grain instead of chroma confetti. */
+float ign(vec2 p){
+  return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
+}
+`;
+
+/* ── 3a. the field: spectral single-scattering volume raymarch ────────── */
+const FS_FIELD = `#version 300 es
+precision highp float;
+out vec4 fragColor;
+
+uniform vec2  uRes;
+uniform float uPhase;        // Δ·t, the pattern's azimuthal phase
+uniform float uTime;
+uniform int   uFrame;
+
+uniform vec3  uEye, uFwd, uRight, uUp;
+uniform float uTanHalf;
+
+uniform vec4  uModes[8];     // (ℓ, p, amplitude, norm)
+uniform int   uModeCount;
+uniform float uW0, uLScale, uDisp;
+
+uniform float uMist, uHG, uZEnv;
+uniform int   uSpecMode;
+uniform vec3  uWhiteScale;
+uniform float uSpecNorm;
+uniform int   uLamN, uSteps;
+uniform vec2  uBounds;       // (R_cyl, Z_max)
+
+${COMMON}
+
+/* CIE 1931 standard observer — Wyman/Sloan/Shirley multi-lobe fit */
+float xFit(float w){
+  float t1=(w-442.0)*((w<442.0)?0.0624:0.0374);
+  float t2=(w-599.8)*((w<599.8)?0.0264:0.0323);
+  float t3=(w-501.1)*((w<501.1)?0.0490:0.0382);
+  return 0.362*exp(-0.5*t1*t1) + 1.056*exp(-0.5*t2*t2) - 0.065*exp(-0.5*t3*t3);
+}
+float yFit(float w){
+  float t1=(w-568.8)*((w<568.8)?0.0213:0.0247);
+  float t2=(w-530.9)*((w<530.9)?0.0613:0.0322);
+  return 0.821*exp(-0.5*t1*t1) + 0.286*exp(-0.5*t2*t2);
+}
+float zFit(float w){
+  float t1=(w-437.0)*((w<437.0)?0.0845:0.0278);
+  float t2=(w-459.0)*((w<459.0)?0.0385:0.0725);
+  return 1.217*exp(-0.5*t1*t1) + 0.681*exp(-0.5*t2*t2);
+}
+
+/* importance-sample the source spectrum: returns (λ nm, 1/pdf) */
+vec2 sampleLambda(float u){
+  if(uSpecMode == 1){
+    float s = u * 3.0;
+    float k = min(floor(s), 2.0);
+    float f = s - k;
+    float c = (k < 0.5) ? 450.0 : ((k < 1.5) ? 532.0 : 633.0);
+    return vec2(c + (f - 0.5) * 14.0, 42.0);
+  }
+  if(uSpecMode == 2) return vec2(532.0, 1.0);
+  if(uSpecMode == 3) return vec2(550.0, 1.0);
+  return vec2(400.0 + 300.0 * u, 300.0);
+}
+
+/* generalised Laguerre L_p^a(x) by the standard three-term recurrence
+   (k+1)L_{k+1} = (2k+1+a-x)L_k - (k+a)L_{k-1} */
+float lag(float pf, float a, float x){
+  int p = int(pf + 0.5);
+  if(p <= 0) return 1.0;
+  float lm = 1.0;              // L_0
+  float l  = 1.0 + a - x;      // L_1
+  for(int k = 1; k < 8; ++k){
+    if(k >= p) break;
+    float ln = ((2.0*float(k) + 1.0 + a - x) * l - (float(k) + a) * lm) / (float(k) + 1.0);
+    lm = l; l = ln;
+  }
+  return l;
+}
+
+/* |Σ_j A_j LG_{p,ℓ}(r,φ,z;λ) e^{-iℓΔt}|²  — the physical intensity.
+   r/φ/z are hoisted out of the wavelength loop by the caller. */
+float intensityAt(float r, float phi, float z, float lamNM){
+  float lam0 = 550.0e-3 * uLScale;
+  float lam  = mix(lam0, lamNM * 1.0e-3 * uLScale, uDisp);
+  float k  = 6.283185307 / lam;
+  float zR = 3.141592654 * uW0 * uW0 / lam;
+
+  float wz  = uW0 * sqrt(1.0 + (z/zR)*(z/zR));
+  float iw  = 1.0 / wz;
+  float x   = 1.414213562 * r * iw;      // √2·r/w
+  float xx  = x * x;                     // 2r²/w²
+  float env = exp(-0.5 * xx) * (uW0 * iw);
+  float gouy = atan(z / zR);
+  float curv = k * r * r * z / (2.0 * (z*z + zR*zR));   // = k r²/2R(z), no pole
+  float ang  = phi - uPhase;
+
+  vec2 U = vec2(0.0);
+  for(int j = 0; j < 8; ++j){
+    if(j >= uModeCount) break;
+    vec4 m = uModes[j];
+    float L  = abs(m.x);
+    float ra = (L < 0.5) ? 1.0 : pow(max(x, 1.0e-7), L);
+    float A  = m.z * m.w * ra * lag(m.y, L, xx) * env;
+    float ph = m.x * ang - curv + (2.0 * m.y + L + 1.0) * gouy;
+    U += A * vec2(cos(ph), sin(ph));
+  }
+  return dot(U, U);
+}
+
+/* A breath of drift in the mist. Three sheared sines cost a fraction of a
+   trilinear value-noise fetch, and at this scale the difference is invisible. */
+float drift(vec3 p, float t){
+  return sin(p.x * 0.61 + t) * sin(p.y * 0.73 - t * 0.8) * sin(p.z * 0.41 + t * 0.6);
+}
+
+/* clip the ray to the cylinder r<R ∧ |z|<Z that bounds the beam */
+bool clipBeam(vec3 ro, vec3 rd, out float t0, out float t1){
+  float R = uBounds.x, Z = uBounds.y;
+  float lo = -1.0e9, hi = 1.0e9;
+
+  float a = dot(rd.xy, rd.xy);
+  float b = 2.0 * dot(ro.xy, rd.xy);
+  float c = dot(ro.xy, ro.xy) - R * R;
+  if(a > 1.0e-9){
+    float disc = b*b - 4.0*a*c;
+    if(disc < 0.0) return false;
+    float sd = sqrt(disc);
+    lo = (-b - sd) / (2.0*a);
+    hi = (-b + sd) / (2.0*a);
+  } else if(c > 0.0) return false;
+
+  if(abs(rd.z) > 1.0e-9){
+    float za = (-Z - ro.z) / rd.z, zb = (Z - ro.z) / rd.z;
+    lo = max(lo, min(za, zb));
+    hi = min(hi, max(za, zb));
+  } else if(abs(ro.z) > Z) return false;
+
+  t0 = max(lo, 0.0); t1 = hi;
+  return t1 > t0;
+}
+
+float hgPhase(float c, float g){
+  float d = 1.0 + g*g - 2.0*g*c;
+  return (1.0 - g*g) / (12.56637061 * pow(max(d, 1.0e-4), 1.5));
+}
+
+const mat3 XYZ_to_sRGB = mat3(
+   3.2404542, -0.9692660,  0.0556434,
+  -1.5371385,  1.8760108, -0.2040259,
+  -0.4985314,  0.0415560,  1.0572252);
+
+void main(){
+  vec2 px = gl_FragCoord.xy;
+  float fj = fract(float(uFrame) * 0.6180339887);
+
+  // low-discrepancy per-pixel offsets, rotated each frame by the golden ratio:
+  // h1 strata the spectrum, h3 dithers the ray start, h2 jitters the sub-pixel
+  float h1 = fract(ign(px) + fj);
+  float h2 = fract(ign(px + 41.0) + fj * 0.7548776662);
+  float h3 = fract(ign(px + 97.0) + fj * 0.5698402910);
+  vec2 uv = (px + vec2(h2, hash12(px + fj * 37.0)) - 0.5 * uRes) / uRes.y;
+
+  vec3 rd = normalize(uFwd + (uRight * uv.x + uUp * uv.y) * (2.0 * uTanHalf));
+  vec3 ro = uEye;
+
+  float t0, t1;
+  if(!clipBeam(ro, rd, t0, t1)){ fragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
+
+  float ds = (t1 - t0) / float(uSteps);
+  // the beam propagates along ±z; scattering geometry is constant per pixel.
+  // Kept symmetric in rd.z so the work reads the same from either end.
+  float phase = mix(0.0795774715, hgPhase(abs(rd.z), uHG), 0.58);
+
+  vec3  acc = vec3(0.0);
+  float T   = 1.0;
+  float t   = t0 + ds * h3;                  // dithered start kills banding
+
+  for(int s = 0; s < 256; ++s){
+    if(s >= uSteps || T < 0.004) break;
+    vec3 q = ro + rd * t;
+
+    float turb = 0.94 + 0.16 * drift(q, uTime * 0.06);
+    // super-Gaussian axial window: the chamber of mist fades out rather than
+    // being cut, so no clip plane can print itself onto the image
+    float zt = q.z / uZEnv;
+    float zt2 = zt * zt;
+    float dens = uMist * turb * exp(-zt2 * zt2);
+    if(dens < 1.0e-5){ t += ds; continue; }
+
+    float qr = length(q.xy);
+    float qp = atan(q.y, q.x);
+
+    vec3 seg = vec3(0.0);
+    for(int i = 0; i < 8; ++i){
+      if(i >= uLamN) break;
+      float u = (float(i) + fract(h1 + float(i) * 0.7548776662 + fj)) / float(uLamN);
+      vec2 lw = sampleLambda(u);
+      float I = intensityAt(qr, qp, q.z, lw.x);
+      vec3 cmf = (uSpecMode == 3)
+        ? vec3(1.0)
+        : vec3(xFit(lw.x), yFit(lw.x), zFit(lw.x));
+      seg += I * lw.y * cmf;
+    }
+    seg /= float(uLamN);
+
+    acc += T * dens * phase * seg * ds;
+    T   *= exp(-dens * ds);
+    t   += ds;
+  }
+
+  acc *= uSpecNorm;
+  vec3 rgb = (uSpecMode == 3) ? acc : XYZ_to_sRGB * (acc * uWhiteScale);
+  fragColor = vec4(max(rgb, 0.0), 1.0);
+}`;
+
+/* ── 3b. temporal accumulation ────────────────────────────────────────── */
+const FS_TAA = `#version 300 es
+precision highp float;
+out vec4 fragColor;
+uniform sampler2D uCur, uHist;
+uniform float uAlpha;
+void main(){
+  ivec2 c = ivec2(gl_FragCoord.xy);
+  vec3 n = texelFetch(uCur, c, 0).rgb;
+  vec3 h = texelFetch(uHist, c, 0).rgb;
+  fragColor = vec4(max(mix(h, n, uAlpha), 0.0), 1.0);
+}`;
+
+/* ── 3c. auto-exposure, 1×1, entirely on GPU (no pipeline stall) ──────── */
+const FS_EXPO = `#version 300 es
+precision highp float;
+out vec4 fragColor;
+uniform sampler2D uSrc, uPrev;
+uniform float uDT, uKey;
+void main(){
+  float logSum = 0.0, pSum = 0.0;
+  const int N = 14;
+  for(int y = 0; y < N; ++y){
+    for(int x = 0; x < N; ++x){
+      vec2 uv = (vec2(float(x), float(y)) + 0.5) / float(N);
+      // slight golden-ratio shear so the grid does not align with structure
+      uv = fract(uv + vec2(0.0, 0.03819660113) * float(x));
+      float L = dot(texture(uSrc, uv).rgb, vec3(0.2126, 0.7152, 0.0722));
+      logSum += log(max(L, 1.0e-5));
+      float l2 = L * L;
+      pSum += l2 * l2;
+    }
+  }
+  float n    = float(N * N);
+  float key  = exp(logSum / n);                 // geometric mean
+  float peak = pow(max(pSum / n, 1.0e-20), 0.25); // soft high-percentile
+  float target = uKey / max(mix(key, peak, 0.64), 2.0e-5);
+  target = clamp(target, 0.02, 4000.0);
+
+  float prev = max(texture(uPrev, vec2(0.5)).r, 1.0e-4);
+  float rate = (target < prev) ? 1.6 : 0.9;     // ease into darkness slowly
+  float e = exp(mix(log(prev), log(target), 1.0 - exp(-uDT * rate)));
+  fragColor = vec4(e, e, e, 1.0);
+}`;
+
+/* ── 3d. bloom: dual-filter down / tent up ────────────────────────────── */
+const FS_DOWN = `#version 300 es
+precision highp float;
+out vec4 fragColor;
+uniform sampler2D uSrc, uExpo;
+uniform vec2 uTexel, uTexelDst;
+uniform int uFirst;
+uniform float uThresh, uKnee;
+vec3 T(vec2 uv){ return texture(uSrc, uv).rgb; }
+void main(){
+  vec2 uv = gl_FragCoord.xy * uTexelDst;   // exact even for odd source sizes
+  vec2 d = uTexel;
+  vec3 a=T(uv+d*vec2(-1,-1)), b=T(uv+d*vec2(0,-1)), c=T(uv+d*vec2(1,-1));
+  vec3 dd=T(uv+d*vec2(-.5,-.5)), e=T(uv+d*vec2(.5,-.5));
+  vec3 f=T(uv+d*vec2(-1,0)), g=T(uv), h=T(uv+d*vec2(1,0));
+  vec3 i=T(uv+d*vec2(-.5,.5)), j=T(uv+d*vec2(.5,.5));
+  vec3 k=T(uv+d*vec2(-1,1)), l=T(uv+d*vec2(0,1)), m=T(uv+d*vec2(1,1));
+  vec3 o = (dd+e+i+j) * 0.125
+         + (a+b+g+f)  * 0.03125
+         + (b+c+h+g)  * 0.03125
+         + (f+g+l+k)  * 0.03125
+         + (g+h+m+l)  * 0.03125;
+  if(uFirst == 1){
+    o *= texture(uExpo, vec2(0.5)).r;
+    float L = max(max(o.r, o.g), o.b);
+    float s = clamp(L - uThresh + uKnee, 0.0, 2.0 * uKnee);
+    s = s * s / (4.0 * uKnee + 1.0e-5);
+    o *= max(max(s, L - uThresh), 0.0) / max(L, 1.0e-5);
+  }
+  fragColor = vec4(max(o, 0.0), 1.0);
+}`;
+
+const FS_UP = `#version 300 es
+precision highp float;
+out vec4 fragColor;
+uniform sampler2D uSrc;
+uniform vec2 uTexelSrc, uTexelDst;
+uniform float uRadius;
+vec3 T(vec2 uv){ return texture(uSrc, uv).rgb; }
+void main(){
+  vec2 uv = gl_FragCoord.xy * uTexelDst;
+  vec2 d = uTexelSrc * uRadius;
+  vec3 o = T(uv + vec2(-d.x,-d.y)) * 1.0 + T(uv + vec2(0,-d.y)) * 2.0 + T(uv + vec2(d.x,-d.y)) * 1.0
+         + T(uv + vec2(-d.x, 0.0)) * 2.0 + T(uv)                * 4.0 + T(uv + vec2(d.x, 0.0)) * 2.0
+         + T(uv + vec2(-d.x, d.y)) * 1.0 + T(uv + vec2(0, d.y)) * 2.0 + T(uv + vec2(d.x, d.y)) * 1.0;
+  fragColor = vec4(o / 16.0, 1.0);   // accumulated into the target via ADD blend
+}`;
+
+/* ── 3e. composite: bloom + AgX + grain + vignette + dither ───────────── */
+const FS_COMP = `#version 300 es
+precision highp float;
+out vec4 fragColor;
+uniform sampler2D uHDR, uBloom, uExpo;
+uniform vec2  uRes;
+uniform float uBloomAmt, uTime, uVignette, uGrain, uLookPow, uLookSat;
+
+${COMMON}
+
+vec3 agxContrast(vec3 x){
+  vec3 x2 = x * x, x4 = x2 * x2;
+  return 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4
+       - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x - 0.00232;
+}
+vec3 agx(vec3 v){
+  const mat3 M = mat3(
+    0.842479062253094, 0.0423282422610123, 0.0423756549057051,
+    0.0784335999999992, 0.878468636469772, 0.0784336,
+    0.0792237451477643, 0.0791661274605434, 0.879142973793104);
+  const float lo = -12.47393, hi = 4.026069;
+  v = M * v;
+  v = clamp(log2(max(v, 1e-10)), lo, hi);
+  v = (v - lo) / (hi - lo);
+  return agxContrast(v);
+}
+vec3 agxLook(vec3 v){
+  const vec3 lw = vec3(0.2126, 0.7152, 0.0722);
+  float luma = dot(v, lw);
+  v = pow(max(v, 0.0), vec3(uLookPow));
+  return max(luma + uLookSat * (v - luma), 0.0);
+}
+vec3 agxOut(vec3 v){
+  const mat3 Mi = mat3(
+     1.19687900512017,  -0.0528968517574562, -0.0529716355144438,
+    -0.0980208811401368, 1.15190312990417,   -0.0980434501171241,
+    -0.0990297440797205,-0.0989611768448433,  1.15107367264116);
+  return clamp(Mi * v, 0.0, 1.0);
+}
+
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec2 sv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
+
+  float ev = texture(uExpo, vec2(0.5)).r;
+  vec3 c = texture(uHDR, uv).rgb * ev;
+  vec3 b = texture(uBloom, uv).rgb;
+  c = mix(c, b, uBloomAmt);
+
+  c = agxOut(agxLook(agx(c)));
+
+  // subtle emulsion grain, scaled to shadow density
+  float g = hash12(gl_FragCoord.xy + fract(uTime) * 313.7) - 0.5;
+  c += g * uGrain * (0.35 + 0.65 * (1.0 - dot(c, vec3(0.333))));
+
+  // vignette — note smoothstep(edge0 < edge1) so the falloff is well defined
+  c *= 1.0 - uVignette * smoothstep(0.30, 1.06, length(sv));
+
+  // ordered dither against 8-bit banding in the deep field
+  float dth = (hash12(gl_FragCoord.xy * 1.7 + 0.5) - 0.5) / 255.0;
+  fragColor = vec4(max(c + dth, 0.0), 1.0);
+}`;
+
+/* ─── 4. WebGL2 plumbing ──────────────────────────────────────────────── */
+
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl2', {
+  alpha: false, antialias: false, depth: false, stencil: false,
+  powerPreference: 'high-performance', preserveDrawingBuffer: false,
+});
+
+function die(msg) {
+  const e = document.getElementById('err');
+  e.style.display = 'grid';
+  e.textContent = msg;
+  throw new Error(msg);
+}
+if (!gl) die('WebGL2 が利用できません。Safari / Chrome の最新版でお試しください。');
+if (!gl.getExtension('EXT_color_buffer_float')) {
+  die('浮動小数点レンダーターゲット (EXT_color_buffer_float) が利用できません。');
+}
+
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(s);
+    console.error(log, src.split('\n').map((l, i) => `${i + 1}: ${l}`).join('\n'));
+    die('シェーダのコンパイルに失敗しました:\n' + log);
+  }
+  return s;
+}
+
+function program(fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, VS));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) die('リンク失敗:\n' + gl.getProgramInfoLog(p));
+  const u = new Proxy({}, {
+    get: (cache, name) => (name in cache ? cache[name] : (cache[name] = gl.getUniformLocation(p, name))),
+  });
+  return { p, u };
+}
+
+const P = {
+  field: program(FS_FIELD),
+  taa: program(FS_TAA),
+  expo: program(FS_EXPO),
+  down: program(FS_DOWN),
+  up: program(FS_UP),
+  comp: program(FS_COMP),
+};
+
+const vao = gl.createVertexArray();          // no attributes; gl_VertexID only
+
+function makeTarget(w, h, filter = gl.LINEAR, clear = [0, 0, 0, 1]) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.clearColor(...clear);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return { tex, fbo, w, h };
+}
+const dropTarget = t => { if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); } };
+
+function bindTarget(t) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, t ? t.fbo : null);
+  gl.viewport(0, 0, t ? t.w : canvas.width, t ? t.h : canvas.height);
+}
+function draw(prog) { gl.useProgram(prog.p); gl.bindVertexArray(vao); gl.drawArrays(gl.TRIANGLES, 0, 3); }
+function bindTex(unit, tex, loc) {
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.uniform1i(loc, unit);
+}
+
+/* ─── 5. state ────────────────────────────────────────────────────────── */
+
+const AXIAL = 0.055;    // essentially on the axis: petals stay razor sharp
+const SIDE = 1.16;
+
+const S = {
+  preset: 3,            // 曼 — LG(2,±9): 18 petals in 3 rings
+  spectrum: 1,          // 三線 — three laser lines separate the structure by colour
+  theta: AXIAL,         // polar angle from the beam axis (+z)
+  psi: 0.62,            // azimuth of the camera around the beam
+  zoom: 1.0,            // lens zoom; distance is derived from the view
+  warm: 60,             // frames of fast exposure adaptation
+  paused: false,
+  phase: 0,             // Δ·t accumulated (survives pause cleanly)
+  scale: 0.62,
+  lamN: 2,              // per frame; temporal accumulation completes the integral
+  steps: 40,
+  lastInput: -10,
+  frame: 0,
+  dirty: true,
+  msAvg: 16.7,
+  drift: 0,
+  noAdapt: false,
+};
+
+let RT = { hdr: null, hist: [null, null], histIdx: 0, expo: [null, null], expoIdx: 0, bloom: [] };
+const BLOOM_LEVELS = 6;
+
+function allocate() {
+  // a hidden or minimised window can report 0 here; never collapse the buffers
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const vw = window.innerWidth || document.documentElement.clientWidth || 1280;
+  const vh = window.innerHeight || document.documentElement.clientHeight || 720;
+  const cw = Math.max(320, Math.round(vw * dpr));
+  const ch = Math.max(200, Math.round(vh * dpr));
+  canvas.width = cw; canvas.height = ch;
+
+  const w = Math.max(2, Math.round(cw * S.scale));
+  const h = Math.max(2, Math.round(ch * S.scale));
+
+  dropTarget(RT.hdr); RT.hist.forEach(dropTarget); RT.bloom.forEach(dropTarget);
+  RT.hdr = makeTarget(w, h);
+  RT.hist = [makeTarget(w, h), makeTarget(w, h)];
+  RT.bloom = [];
+  let bw = w, bh = h;
+  for (let i = 0; i < BLOOM_LEVELS; i++) {
+    bw = Math.max(2, bw >> 1); bh = Math.max(2, bh >> 1);
+    RT.bloom.push(makeTarget(bw, bh));
+  }
+  if (!RT.expo[0]) {
+    RT.expo = [makeTarget(1, 1, gl.NEAREST, [1, 1, 1, 1]), makeTarget(1, 1, gl.NEAREST, [1, 1, 1, 1])];
+  }
+  S.dirty = true;
+}
+
+/* ─── 6. camera ───────────────────────────────────────────────────────── */
+
+const v3 = {
+  sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
+  cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
+  norm: a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; },
+  mix: (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t],
+};
+
+const smoothstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+/* The lens follows the view: a long telephoto looking down the axis, a normal
+ * lens from the side. Distance is derived so the work stays framed; the wheel
+ * is a zoom, not a dolly. */
+function camera(t) {
+  const pr = PRESETS[S.preset];
+  const idle = Math.max(0, t - S.lastInput - 3.2);
+  const ease = 1 - Math.exp(-idle * 0.5);
+  // taper the polar breathing near the axis, where it would otherwise clamp
+  const wob = Math.min(1, S.theta / 0.45);
+  const th = Math.min(Math.PI - 0.03, Math.max(0.02,
+    S.theta + 0.06 * wob * Math.sin(S.drift * 0.19) * ease));
+  const ps = S.psi + S.drift * 0.0135 * ease;
+
+  const s = smoothstep(0.12, 0.80, Math.min(th, Math.PI - th));
+  const tanHalf = (pr.tanAxial + (TAN_HALF_FOV - pr.tanAxial) * s) * S.zoom;
+  const dist = pr.distAxial + (pr.distSide - pr.distAxial) * s;
+  const di = dist * (1 + 0.035 * Math.sin(S.drift * 0.13 + 1.1) * ease);
+
+  const st = Math.sin(th), ct = Math.cos(th);
+  const eye = [di * st * Math.cos(ps), di * st * Math.sin(ps), di * ct];
+  const fwd = v3.norm(v3.sub([0, 0, 0], eye));
+  // keep the beam axis vertical on screen; swing to world-up when near-axial
+  const k = Math.min(1, Math.max(0, (st - 0.10) / 0.26));
+  const upRef = v3.norm(v3.mix([0, 1, 0], [0, 0, 1], k));
+  const right = v3.norm(v3.cross(fwd, upRef));
+  const up = v3.norm(v3.cross(right, fwd));
+  return { eye, fwd, right, up, tanHalf, s };
+}
+
+/* ─── 7. render ───────────────────────────────────────────────────────── */
+
+let calib = spectrumCalibration(SPECTRA[S.spectrum]);
+let prevT = performance.now() / 1000;
+let saveNext = false;
+
+function frameOnce(nowMs) {
+  const now = nowMs / 1000;
+  const raw = now - prevT;
+  const dt = Math.min(0.05, Math.max(0.0005, raw));
+  prevT = now;
+  // GL submission is asynchronous, so wall-clock around the draw calls measures
+  // nothing. The interval between presented frames is the real cost signal.
+  if (!S.paused && raw > 0.0005 && raw < 0.5) S.msAvg += (raw * 1000 - S.msAvg) * 0.09;
+  if (!S.paused) { S.phase += dt * PRESETS[S.preset].omega; S.drift += dt; }
+
+  const pr = PRESETS[S.preset];
+  const sp = SPECTRA[S.spectrum];
+  const cam = camera(S.drift);
+
+  /* --- field --- */
+  const f = P.field;
+  bindTarget(RT.hdr);
+  gl.useProgram(f.p);
+  gl.uniform2f(f.u.uRes, RT.hdr.w, RT.hdr.h);
+  gl.uniform1f(f.u.uPhase, S.phase);
+  gl.uniform1f(f.u.uTime, S.drift);
+  gl.uniform1i(f.u.uFrame, S.frame);
+  gl.uniform3fv(f.u.uEye, cam.eye);
+  gl.uniform3fv(f.u.uFwd, cam.fwd);
+  gl.uniform3fv(f.u.uRight, cam.right);
+  gl.uniform3fv(f.u.uUp, cam.up);
+  gl.uniform1f(f.u.uTanHalf, cam.tanHalf);
+  gl.uniform4fv(f.u.uModes, pr.flat);
+  gl.uniform1i(f.u.uModeCount, pr.modes.length);
+  gl.uniform1f(f.u.uW0, pr.w0);
+  gl.uniform1f(f.u.uLScale, LAMBDA_SCALE);
+  gl.uniform1f(f.u.uDisp, 1.0);
+  gl.uniform1f(f.u.uMist, pr.mist);
+  gl.uniform1f(f.u.uHG, 0.35);
+  const zEnv = pr.zEnvAxial + (pr.zEnvSide - pr.zEnvAxial) * cam.s;
+  gl.uniform1f(f.u.uZEnv, zEnv);
+  gl.uniform1i(f.u.uSpecMode, sp.id);
+  gl.uniform3fv(f.u.uWhiteScale, calib.ws);
+  gl.uniform1f(f.u.uSpecNorm, calib.norm);
+  // held still, frames are free: spend them on a cleaner integral
+  const mono = sp.id >= 2;
+  gl.uniform1i(f.u.uLamN, mono ? 1 : (S.paused ? 8 : S.lamN));
+  gl.uniform1i(f.u.uSteps, S.paused ? 112 : S.steps);
+  gl.uniform2f(f.u.uBounds, pr.rcyl, zEnv * 1.55);
+  draw(f);
+
+  /* --- temporal accumulation --- */
+  const hPrev = RT.hist[RT.histIdx];
+  const hCur = RT.hist[RT.histIdx ^ 1];
+  const ta = P.taa;
+  bindTarget(hCur);
+  gl.useProgram(ta.p);
+  bindTex(0, RT.hdr.tex, ta.u.uCur);
+  bindTex(1, hPrev.tex, ta.u.uHist);
+  gl.uniform1f(ta.u.uAlpha, S.dirty ? 1.0 : (S.paused ? 0.05 : 0.18));
+  draw(ta);
+  RT.histIdx ^= 1;
+  S.dirty = false;
+
+  /* --- auto-exposure --- */
+  const ePrev = RT.expo[RT.expoIdx];
+  const eCur = RT.expo[RT.expoIdx ^ 1];
+  const ex = P.expo;
+  bindTarget(eCur);
+  gl.useProgram(ex.p);
+  bindTex(0, hCur.tex, ex.u.uSrc);
+  bindTex(1, ePrev.tex, ex.u.uPrev);
+  // sprint to a sane exposure on the first frames and after any hard cut,
+  // then hand over to the slow, cinematic adaptation
+  gl.uniform1f(ex.u.uDT, dt * (S.warm > 0 ? 16.0 : 1.0));
+  gl.uniform1f(ex.u.uKey, 0.24);
+  if (S.warm > 0) S.warm--;
+  draw(ex);
+  RT.expoIdx ^= 1;
+
+  /* --- bloom --- */
+  const dn = P.down;
+  gl.useProgram(dn.p);
+  gl.uniform1f(dn.u.uThresh, 0.62);
+  gl.uniform1f(dn.u.uKnee, 0.45);
+  for (let i = 0; i < RT.bloom.length; i++) {
+    const src = i === 0 ? hCur : RT.bloom[i - 1];
+    const dst = RT.bloom[i];
+    bindTarget(dst);
+    gl.useProgram(dn.p);
+    bindTex(0, src.tex, dn.u.uSrc);
+    bindTex(1, eCur.tex, dn.u.uExpo);
+    gl.uniform2f(dn.u.uTexel, 1 / src.w, 1 / src.h);
+    gl.uniform2f(dn.u.uTexelDst, 1 / dst.w, 1 / dst.h);
+    gl.uniform1i(dn.u.uFirst, i === 0 ? 1 : 0);
+    draw(dn);
+  }
+  // upsample: each coarser level is tent-filtered and ADD-blended into the next
+  // finer one. Blending (rather than reading the destination) keeps every pass
+  // free of the read/write hazard on a single texture.
+  const upP = P.up;
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  for (let i = RT.bloom.length - 1; i > 0; i--) {
+    const src = RT.bloom[i], dst = RT.bloom[i - 1];
+    bindTarget(dst);
+    gl.useProgram(upP.p);
+    bindTex(0, src.tex, upP.u.uSrc);
+    gl.uniform2f(upP.u.uTexelSrc, 1 / src.w, 1 / src.h);
+    gl.uniform2f(upP.u.uTexelDst, 1 / dst.w, 1 / dst.h);
+    gl.uniform1f(upP.u.uRadius, 1.0);
+    draw(upP);
+  }
+  gl.disable(gl.BLEND);
+
+  /* --- composite --- */
+  const cp = P.comp;
+  bindTarget(null);
+  gl.useProgram(cp.p);
+  bindTex(0, hCur.tex, cp.u.uHDR);
+  bindTex(1, RT.bloom[0].tex, cp.u.uBloom);
+  bindTex(2, eCur.tex, cp.u.uExpo);
+  gl.uniform2f(cp.u.uRes, canvas.width, canvas.height);
+  gl.uniform1f(cp.u.uBloomAmt, 0.145);
+  gl.uniform1f(cp.u.uTime, now);
+  gl.uniform1f(cp.u.uVignette, 0.40);
+  gl.uniform1f(cp.u.uGrain, 0.013);
+  gl.uniform1f(cp.u.uLookPow, 1.14);
+  gl.uniform1f(cp.u.uLookSat, 1.22);
+  draw(cp);
+
+  if (saveNext) { saveNext = false; savePNG(); }
+
+  /* --- adaptive resolution --- */
+  if (S.frame % 45 === 44) adapt();
+
+  S.frame++;
+  updateReadout();
+}
+
+function render(nowMs) { frameOnce(nowMs); requestAnimationFrame(render); }
+
+// deterministic driver: advance N frames without waiting on rAF (which the
+// browser throttles to a halt in a background tab). Used for verification.
+window.__step = (n = 60, fps = 60, scale = null) => {
+  const prev = S.noAdapt;
+  S.noAdapt = true;                       // synthetic timings must not drive it
+  if (scale && Math.abs(scale - S.scale) > 1e-3) { S.scale = scale; allocate(); }
+  const base = performance.now();
+  for (let i = 0; i < n; i++) frameOnce(base + (i * 1000) / fps);
+  gl.finish();
+  S.noAdapt = prev;
+  return { frame: S.frame, scale: +S.scale.toFixed(2), size: [RT.hdr.w, RT.hdr.h] };
+};
+
+/* Hold the presented frame interval near a smooth 60fps. Thresholds sit above
+ * the 16.7ms vsync floor so a display-limited frame is never read as headroom. */
+function adapt() {
+  if (S.noAdapt || S.paused) return;   // paused frames are deliberately slow
+  const before = S.scale;
+  if (S.msAvg > 27 && S.scale > 0.30) S.scale = Math.max(0.30, S.scale * 0.88);
+  else if (S.msAvg < 18.5 && S.scale < 1.0) S.scale = Math.min(1.0, S.scale * 1.06);
+  if (Math.abs(S.scale - before) / before > 0.02) allocate();
+}
+
+/* ─── 8. interaction ──────────────────────────────────────────────────── */
+
+const flashEl = document.getElementById('flash');
+let flashTimer = 0;
+function flash(text) {
+  flashEl.textContent = text;
+  flashEl.classList.add('on');
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => flashEl.classList.remove('on'), 620);
+}
+
+/* Note: deliberately does not reset the accumulation buffer. The camera moves
+ * slowly enough that keeping the history reads as a long exposure rather than
+ * as ghosting — and resetting it would dump raw Monte Carlo noise on screen
+ * exactly while the viewer is looking. Hard cuts (preset, spectrum, resize) set
+ * S.dirty themselves. */
+function touched() { S.lastInput = S.drift; }
+
+let dragging = false, lastX = 0, lastY = 0;
+canvas.addEventListener('pointerdown', e => {
+  dragging = true; lastX = e.clientX; lastY = e.clientY;
+  canvas.setPointerCapture(e.pointerId); touched();
+});
+canvas.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  S.psi -= (e.clientX - lastX) * 0.0052;
+  S.theta = Math.min(Math.PI - 0.06, Math.max(0.06, S.theta - (e.clientY - lastY) * 0.0044));
+  lastX = e.clientX; lastY = e.clientY; touched();
+});
+const endDrag = () => { dragging = false; };
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  S.zoom = Math.min(2.6, Math.max(0.34, S.zoom * Math.exp(e.deltaY * 0.0012)));
+  touched();
+}, { passive: false });
+
+/* ---- タッチ: ピンチ=距離 / タップ=位相配置送り / 2本指タップ=軸上⇄側面 / 長押し=静止 ----
+   指にはホイールもキーボードも無い。視点のなぞりは pointer 系がそのまま拾う
+   （#gl の touch-action:none が前提）ので、それ以外の入口をここで用意する。 */
+{
+  let pinchPrev = null, tapAt = 0, moved = false, maxTouches = 0, holdTimer = null, held = false;
+  const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
+
+  canvas.addEventListener('touchstart', e => {
+    document.documentElement.classList.add('is-touch');
+    maxTouches = Math.max(maxTouches, e.touches.length);
+    if (e.touches.length === 1) {
+      tapAt = performance.now(); moved = false; held = false; maxTouches = 1; pinchPrev = null;
+      clearHold();
+      // 長押し＝静止（600msそのまま置いていたら発動し、指を離してもタップとは見なさない）
+      holdTimer = setTimeout(() => {
+        if (!moved) { held = true; S.paused = !S.paused; flash(S.paused ? '静' : '動'); }
+      }, 600);
+    } else if (e.touches.length === 2) {
+      clearHold();
+      dragging = false;
+      // tapAt はここで消さない。消すと「2本指タップ」が成立しなくなる。
+      // ピンチは必ず指が動くので moved=true となり、タップとは取り違えない。
+      pinchPrev = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                             e.touches[0].clientY - e.touches[1].clientY);
+    }
+  }, { passive: true });
+
+  canvas.addEventListener('touchmove', e => {
+    if (e.touches.length >= 2) {
+      const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                           e.touches[0].clientY - e.touches[1].clientY);
+      // 広げるほど寄る（ホイールと同じく指数で効かせる）
+      if (pinchPrev && d > 0) {
+        S.zoom = Math.min(2.6, Math.max(0.34, S.zoom * Math.pow(d / pinchPrev, 1.2)));
+        touched();
+      }
+      pinchPrev = d;
+    }
+    moved = true; clearHold();
+  }, { passive: true });
+
+  canvas.addEventListener('touchend', e => {
+    // 指が全部離れたときだけ確定する（ピンチの片指を離した瞬間に誤発火させない）
+    if (e.touches.length === 0) {
+      clearHold();
+      if (tapAt && !moved && !held && performance.now() - tapAt < 400) {
+        if (maxTouches >= 2) {                       // 2本指タップ＝軸上⇄側面
+          S.theta = S.theta > 0.35 ? AXIAL : SIDE;
+          S.warm = 24; touched(); flash(S.theta < 0.35 ? '軸' : '側');
+        } else {                                     // タップ＝位相配置を送る
+          setPreset(S.preset + 1); touched();        // setPreset 側で PRESETS.length を折り返す
+        }
+      }
+      dragging = false; pinchPrev = null; tapAt = 0; maxTouches = 0; held = false;
+    }
+  }, { passive: true });
+}
+
+function setPreset(i) {
+  S.preset = ((i % PRESETS.length) + PRESETS.length) % PRESETS.length;
+  S.dirty = true; S.warm = 30;
+  flash(PRESETS[S.preset].name);
+}
+function cycleSpectrum(d) {
+  S.spectrum = ((S.spectrum + d) % SPECTRA.length + SPECTRA.length) % SPECTRA.length;
+  calib = spectrumCalibration(SPECTRA[S.spectrum]);
+  S.dirty = true; S.warm = 30;
+  flash(SPECTRA[S.spectrum].name);
+}
+
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (k >= '1' && k <= '5') { setPreset(+k - 1); touched(); return; }
+  switch (k) {
+    case 'q': cycleSpectrum(e.shiftKey ? -1 : 1); touched(); break;
+    case ' ': e.preventDefault(); S.paused = !S.paused; flash(S.paused ? '静' : '動'); break;
+    case 'a':
+      S.theta = S.theta > 0.35 ? AXIAL : SIDE;
+      S.warm = 24; touched(); flash(S.theta < 0.35 ? '軸' : '側'); break;
+    case 'h': document.body.classList.toggle('note'); break;
+    case 'f': document.body.classList.toggle('bare'); break;
+    case 's': saveNext = true; break;
+    case 'r':
+      S.theta = AXIAL; S.psi = 0.62; S.zoom = 1.0;
+      S.drift = 0; S.warm = 24; touched(); break;
+  }
+});
+
+function savePNG() {
+  canvas.toBlob(b => {
+    const pr = PRESETS[S.preset], sp = SPECTRA[S.spectrum];
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(b);
+    a.download = `senko_${pr.rom.split(' ')[0]}_${sp.rom.split(' ')[0]}_${Math.round(S.phase * 1000)}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }, 'image/png');
+}
+
+/* ─── 9. readout ──────────────────────────────────────────────────────── */
+
+const readoutEl = document.getElementById('readout');
+function updateReadout() {
+  if (S.frame % 6) return;
+  const pr = PRESETS[S.preset], sp = SPECTRA[S.spectrum];
+  const ell = pr.modes.map(m => (m[0] >= 0 ? '+' : '−') + Math.abs(m[0])).join(' ');
+  const beat = (2 * Math.PI / (pr.omega * pr.petals)).toFixed(1);
+  readoutEl.innerHTML =
+    `<div><span class="k">mode</span><b>${pr.name}</b> &nbsp;ℓ = ${ell} &nbsp;→&nbsp; ${pr.petals} 弁</div>` +
+    `<div><span class="k">rotor</span>Δ = ${pr.omega.toFixed(3)} rad·s⁻¹ &nbsp;·&nbsp; ${beat}s / 一弁</div>` +
+    `<div><span class="k">source</span>${sp.name} &nbsp;${sp.rom}</div>` +
+    `<div><span class="k">solve</span>${S.paused ? '112×8λ 静止積分' : `${S.steps}×${sp.id >= 2 ? 1 : S.lamN}λ`}` +
+    ` &nbsp;·&nbsp; ${(S.scale * 100) | 0}% &nbsp;·&nbsp; ${S.msAvg.toFixed(1)}ms</div>`;
+}
+
+/* ─── 10. go ──────────────────────────────────────────────────────────── */
+
+addEventListener('resize', () => { clearTimeout(window.__rz); window.__rz = setTimeout(allocate, 120); });
+allocate();
+requestAnimationFrame(render);
+</script>
+</body>
+</html>
