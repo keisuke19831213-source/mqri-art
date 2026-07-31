@@ -1,0 +1,10 @@
+{
+  "name": "無限幾何回廊 — Infinite Geometry",
+  "short_name": "無限幾何回廊",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#05060c",
+  "theme_color": "#05060c",
+  "start_url": ".",
+  "icons": []
+}

@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="無限幾何回廊 Infinite Geometry — アポロニウスのガスケットを永遠に潜行する。ミクロとマクロが同じ形で入れ子になる自己相似の回廊。MQRI ART。">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="無限幾何回廊">
+<meta name="theme-color" content="#05060c">
+<link rel="manifest" href="manifest.webmanifest">
+<title>無限幾何回廊 — Infinite Geometry of Micro &amp; Macro</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #05060c; overflow: hidden;
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif;
+  }
+  /* touch-action:none が無いと、指のドラッグをブラウザのスクロールに奪われる */
+  #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  #view.dragging { cursor: grabbing; }
+  html, body { -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  /* 操作案内は入力デバイスで出し分ける（指にホイールもキーボードも無い） */
+  .touch-only { display: none; }
+  @media (pointer:coarse){ .pointer-only{display:none;} .touch-only{display:inline;} }
+  html.is-touch .pointer-only { display: none; }
+  html.is-touch .touch-only { display: inline; }
+
+  .ui {
+    position: fixed; z-index: 2; color: rgba(232, 236, 248, 0.92);
+    pointer-events: none; user-select: none;
+    transition: opacity 1.6s ease;
+  }
+  .ui.hidden { opacity: 0; }
+
+  #title { top: 34px; left: 40px; }
+  #title h1 {
+    margin: 0; font-size: 26px; font-weight: 500; letter-spacing: 0.35em;
+    text-shadow: 0 0 24px rgba(120, 160, 255, 0.35);
+  }
+  #title p {
+    margin: 10px 0 0 2px; font-size: 11.5px; letter-spacing: 0.22em;
+    color: rgba(190, 200, 226, 0.62);
+  }
+
+  #hint { bottom: 26px; left: 40px; font-size: 11px; letter-spacing: 0.14em;
+          color: rgba(180, 190, 216, 0.55); line-height: 1.9; }
+  #hint b { color: rgba(226, 232, 250, 0.8); font-weight: 500; }
+
+  #depth { bottom: 26px; right: 40px; font-size: 11px; letter-spacing: 0.2em;
+           color: rgba(180, 190, 216, 0.55); text-align: right; font-variant-numeric: tabular-nums; }
+
+  #fallback { position: fixed; inset: 0; display: none; place-items: center;
+              color: #aab; font-size: 14px; letter-spacing: 0.1em; }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div class="ui" id="title">
+  <h1>無限幾何回廊</h1>
+  <p>INFINITE GEOMETRY — A CORRIDOR BETWEEN MICRO AND MACRO</p>
+</div>
+
+<div class="ui" id="hint">
+  <span class="pointer-only"><b>drag</b> 視点 &nbsp;/&nbsp; <b>wheel</b> 潜行速度 &nbsp;/&nbsp; <b>space</b> 停止<br>
+  <b>1–4</b> 配色 &nbsp;/&nbsp; <b>S</b> 保存 &nbsp;/&nbsp; <b>H</b> UI</span><span class="touch-only"><b>なぞる</b> 視点 &nbsp;/&nbsp; <b>ピンチ</b> 潜行速度<br>
+  <b>タップ</b> 停止 &nbsp;/&nbsp; <b>2本指タップ</b> 配色</span>
+</div>
+
+<div class="ui" id="depth">DEPTH&nbsp;&times;1.0</div>
+<div id="fallback">お使いの環境は WebGL2 に対応していません。</div>
+
+<script>
+"use strict";
+
+/* ================================================================
+   無限幾何回廊 — Infinite Geometry of Micro & Macro
+   ----------------------------------------------------------------
+   ・円反転(メビウス変換)の反復が生むアポロニウス型ガスケット
+     — 無限に入れ子になる円 (Indra's Pearls)
+   ・スケール不変レイヤーのクロスフェードによる継ぎ目のない無限ズーム
+   ・HDR (RGBA16F) → Kawase dual-filter bloom → ACES tone mapping
+     → 色収差 / フィルムグレイン / ビネット
+   ================================================================ */
+
+const VERT = `#version 300 es
+void main(){
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+/* ---------------- scene: the infinite dive ---------------- */
+const SCENE_FS = `#version 300 es
+precision highp float;
+
+uniform vec2  uRes;
+uniform float uTime;
+uniform float uPhase;   // zoom phase: +1.0 = one layer generation
+uniform vec2  uMouse;   // smoothed pointer offset, -1..1
+uniform float uTwist;
+uniform int   uPalette;
+
+out vec4 fragColor;
+
+#define TAU 6.283185307179586
+
+mat2 rot(float a){ float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
+float hash11(float n){ return fract(sin(n * 127.1) * 43758.5453123); }
+float hash21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+vec2  hash22(vec2 p){ float n = hash21(p); return vec2(n, hash21(p + n + 17.17)); }
+
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash21(i),               hash21(i + vec2(1, 0)), f.x),
+             mix(hash21(i + vec2(0, 1)),  hash21(i + vec2(1, 1)), f.x), f.y);
+}
+float fbm(vec2 p){
+  float v = 0.0, a = 0.5;
+  mat2 m = rot(0.5) * 2.03;
+  for(int i = 0; i < 5; i++){ v += a * vnoise(p); p = m * p; a *= 0.5; }
+  return v;
+}
+
+vec3 pal(float t){
+  vec3 a, b, c, d;
+  if(uPalette == 0){      a = vec3(0.52, 0.48, 0.44); b = vec3(0.42, 0.40, 0.42); c = vec3(1.0, 0.7, 0.4); d = vec3(0.00, 0.12, 0.22); } // 金彩 gold/azure
+  else if(uPalette == 1){ a = vec3(0.52); b = vec3(0.48); c = vec3(1.0);           d = vec3(0.00, 0.33, 0.67); } // 極光 spectrum
+  else if(uPalette == 2){ a = vec3(0.50); b = vec3(0.50); c = vec3(2.0, 1.0, 0.0); d = vec3(0.50, 0.20, 0.25); } // 珊瑚 exotic
+  else {                  a = vec3(0.48); b = vec3(0.50); c = vec3(1.0);           d = vec3(0.30, 0.20, 0.20); } // 蒼鉛 cool
+  return a + b * cos(TAU * (c * t + d));
+}
+
+/* Apollonian-style gasket by iterated fold + circle inversion.
+   The accumulated conformal factor "sc" turns |z| back into true distance,
+   so filaments stay razor-thin at every magnification. */
+vec3 gasket(vec2 q, float invScale, float hue, float seed){
+  q  = rot(seed * TAU) * q;
+  q += (hash22(vec2(seed * 77.7, seed * 31.3)) - 0.5) * 0.7;
+
+  vec2  z    = q;
+  float sc   = 1.0;
+  float trap = 1e9;
+  float acc  = 0.0;
+  for(int i = 0; i < 8; i++){
+    z = -1.0 + 2.0 * fract(0.5 * z + 0.5);      // fold into [-1,1]^2
+    float r2 = max(dot(z, z), 1e-5);
+    float k  = 1.21 / r2;                        // inversion in the unit circle
+    z *= k; sc *= k;
+    trap = min(trap, r2);
+    acc += exp(-6.0 * abs(r2 - 0.55));
+  }
+  float d  = abs(z.y) / sc * invScale;           // screen-space distance to the limit set
+  float d2 = abs(z.x) / sc * invScale;
+
+  float px   = 2.0 / uRes.y;
+  float core = smoothstep(2.0 * px, 0.0, d);
+  float glow = exp(-d * 340.0);
+  float halo = 0.0035 / (0.0035 + d * 30.0);
+  float lace = exp(-d2 * 420.0) * 0.14;
+
+  vec3 col = vec3(0.0);
+  float cw = log2(1.0 + trap * 40.0) * 0.30;   // spread orbit-trap values across the full palette
+  col += pal(hue + cw)        * (core * 0.80 + glow * 0.40);
+  col += pal(hue + 0.06 + cw) * halo * 0.10;
+  col += pal(hue + 0.45)              * lace;
+  col += pal(hue + 0.55) * exp(-trap * 5.0) * 0.028;
+  col += vec3(1.0, 0.96, 0.88) * clamp(pow(acc * 0.13, 8.0), 0.0, 3.0) * 0.25;
+  return col;
+}
+
+vec3 background(vec2 uv){
+  float r = length(uv);
+  vec3 c = mix(vec3(0.030, 0.024, 0.052), vec3(0.008, 0.010, 0.022), smoothstep(0.0, 1.4, r));
+  float n = fbm(uv * 2.2 + vec2(uTime * 0.012, -uTime * 0.008));
+  c += pal(0.62 + 0.25 * n) * n * n * 0.055;
+
+  vec2 g  = uv * 34.0;
+  vec2 id = floor(g), f = fract(g) - 0.5;
+  vec2 o  = (hash22(id) - 0.5) * 0.8;
+  float h = hash21(id + 7.7);
+  float star = pow(h, 40.0) * exp(-dot(f - o, f - o) * 90.0);
+  c += vec3(0.9, 0.95, 1.0) * star * (0.6 + 0.4 * sin(uTime * (1.0 + h * 3.0) + h * 40.0));
+  return c;
+}
+
+float motes(vec2 uv, float t, float sc){
+  vec2 g  = uv * sc + vec2(t * 0.030, t * 0.021) * sc * 0.3;
+  vec2 id = floor(g), f = fract(g) - 0.5;
+  vec2 o  = (hash22(id) - 0.5) * 0.7;
+  float h = hash21(id + 3.1);
+  float d = length(f - o);
+  float tw = 0.5 + 0.5 * sin(t * (0.5 + h) + h * TAU);
+  return exp(-d * d * 140.0) * step(0.82, h) * tw;
+}
+
+void main(){
+  vec2 uv = (2.0 * gl_FragCoord.xy - uRes) / uRes.y;
+
+  // lens breathing, slow orbital drift, pointer parallax
+  uv *= 1.0 + 0.10 * dot(uv, uv);
+  uv  = rot(0.015 * sin(uTime * 0.11)) * uv;
+  uv += 0.045 * vec2(cos(uTime * 0.05), sin(uTime * 0.073));
+  uv += uMouse * 0.22;
+
+  vec3 col = background(uv);
+
+  /* Three self-similar generations, staggered by 1/3 of a cycle.
+     Each is born microscopic, swells past the camera, and dissolves —
+     a seamless, endless descent through scale. */
+  const float N    = 3.0;
+  const float SPAN = 5.2;                       // log2 range each generation lives through
+  vec3  accum = vec3(0.0);
+  float wsum  = 0.0;
+  for(int i = 0; i < 3; i++){
+    float ph    = uPhase + float(i) / N;
+    float fi    = fract(ph);
+    float ci    = floor(ph) * N + float(i);     // unique id of this generation
+    float lg    = (fi - 0.5) * SPAN;
+    float scale = exp2(lg);
+    float w     = 0.5 - 0.5 * cos(TAU * fi);
+    w *= w;
+    vec2 q = rot(uTwist * lg) * uv * scale;
+    float depthGain = mix(0.55, 1.2, fi);   // approaching worlds burn brighter
+    accum += gasket(q, 1.0 / scale, ph * 0.06 + hash11(ci) * 0.24, hash11(ci + 0.37)) * w * depthGain;
+    wsum  += w;
+  }
+  col += accum / max(wsum, 1e-4) * 0.95;
+
+  // drifting dust — the near, microscopic world
+  col += pal(0.1 + uPhase * 0.13) * (motes(uv, uTime, 9.0) * 0.45 + motes(uv, uTime * 1.4, 17.0) * 0.28);
+
+  fragColor = vec4(col, 1.0);
+}`;
+
+/* ---------------- bloom: prefilter / kawase down / kawase up ---------------- */
+const PREFILTER_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uTex;
+uniform vec2 uResDst;
+out vec4 o;
+void main(){
+  vec2 uv = gl_FragCoord.xy / uResDst;
+  vec3 c = texture(uTex, uv).rgb;
+  float br = max(c.r, max(c.g, c.b));
+  float knee = 0.6, thr = 1.0;
+  float soft = clamp(br - thr + knee, 0.0, 2.0 * knee);
+  soft = soft * soft / (4.0 * knee + 1e-4);
+  float w = max(soft, br - thr) / max(br, 1e-4);
+  o = vec4(c * w, 1.0);
+}`;
+
+const DOWN_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uTex;
+uniform vec2 uTexelSrc;
+uniform vec2 uResDst;
+out vec4 o;
+void main(){
+  vec2 uv = gl_FragCoord.xy / uResDst;
+  vec2 h = uTexelSrc;
+  vec3 s = texture(uTex, uv).rgb * 4.0;
+  s += texture(uTex, uv + vec2( h.x,  h.y)).rgb;
+  s += texture(uTex, uv + vec2(-h.x,  h.y)).rgb;
+  s += texture(uTex, uv + vec2( h.x, -h.y)).rgb;
+  s += texture(uTex, uv + vec2(-h.x, -h.y)).rgb;
+  o = vec4(s / 8.0, 1.0);
+}`;
+
+const UP_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uTex;   // smaller mip being upsampled
+uniform sampler2D uAdd;   // same-size downsample to accumulate
+uniform vec2 uTexelSrc;
+uniform vec2 uResDst;
+uniform float uAddMix;
+out vec4 o;
+void main(){
+  vec2 uv = gl_FragCoord.xy / uResDst;
+  vec2 h = uTexelSrc;
+  vec3 s = vec3(0.0);
+  s += texture(uTex, uv + vec2(-h.x * 2.0, 0.0)).rgb;
+  s += texture(uTex, uv + vec2(-h.x,  h.y)).rgb * 2.0;
+  s += texture(uTex, uv + vec2( 0.0,  h.y * 2.0)).rgb;
+  s += texture(uTex, uv + vec2( h.x,  h.y)).rgb * 2.0;
+  s += texture(uTex, uv + vec2( h.x * 2.0, 0.0)).rgb;
+  s += texture(uTex, uv + vec2( h.x, -h.y)).rgb * 2.0;
+  s += texture(uTex, uv + vec2( 0.0, -h.y * 2.0)).rgb;
+  s += texture(uTex, uv + vec2(-h.x, -h.y)).rgb * 2.0;
+  o = vec4(s / 12.0 + texture(uAdd, uv).rgb * uAddMix, 1.0);
+}`;
+
+/* ---------------- composite: CA + bloom + ACES + grain + vignette ---------------- */
+const COMPOSITE_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uScene;
+uniform sampler2D uBloom;
+uniform vec2  uRes;
+uniform float uTime;
+uniform float uBloomAmt;
+out vec4 o;
+
+vec3 aces(vec3 x){
+  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+}
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec2 d  = uv - 0.5;
+  float r2 = dot(d, d);
+  float ca = 0.007 * r2;
+
+  vec3 col;
+  col.r = texture(uScene, uv + d * ca).r;
+  col.g = texture(uScene, uv).g;
+  col.b = texture(uScene, uv - d * ca).b;
+
+  vec3 bl;
+  bl.r = texture(uBloom, uv + d * ca * 1.5).r;
+  bl.g = texture(uBloom, uv).g;
+  bl.b = texture(uBloom, uv - d * ca * 1.5).b;
+  col += bl * uBloomAmt;
+
+  col *= 1.0 - 0.42 * smoothstep(0.15, 0.85, r2 * 2.0);
+  float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
+  col = max(mix(vec3(luma), col, 1.45), 0.0);   // saturation lift
+  col  = aces(col * 1.1);
+  col  = pow(col, vec3(1.0 / 2.2));
+
+  float g = fract(sin(dot(gl_FragCoord.xy + fract(uTime) * 1e3, vec2(12.9898, 78.233))) * 43758.5453);
+  col += (g - 0.5) * 0.022;
+  o = vec4(col, 1.0);
+}`;
+
+/* ================================================================ */
+
+const canvas = document.getElementById("view");
+const gl = canvas.getContext("webgl2", { antialias: false, preserveDrawingBuffer: true });
+if(!gl){
+  document.getElementById("fallback").style.display = "grid";
+  throw new Error("WebGL2 not available");
+}
+const hasFloat = !!gl.getExtension("EXT_color_buffer_float");
+gl.getExtension("OES_texture_float_linear");
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+    throw new Error(gl.getShaderInfoLog(s) + "\n" + src);
+  return s;
+}
+function program(fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, VERT));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS))
+    throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+
+const progScene = program(SCENE_FS);
+const progPre   = program(PREFILTER_FS);
+const progDown  = program(DOWN_FS);
+const progUp    = program(UP_FS);
+const progComp  = program(COMPOSITE_FS);
+const U = (p, n) => gl.getUniformLocation(p, n);
+
+function makeTarget(w, h){
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  const internal = hasFloat ? gl.RGBA16F : gl.RGBA8;
+  const type     = hasFloat ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE;
+  gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, gl.RGBA, type, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return { tex, fbo, w, h };
+}
+
+const MIPS = 5;
+let scene = null, down = [], up = [];
+let W = 0, H = 0;
+
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = Math.max(2, Math.round(innerWidth * dpr));
+  H = Math.max(2, Math.round(innerHeight * dpr));
+  canvas.width = W; canvas.height = H;
+  canvas.style.width = innerWidth + "px";
+  canvas.style.height = innerHeight + "px";
+
+  for(const t of [scene, ...down, ...up]) if(t){ gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); }
+  down = []; up = [];
+  scene = makeTarget(W, H);
+  let w = W, h = H;
+  for(let i = 0; i < MIPS; i++){
+    w = Math.max(2, w >> 1); h = Math.max(2, h >> 1);
+    down.push(makeTarget(w, h));
+    if(i < MIPS - 1) up.push(makeTarget(w, h));
+  }
+}
+window.addEventListener("resize", resize);
+resize();
+
+/* ---------------- interaction state ---------------- */
+const state = {
+  phase: 0, speedTarget: 0.05, speed: 0.05,
+  mx: 0, my: 0, tmx: 0, tmy: 0,
+  paused: false, palette: 0, twist: 0.55,
+  uiVisible: true, dragging: false, lastX: 0, lastY: 0,
+};
+
+canvas.addEventListener("pointerdown", e => {
+  state.dragging = true; state.lastX = e.clientX; state.lastY = e.clientY;
+  canvas.classList.add("dragging");
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener("pointermove", e => {
+  if(!state.dragging) return;
+  state.tmx += (e.clientX - state.lastX) / innerHeight * 2.2;
+  state.tmy -= (e.clientY - state.lastY) / innerHeight * 2.2;
+  state.tmx = Math.max(-1.6, Math.min(1.6, state.tmx));
+  state.tmy = Math.max(-1.6, Math.min(1.6, state.tmy));
+  state.lastX = e.clientX; state.lastY = e.clientY;
+});
+const endDrag = () => { state.dragging = false; canvas.classList.remove("dragging"); };
+canvas.addEventListener("pointerup", endDrag);
+canvas.addEventListener("pointercancel", endDrag);
+
+window.addEventListener("wheel", e => {
+  state.speedTarget *= Math.exp(-e.deltaY * 0.0012);
+  state.speedTarget = Math.max(0.004, Math.min(0.4, state.speedTarget));
+}, { passive: true });
+
+// ---------- タッチ: ピンチ=潜行速度 / タップ=停止 / 2本指タップ=配色 ----------
+// 指にはホイールもキーボードも無いので、速度・停止・配色の入口を用意する。
+// 1本指の視点移動は既存の pointer 系がそのまま拾う（#view の touch-action:none が前提）。
+{
+  let pinchPrev = null, tapAt = 0, moved = false, maxTouches = 0;
+  canvas.addEventListener("touchstart", e => {
+    document.documentElement.classList.add("is-touch");
+    maxTouches = Math.max(maxTouches, e.touches.length);
+    if(e.touches.length === 1){ tapAt = performance.now(); moved = false; pinchPrev = null; maxTouches = 1; }
+    else if(e.touches.length === 2){
+      state.dragging = false; canvas.classList.remove("dragging");
+      pinchPrev = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                             e.touches[0].clientY - e.touches[1].clientY);
+    }
+  }, { passive: true });
+  canvas.addEventListener("touchmove", e => {
+    if(e.touches.length >= 2){
+      const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                           e.touches[0].clientY - e.touches[1].clientY);
+      // 広げるほど速く潜る（ホイールと同じ指数変化）
+      if(pinchPrev && d > 0){
+        state.speedTarget *= Math.pow(d / pinchPrev, 1.4);
+        state.speedTarget = Math.max(0.004, Math.min(0.4, state.speedTarget));
+      }
+      pinchPrev = d;
+    }
+    moved = true;
+  }, { passive: true });
+  canvas.addEventListener("touchend", e => {
+    // 指が全部離れたときだけ確定する（ピンチの片指を離した瞬間に誤発火させない）
+    if(e.touches.length === 0){
+      if(tapAt && !moved && performance.now() - tapAt < 300){
+        if(maxTouches >= 2) state.palette = (state.palette + 1) % 4;   // 2本指タップ＝配色送り
+        else state.paused = !state.paused;                              // タップ＝停止
+      }
+      state.dragging = false; canvas.classList.remove("dragging");
+      pinchPrev = null; tapAt = 0; maxTouches = 0;
+    }
+  }, { passive: true });
+}
+
+window.addEventListener("keydown", e => {
+  if(e.code === "Space"){ state.paused = !state.paused; e.preventDefault(); }
+  else if(e.key >= "1" && e.key <= "4"){ state.palette = +e.key - 1; }
+  else if(e.key === "h" || e.key === "H"){
+    state.uiVisible = !state.uiVisible;
+    for(const el of document.querySelectorAll(".ui"))
+      el.classList.toggle("hidden", !state.uiVisible);
+  }
+  else if(e.key === "s" || e.key === "S"){
+    const a = document.createElement("a");
+    a.download = "infinite_geometry_" + Date.now() + ".png";
+    a.href = canvas.toDataURL("image/png");
+    a.click();
+  }
+});
+
+/* ---------------- render loop ---------------- */
+const depthEl = document.getElementById("depth");
+let prev = performance.now();
+
+function draw(tex, fbo, w, h){
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.viewport(0, 0, w, h);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+function frame(now){
+  const dt = Math.min((now - prev) / 1000, 0.1);
+  prev = now;
+  const t = now / 1000;
+
+  state.speed += (state.speedTarget - state.speed) * (1 - Math.exp(-dt * 3));
+  if(!state.paused) state.phase += state.speed * dt;
+  state.mx += (state.tmx - state.mx) * (1 - Math.exp(-dt * 2.5));
+  state.my += (state.tmy - state.my) * (1 - Math.exp(-dt * 2.5));
+
+  // 1 — scene (HDR)
+  gl.useProgram(progScene);
+  gl.uniform2f(U(progScene, "uRes"), W, H);
+  gl.uniform1f(U(progScene, "uTime"), t);
+  gl.uniform1f(U(progScene, "uPhase"), state.phase);
+  gl.uniform2f(U(progScene, "uMouse"), state.mx, state.my);
+  gl.uniform1f(U(progScene, "uTwist"), state.twist);
+  gl.uniform1i(U(progScene, "uPalette"), state.palette);
+  draw(null, scene.fbo, W, H);
+
+  // 2 — bright prefilter into mip 0
+  gl.useProgram(progPre);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, scene.tex);
+  gl.uniform1i(U(progPre, "uTex"), 0);
+  gl.uniform2f(U(progPre, "uResDst"), down[0].w, down[0].h);
+  draw(null, down[0].fbo, down[0].w, down[0].h);
+
+  // 3 — kawase downsample chain
+  gl.useProgram(progDown);
+  gl.uniform1i(U(progDown, "uTex"), 0);
+  for(let i = 1; i < MIPS; i++){
+    gl.bindTexture(gl.TEXTURE_2D, down[i - 1].tex);
+    gl.uniform2f(U(progDown, "uTexelSrc"), 1 / down[i - 1].w, 1 / down[i - 1].h);
+    gl.uniform2f(U(progDown, "uResDst"), down[i].w, down[i].h);
+    draw(null, down[i].fbo, down[i].w, down[i].h);
+  }
+
+  // 4 — kawase upsample + accumulate
+  gl.useProgram(progUp);
+  gl.uniform1i(U(progUp, "uTex"), 0);
+  gl.uniform1i(U(progUp, "uAdd"), 1);
+  gl.uniform1f(U(progUp, "uAddMix"), 0.85);
+  let cur = down[MIPS - 1];
+  for(let i = MIPS - 2; i >= 0; i--){
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, cur.tex);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, down[i].tex);
+    gl.uniform2f(U(progUp, "uTexelSrc"), 1 / cur.w, 1 / cur.h);
+    gl.uniform2f(U(progUp, "uResDst"), up[i].w, up[i].h);
+    draw(null, up[i].fbo, up[i].w, up[i].h);
+    cur = up[i];
+  }
+
+  // 5 — composite to screen
+  gl.useProgram(progComp);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, scene.tex);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, cur.tex);
+  gl.uniform1i(U(progComp, "uScene"), 0);
+  gl.uniform1i(U(progComp, "uBloom"), 1);
+  gl.uniform2f(U(progComp, "uRes"), W, H);
+  gl.uniform1f(U(progComp, "uTime"), t);
+  gl.uniform1f(U(progComp, "uBloomAmt"), 0.55);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, W, H);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // total magnification travelled: each phase unit ≈ SPAN/N octaves of scale
+  const mag = Math.pow(2, state.phase * 5.2 / 3);
+  depthEl.textContent = "DEPTH ×" + (mag < 1e6
+    ? mag.toFixed(mag < 100 ? 1 : 0)
+    : mag.toExponential(2));
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

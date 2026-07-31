@@ -1,0 +1,10 @@
+{
+  "name": "共鳴譜 — Cymatic Resonance",
+  "short_name": "共鳴譜",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#050608",
+  "theme_color": "#050608",
+  "start_url": ".",
+  "icons": []
+}

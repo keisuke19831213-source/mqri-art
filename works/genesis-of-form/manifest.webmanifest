@@ -1,0 +1,10 @@
+{
+  "name": "幾何の創世 — GENESIS OF FORM",
+  "short_name": "幾何の創世",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#04050c",
+  "theme_color": "#04050c",
+  "start_url": ".",
+  "icons": []
+}

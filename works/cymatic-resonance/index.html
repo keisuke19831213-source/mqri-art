@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="description" content="共鳴譜 Cymatic Resonance — 52万粒の砂が音を「見る」クラドニ図形の物理シミュレーション。マイクに向かって声を出すと、その声が幾何学になる。MQRI ART。">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="共鳴譜">
+<meta name="theme-color" content="#050608">
+<link rel="manifest" href="manifest.webmanifest">
+<title>共鳴譜 — Cymatic Resonance</title>
+<style>
+  :root {
+    --gold: #e8c477;
+    --dim: rgba(232, 216, 180, 0.5);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #050608; }
+  body {
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif;
+    color: var(--dim);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  /* touch-action:none が無いと、指のドラッグ（周波数操作）をブラウザのスクロールに奪われる */
+  #gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
+  html, body { -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+
+  #ui {
+    position: fixed; inset: 0; pointer-events: none;
+    display: flex; flex-direction: column; justify-content: space-between;
+    padding: max(28px, env(safe-area-inset-top)) max(34px, env(safe-area-inset-right))
+             max(28px, env(safe-area-inset-bottom)) max(34px, env(safe-area-inset-left));
+    opacity: 0; transition: opacity 2.5s ease 0.8s;
+  }
+  #ui.on { opacity: 1; }
+
+  header { display: flex; justify-content: space-between; align-items: flex-start; }
+  h1 {
+    font-size: 15px; font-weight: 500; letter-spacing: 0.55em;
+    color: var(--dim);
+  }
+  h1 small {
+    display: block; margin-top: 7px;
+    font-size: 9px; letter-spacing: 0.42em; opacity: 0.55;
+    font-family: "Avenir Next", "Helvetica Neue", sans-serif; font-weight: 400;
+  }
+  #readout { text-align: right; font-variant-numeric: tabular-nums; }
+  #freq {
+    font-size: 30px; font-weight: 300; color: var(--gold);
+    letter-spacing: 0.06em; text-shadow: 0 0 24px rgba(232,196,119,0.35);
+    font-family: "Avenir Next", "Helvetica Neue", sans-serif;
+  }
+  #freq span { font-size: 12px; opacity: 0.6; letter-spacing: 0.2em; margin-left: 4px; }
+  #mode {
+    margin-top: 5px; font-size: 10px; letter-spacing: 0.3em; opacity: 0.6;
+    font-family: "Avenir Next", "Helvetica Neue", sans-serif;
+  }
+
+  footer { display: flex; justify-content: space-between; align-items: flex-end; }
+  #hint { font-size: 10px; letter-spacing: 0.32em; opacity: 0.55; line-height: 2; }
+  nav { display: flex; gap: 10px; pointer-events: auto; }
+  nav button {
+    appearance: none; background: rgba(20, 24, 30, 0.55); border: 1px solid rgba(232,216,180,0.22);
+    color: var(--dim); font-family: inherit;
+    font-size: 11px; letter-spacing: 0.22em; padding: 9px 16px 9px 19px;
+    cursor: pointer; backdrop-filter: blur(6px); border-radius: 2px;
+    transition: color .3s, border-color .3s, background .3s;
+  }
+  nav button:hover { color: var(--gold); border-color: rgba(232,196,119,0.55); }
+
+  /* スマホ: 5つのボタンが1行に収まらないので折り返し、タップ目標を広げる。
+     ヒントと周波数表示も画面幅に合わせて縮める（移設前はメディアクエリが1つも無かった） */
+  @media (max-width: 640px) {
+    #ui { padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+                  max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+    h1 { font-size: 12px; letter-spacing: 0.34em; }
+    h1 small { font-size: 8px; letter-spacing: 0.28em; }
+    #freq { font-size: 22px; }
+    #mode { font-size: 9px; letter-spacing: 0.2em; }
+    footer { flex-direction: column; align-items: stretch; gap: 12px; }
+    #hint { font-size: 9.5px; letter-spacing: 0.16em; line-height: 1.9; text-align: center; }
+    nav { flex-wrap: wrap; justify-content: center; gap: 7px; }
+    nav button { font-size: 11px; letter-spacing: 0.14em; padding: 11px 14px 11px 16px; }
+  }
+  nav button.active {
+    color: var(--gold); border-color: rgba(232,196,119,0.8);
+    background: rgba(60, 48, 24, 0.35);
+    text-shadow: 0 0 12px rgba(232,196,119,0.5);
+  }
+  #err {
+    position: fixed; inset: 0; display: none; place-items: center; text-align: center;
+    font-size: 13px; letter-spacing: 0.2em; line-height: 2.2; padding: 40px;
+  }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div id="ui">
+  <header>
+    <h1>共 鳴 譜<small>CYMATIC&nbsp;RESONANCE</small></h1>
+    <div id="readout">
+      <div id="freq">—<span>Hz</span></div>
+      <div id="mode"></div>
+    </div>
+  </header>
+  <footer>
+    <div id="hint">横にドラッグ — 周波数を操作<br>触れる — 盤面を乱す</div>
+    <nav>
+      <button id="bTone">音 ♪</button>
+      <button id="bMic">聴 ◉</button>
+      <button id="bSweep" class="active">掃引 ∿</button>
+      <button id="bShape">盤 □</button>
+      <button id="bScatter">散 ✦</button>
+    </nav>
+  </footer>
+</div>
+<div id="err">お使いの環境は WebGL2 (float buffer) に対応していません。<br>Chrome / Safari / Firefox の最新版でご覧ください。</div>
+
+<script>
+'use strict';
+/* ============================================================
+   共鳴譜 — Cymatic Resonance
+   周波数とサイマティクス:振動する盤の上で、砂は振幅の激しい
+   場所から弾かれ、静止する節線 (nodal lines) へと沈着する。
+   524,288 粒子の GPGPU シミュレーション。
+   矩形プレート: F = cos(nπx)cos(mπy) − cos(mπx)cos(nπy)
+   円形プレート: F = Jn(k r)·cos(nθ)  (ベッセル固有モード)
+   ============================================================ */
+
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' });
+const extCBF = gl && gl.getExtension('EXT_color_buffer_float');
+if (!gl || !extCBF) {
+  document.getElementById('err').style.display = 'grid';
+  throw new Error('WebGL2/float unsupported');
+}
+gl.getExtension('OES_texture_float_linear');
+
+/* ---------------- モード表 ---------------- */
+// 矩形: (m,n) m>n≥1 を固有値 m²+n² 順に
+const SQ_MODES = [];
+for (let n = 1; n <= 7; n++) for (let m = n + 1; m <= 8; m++) SQ_MODES.push({ m, n, eig: m * m + n * n });
+SQ_MODES.sort((a, b) => a.eig - b.eig);
+
+// 円形: (n 直径節, k 円環節) — ベッセル零点 j_{n,k} (McMahon 近似で十分)
+const CI_MODES = [];
+for (let n = 0; n <= 6; n++) for (let k = 1; k <= 4; k++) {
+  const z = Math.PI * (k + n / 2 - 0.25); // j_{n,k} 近似
+  CI_MODES.push({ n, k, z, eig: z * z });
+}
+CI_MODES.sort((a, b) => a.eig - b.eig);
+const CI_USED = CI_MODES.slice(0, SQ_MODES.length);
+
+const NMODES = SQ_MODES.length;
+// 表示周波数: 固有値 → Hz(両盤の帯域を揃える)
+const sqHz = e => 24.0 * e;
+const ciHz = e => (24.0 * SQ_MODES[NMODES - 1].eig / CI_USED[NMODES - 1].eig) * e;
+
+/* ---------------- 状態 ---------------- */
+const state = {
+  u: 3.0,             // 連続モード指数
+  uVel: 0,
+  sweep: true,
+  sweepDir: 1,
+  shape: 0,           // 0=□ 1=○ (目標値)
+  shapeBlend: 0,      // 現在のブレンド
+  amp: 1.0,           // 振動強度
+  ampTarget: 1.0,
+  mouse: [0, 0], mouseDown: false, mouseIn: false, touch: 0,
+  dragging: false, dragMoved: 0, lastPointerX: 0,
+  scatter: 0,
+  tone: false, mic: false,
+  micLevel: 0,
+};
+
+/* ---------------- GLSL 共通: 場の定義 ---------------- */
+const FIELD_GLSL = /* glsl */`
+  uniform vec4 uSqAB;    // (mA,nA,mB,nB)
+  uniform vec4 uCiAB;    // (nA,zA,nB,zB)
+  uniform vec3 uMix;     // (sqT, ciT, shape)
+
+  // 近似ベッセル Jn — 漸近形 sqrt(2/πx)cos(x−nπ/2−π/4) を中心零点で減衰処理
+  float besselJ(float n, float x) {
+    float ax = max(x, 1e-4);
+    float amp = min(sqrt(2.0 / (3.14159265 * ax)), 1.0);
+    float ph  = ax - n * 1.57079633 - 0.78539816;
+    float core = amp * cos(ph);
+    // n>0 は中心で 0、n=0 は中心で 1 に漸近
+    float ctr = smoothstep(0.0, n * 1.2 + 0.5, ax);
+    return mix(n < 0.5 ? cos(ax * 0.62) : 0.0, core, ctr);
+  }
+
+  float fieldSquare(vec2 p, float m, float n) {
+    vec2 q = (p + 1.0) * 0.5; // [0,1]
+    float PI = 3.14159265;
+    return cos(n * PI * q.x) * cos(m * PI * q.y) - cos(m * PI * q.x) * cos(n * PI * q.y);
+  }
+  float fieldCircle(vec2 p, float n, float z) {
+    float r = length(p);
+    float th = atan(p.y, p.x);
+    return besselJ(n, z * r) * cos(n * th) * 1.6;
+  }
+  float field(vec2 p) {
+    float fs = mix(fieldSquare(p, uSqAB.x, uSqAB.y), fieldSquare(p, uSqAB.z, uSqAB.w), uMix.x);
+    float fc = mix(fieldCircle(p, uCiAB.x, uCiAB.y), fieldCircle(p, uCiAB.z, uCiAB.w), uMix.y);
+    return mix(fs, fc, uMix.z) * 0.5;
+  }
+`;
+
+/* ---------------- シェーダ ---------------- */
+const VS_QUAD = /* glsl */`#version 300 es
+  layout(location=0) in vec2 aPos;
+  out vec2 vUv;
+  void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }
+`;
+
+// --- 粒子シミュレーション(ping-pong) ---
+const FS_SIM = /* glsl */`#version 300 es
+  precision highp float;
+  in vec2 vUv;
+  out vec4 outState;
+  uniform sampler2D uState;   // xy: 位置, z: 速さ平滑, w: 乱数種
+  uniform float uTime, uAmp, uScatter, uTouch;
+  uniform vec2 uMouse;
+  ${FIELD_GLSL}
+
+  float hash(vec2 s) { return fract(sin(dot(s, vec2(127.1, 311.7))) * 43758.5453); }
+  vec2 hash2(vec2 s) {
+    return fract(sin(vec2(dot(s, vec2(127.1, 311.7)), dot(s, vec2(269.5, 183.3)))) * 43758.5453);
+  }
+
+  void main() {
+    vec4 st = texture(uState, vUv);
+    vec2 p = st.xy;
+    float seed = st.w;
+
+    float F = field(p);
+    float e = 0.004;
+    vec2 grad = vec2(
+      field(p + vec2(e, 0.0)) - field(p - vec2(e, 0.0)),
+      field(p + vec2(0.0, e)) - field(p - vec2(0.0, e))
+    ) / (2.0 * e);
+
+    // 砂の物理: |F| の勾配を下る + 振幅に比例した跳ね
+    float aF = abs(F);
+    vec2 attract = -sign(F) * grad;
+    attract /= (length(attract) + 0.8);        // 軟正規化 — 交点への過収束を防ぐ
+    vec2 rnd = hash2(p * 913.7 + seed * 71.3 + fract(uTime * 0.731)) - 0.5;
+    vec2 vel = attract * aF * 0.05 * uAmp
+             + rnd * (0.0028 + aF * 0.026) * uAmp;
+
+    // 指で盤に触れる — 局所的な擾乱
+    vec2 dm = p - uMouse;
+    float md = length(dm);
+    vel += normalize(dm + 1e-5) * exp(-md * md * 28.0) * 0.05 * uTouch;
+    vel += (hash2(p * 517.3 + seed) - 0.5) * exp(-md * md * 20.0) * 0.06 * uTouch;
+
+    p += vel;
+
+    // 散布(リセットバースト)
+    if (uScatter > 0.5) {
+      vec2 r2 = hash2(vUv * 719.7 + fract(uTime));
+      if (hash(vUv * 331.1 + fract(uTime * 1.37)) < 0.9)
+        p = (r2 - 0.5) * 1.9;
+    }
+
+    // 盤外の砂は縁からこぼれ、静かに戻される
+    float rr = length(p);
+    bool off = uMix.z > 0.5 ? (rr > 0.99) : (abs(p.x) > 0.99 || abs(p.y) > 0.99);
+    if (off || max(abs(p.x), abs(p.y)) > 1.2) {
+      vec2 r3 = hash2(vUv * 217.9 + fract(uTime * 0.913) + seed);
+      p = (r3 - 0.5) * 1.85 * (uMix.z > 0.5 ? 0.98 : 1.0);
+      if (uMix.z > 0.5 && length(p) > 0.94) p *= 0.94 / length(p);
+    }
+
+    float spd = mix(st.z, length(vel) * 60.0, 0.12);
+    outState = vec4(p, spd, seed);
+  }
+`;
+
+// --- 粒子描画 ---
+const VS_PTS = /* glsl */`#version 300 es
+  precision highp float;
+  uniform sampler2D uState;
+  uniform vec2 uRes;
+  uniform float uTexW;
+  out float vSpd;
+  out float vTw;
+  void main() {
+    int w = int(uTexW);
+    ivec2 tc = ivec2(gl_VertexID % w, gl_VertexID / w);
+    vec4 st = texelFetch(uState, tc, 0);
+    vSpd = st.z;
+    vTw = st.w;
+    float aspect = uRes.x / uRes.y;
+    vec2 p = st.xy * 0.82;                 // 盤を画面に収める
+    if (aspect > 1.0) p.x /= aspect; else p.y *= aspect;
+    gl_Position = vec4(p, 0.0, 1.0);
+    gl_PointSize = uRes.y > 900.0 ? 2.0 : 1.5;
+  }
+`;
+const FS_PTS = /* glsl */`#version 300 es
+  precision highp float;
+  in float vSpd;
+  in float vTw;
+  out vec4 outColor;
+  uniform float uTime;
+  void main() {
+    vec2 d = gl_PointCoord - 0.5;
+    float m = smoothstep(0.5, 0.1, length(d));
+    // 静止した砂 = 金、動く砂 = 青白い燐光
+    vec3 rest = vec3(1.0, 0.78, 0.42);
+    vec3 move = vec3(0.45, 0.75, 1.0);
+    float s = clamp(vSpd * 1.4, 0.0, 1.0);
+    vec3 col = mix(rest, move, s);
+    float tw = 0.75 + 0.25 * sin(uTime * (3.0 + vTw * 5.0) + vTw * 6.2831);
+    float lum = mix(0.05, 0.028, s) * tw;
+    outColor = vec4(col * lum, 1.0);
+  }
+`;
+
+// --- 背景: 定常波の場そのもの(節線の淡い顕現) ---
+const FS_BG = /* glsl */`#version 300 es
+  precision highp float;
+  in vec2 vUv;
+  out vec4 outColor;
+  uniform vec2 uRes;
+  uniform float uTime, uAmp;
+  ${FIELD_GLSL}
+  void main() {
+    vec2 p = (vUv * 2.0 - 1.0);
+    float aspect = uRes.x / uRes.y;
+    if (aspect > 1.0) p.x *= aspect; else p.y /= aspect;
+    p /= 0.82;
+
+    float inside = uMix.z > 0.5
+      ? smoothstep(1.0, 0.985, length(p))
+      : smoothstep(1.0, 0.985, max(abs(p.x), abs(p.y)));
+    float edge = uMix.z > 0.5
+      ? smoothstep(0.012, 0.0, abs(length(p) - 1.0))
+      : smoothstep(0.012, 0.0, abs(max(abs(p.x), abs(p.y)) - 1.0));
+
+    float F = field(p);
+    // 振動する場のうねり(位相は時間で明滅 = 定常波の呼吸)
+    float breathe = 0.72 + 0.28 * cos(uTime * 2.2);
+    float anti = abs(F) * breathe;
+    vec3 col = vec3(0.0);
+    // 腹: ごく淡い深青の燐光
+    col += vec3(0.05, 0.10, 0.18) * anti * anti * 1.1 * inside * uAmp;
+    // 節線: 極細の金の稜線
+    float node = exp(-abs(F) * 60.0);
+    col += vec3(0.42, 0.33, 0.16) * node * 0.05 * inside;
+    // 盤の縁
+    col += vec3(0.5, 0.42, 0.24) * edge * 0.09;
+    outColor = vec4(col, 1.0);
+  }
+`;
+
+// --- ブルーム: 輝度抽出 + ダウンサンプル ---
+const FS_BRIGHT = /* glsl */`#version 300 es
+  precision highp float;
+  in vec2 vUv; out vec4 outColor;
+  uniform sampler2D uTex;
+  void main() {
+    vec3 c = texture(uTex, vUv).rgb;
+    float l = dot(c, vec3(0.299, 0.587, 0.114));
+    outColor = vec4(c * smoothstep(0.06, 0.35, l), 1.0);
+  }
+`;
+const FS_BLUR = /* glsl */`#version 300 es
+  precision highp float;
+  in vec2 vUv; out vec4 outColor;
+  uniform sampler2D uTex;
+  uniform vec2 uDir;
+  void main() {
+    vec3 acc = texture(uTex, vUv).rgb * 0.2270;
+    vec2 o1 = uDir * 1.3846, o2 = uDir * 3.2308;
+    acc += (texture(uTex, vUv + o1).rgb + texture(uTex, vUv - o1).rgb) * 0.3162;
+    acc += (texture(uTex, vUv + o2).rgb + texture(uTex, vUv - o2).rgb) * 0.0703;
+    outColor = vec4(acc, 1.0);
+  }
+`;
+
+// --- 合成: ACES + ビネット + 粒子ノイズ ---
+const FS_FINAL = /* glsl */`#version 300 es
+  precision highp float;
+  in vec2 vUv; out vec4 outColor;
+  uniform sampler2D uScene, uBloom;
+  uniform float uTime;
+  uniform vec2 uRes;
+  vec3 aces(vec3 x) {
+    return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+  }
+  float hash(vec2 s) { return fract(sin(dot(s, vec2(127.1, 311.7))) * 43758.5453); }
+  void main() {
+    vec3 c = texture(uScene, vUv).rgb;
+    // ごく微細な色収差をブルームに
+    vec2 ca = (vUv - 0.5) * 0.0035;
+    vec3 b;
+    b.r = texture(uBloom, vUv + ca).r;
+    b.g = texture(uBloom, vUv).g;
+    b.b = texture(uBloom, vUv - ca).b;
+    c += b * 0.9;
+
+    c = aces(c * 1.25);
+    // 深い藍の下地
+    c = max(c, vec3(0.012, 0.014, 0.020));
+    // ビネット
+    vec2 q = vUv - 0.5;
+    c *= 1.0 - dot(q, q) * 0.85;
+    // フィルムグレイン
+    c += (hash(vUv * uRes + fract(uTime) * 173.1) - 0.5) * 0.028;
+    c = pow(c, vec3(0.98));
+    outColor = vec4(c, 1.0);
+  }
+`;
+
+/* ---------------- GL ユーティリティ ---------------- */
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+    throw new Error(gl.getShaderInfoLog(s) + '\n' + src);
+  return s;
+}
+function program(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {};
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    const info = gl.getActiveUniform(p, i);
+    u[info.name.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, info.name);
+  }
+  return { p, u };
+}
+function makeTex(w, h, internal, format, type, filter, data = null) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, format, type, data);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function makeFBO(tex) {
+  const f = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return f;
+}
+
+/* ---------------- リソース構築 ---------------- */
+const TEX_W = 1024, TEX_H = 512, NPTS = TEX_W * TEX_H; // 524,288 粒子
+const init = new Float32Array(NPTS * 4);
+for (let i = 0; i < NPTS; i++) {
+  init[i * 4]     = (Math.random() * 2 - 1) * 0.95;
+  init[i * 4 + 1] = (Math.random() * 2 - 1) * 0.95;
+  init[i * 4 + 2] = 0;
+  init[i * 4 + 3] = Math.random();
+}
+const stateTex = [
+  makeTex(TEX_W, TEX_H, gl.RGBA32F, gl.RGBA, gl.FLOAT, gl.NEAREST, init),
+  makeTex(TEX_W, TEX_H, gl.RGBA32F, gl.RGBA, gl.FLOAT, gl.NEAREST, init),
+];
+const stateFBO = [makeFBO(stateTex[0]), makeFBO(stateTex[1])];
+let ping = 0;
+
+const quadVAO = gl.createVertexArray();
+gl.bindVertexArray(quadVAO);
+const qb = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, qb);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+const ptsVAO = gl.createVertexArray(); // 属性なし: gl_VertexID のみ
+
+const prgSim    = program(VS_QUAD, FS_SIM);
+const prgPts    = program(VS_PTS, FS_PTS);
+const prgBg     = program(VS_QUAD, FS_BG);
+const prgBright = program(VS_QUAD, FS_BRIGHT);
+const prgBlur   = program(VS_QUAD, FS_BLUR);
+const prgFinal  = program(VS_QUAD, FS_FINAL);
+
+let W = 0, H = 0, sceneTex, sceneFBO, bloomTex = [], bloomFBO = [], BW = 0, BH = 0;
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = Math.floor(innerWidth * dpr);
+  H = Math.floor(innerHeight * dpr);
+  canvas.width = W; canvas.height = H;
+  if (sceneTex) { gl.deleteTexture(sceneTex); gl.deleteFramebuffer(sceneFBO); }
+  bloomTex.forEach(t => gl.deleteTexture(t));
+  bloomFBO.forEach(f => gl.deleteFramebuffer(f));
+  sceneTex = makeTex(W, H, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
+  sceneFBO = makeFBO(sceneTex);
+  BW = W >> 2; BH = H >> 2;
+  bloomTex = [
+    makeTex(BW, BH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR),
+    makeTex(BW, BH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR),
+  ];
+  bloomFBO = [makeFBO(bloomTex[0]), makeFBO(bloomTex[1])];
+}
+addEventListener('resize', resize);
+resize();
+
+/* ---------------- モード補間 → uniform ---------------- */
+function modeUniforms(u) {
+  const N = NMODES;
+  const i0 = ((Math.floor(u) % N) + N) % N;
+  const i1 = (i0 + 1) % N;
+  const t = u - Math.floor(u);
+  const sA = SQ_MODES[i0], sB = SQ_MODES[i1];
+  const cA = CI_USED[i0], cB = CI_USED[i1];
+  const smooth = t * t * (3 - 2 * t);
+  return {
+    sq: [sA.m, sA.n, sB.m, sB.n],
+    ci: [cA.n, cA.z, cB.n, cB.z],
+    t: smooth,
+    hzSq: sqHz(sA.eig) * Math.pow(sqHz(sB.eig) / sqHz(sA.eig), smooth),
+    hzCi: ciHz(cA.eig) * Math.pow(ciHz(cB.eig) / ciHz(cA.eig), smooth),
+    labelSq: `MODE (${t < 0.5 ? sA.m : sB.m}, ${t < 0.5 ? sA.n : sB.n})`,
+    labelCi: `MODE J${t < 0.5 ? cA.n : cB.n}·${t < 0.5 ? cA.k : cB.k}`,
+  };
+}
+function setFieldUniforms(u) {
+  const mu = modeUniforms(state.u);
+  gl.uniform4f(u.uSqAB, ...mu.sq);
+  gl.uniform4f(u.uCiAB, ...mu.ci);
+  gl.uniform3f(u.uMix, mu.t, mu.t, state.shapeBlend);
+  return mu;
+}
+
+/* ---------------- 音 ---------------- */
+let actx = null, osc = null, osc2 = null, gain = null;
+function ensureAudio() {
+  if (actx) return;
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+  gain = actx.createGain();
+  gain.gain.value = 0;
+  const lp = actx.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = 2400; lp.Q.value = 0.5;
+  osc = actx.createOscillator(); osc.type = 'sine';
+  osc2 = actx.createOscillator(); osc2.type = 'sine';
+  const g2 = actx.createGain(); g2.gain.value = 0.18;
+  osc.connect(gain); osc2.connect(g2); g2.connect(gain);
+  gain.connect(lp); lp.connect(actx.destination);
+  osc.start(); osc2.start();
+}
+function setTone(on) {
+  ensureAudio();
+  actx.resume();
+  state.tone = on;
+  gain.gain.linearRampToValueAtTime(on ? 0.05 : 0, actx.currentTime + 0.4);
+  bTone.classList.toggle('active', on);
+}
+
+let micAnalyser = null, micData = null;
+async function setMic(on) {
+  if (on) {
+    try {
+      ensureAudio();
+      actx.resume();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const src = actx.createMediaStreamSource(stream);
+      micAnalyser = actx.createAnalyser();
+      micAnalyser.fftSize = 4096;
+      micAnalyser.smoothingTimeConstant = 0.85;
+      src.connect(micAnalyser);
+      micData = new Float32Array(micAnalyser.frequencyBinCount);
+      state.mic = true;
+    } catch (e) {
+      state.mic = false;
+      // 移設前は無言で失敗していた。スマホはマイクを拒否されることが多く、
+      // 何も起きないと「壊れている」ように見えるので、ヒント欄で短く知らせる
+      showMicNote(e && e.name === 'NotAllowedError'
+        ? 'マイクが許可されませんでした — 「音 ♪」で内蔵音を鳴らせます'
+        : 'この環境ではマイクを使えません — 「音 ♪」で内蔵音を鳴らせます');
+    }
+  } else state.mic = false;
+  bMic.classList.toggle('active', state.mic);
+}
+
+// マイクが使えなかったことをヒント欄で一時的に知らせる（元の文言は戻す）
+let micNoteTimer = null;
+function showMicNote(msg) {
+  const el = document.getElementById('hint');
+  if (!el) return;
+  if (micNoteTimer) clearTimeout(micNoteTimer);
+  else el.dataset.original = el.innerHTML;
+  el.textContent = msg;
+  micNoteTimer = setTimeout(() => {
+    el.innerHTML = el.dataset.original || '';
+    micNoteTimer = null;
+  }, 5200);
+}
+function micUpdate() {
+  if (!state.mic || !micAnalyser) return;
+  micAnalyser.getFloatFrequencyData(micData);
+  const binHz = actx.sampleRate / micAnalyser.fftSize;
+  const lo = Math.floor(60 / binHz), hi = Math.min(Math.floor(2400 / binHz), micData.length - 1);
+  let best = lo, bestV = -1e9, sum = 0;
+  for (let i = lo; i <= hi; i++) {
+    if (micData[i] > bestV) { bestV = micData[i]; best = i; }
+    sum += Math.max(micData[i] + 90, 0);
+  }
+  const level = Math.min(sum / (hi - lo) / 28, 1);
+  state.micLevel = state.micLevel * 0.9 + level * 0.1;
+  if (bestV > -62) {
+    // 検出周波数に最も近いモードへ滑らかに寄せる
+    const f = best * binHz;
+    const hzOf = state.shapeBlend > 0.5 ? ciHz : sqHz;
+    const modes = state.shapeBlend > 0.5 ? CI_USED : SQ_MODES;
+    let target = 0, dBest = 1e9;
+    for (let i = 0; i < NMODES; i++) {
+      const d = Math.abs(Math.log(hzOf(modes[i].eig) / f));
+      if (d < dBest) { dBest = d; target = i; }
+    }
+    state.u += (target - state.u) * 0.02;
+  }
+  state.ampTarget = 0.55 + state.micLevel * 1.3;
+}
+
+/* ---------------- 入力 ---------------- */
+const bTone = document.getElementById('bTone');
+const bMic = document.getElementById('bMic');
+const bSweep = document.getElementById('bSweep');
+const bShape = document.getElementById('bShape');
+const bScatter = document.getElementById('bScatter');
+bTone.onclick = () => setTone(!state.tone);
+bMic.onclick = () => setMic(!state.mic);
+bSweep.onclick = () => { state.sweep = !state.sweep; bSweep.classList.toggle('active', state.sweep); };
+bShape.onclick = () => { state.shape = 1 - state.shape; bShape.textContent = state.shape ? '盤 ○' : '盤 □'; };
+bScatter.onclick = () => { state.scatter = 2; };
+
+function toPlate(e) {
+  const a = W / H;
+  let x = (e.clientX / innerWidth) * 2 - 1;
+  let y = -((e.clientY / innerHeight) * 2 - 1);
+  if (a > 1) x *= a; else y /= a;
+  return [x / 0.82, y / 0.82];
+}
+canvas.addEventListener('pointerdown', e => {
+  state.dragging = true; state.dragMoved = 0; state.lastPointerX = e.clientX;
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove', e => {
+  state.mouse = toPlate(e);
+  state.mouseIn = true;
+  if (state.dragging) {
+    const dx = e.clientX - state.lastPointerX;
+    state.lastPointerX = e.clientX;
+    state.dragMoved += Math.abs(dx);
+    state.u += dx * 0.004;           // 横ドラッグ = 周波数スクラブ
+    state.uVel = dx * 0.004;
+  }
+});
+addEventListener('pointerup', () => {
+  if (state.dragging && state.dragMoved < 4) state.touch = 1.2; // タップ = 盤を叩く
+  state.dragging = false;
+});
+canvas.addEventListener('pointerleave', () => { state.mouseIn = false; });
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  state.u += e.deltaY * 0.0012;
+}, { passive: false });
+canvas.addEventListener('dblclick', () => { state.scatter = 2; });
+
+/* ---------------- メインループ ---------------- */
+const elFreq = document.getElementById('freq');
+const elMode = document.getElementById('mode');
+let last = performance.now(), simTime = 0;
+
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 0.05);
+  last = now;
+  simTime += dt;
+
+  /* --- 状態更新 --- */
+  if (state.sweep && !state.dragging && !state.mic) {
+    // 整数(共鳴点)付近で滞留し、間を滑るように掃引
+    const fr = state.u - Math.floor(state.u);
+    const dwell = 0.10 + 1.9 * Math.pow(Math.sin(Math.PI * fr), 2.0);
+    state.u += state.sweepDir * dwell * dt * 0.16;
+  }
+  if (!state.dragging) state.uVel *= 0.9;
+  state.shapeBlend += (state.shape - state.shapeBlend) * Math.min(dt * 1.6, 1);
+  if (!state.mic) state.ampTarget = 1.0;
+  state.amp += (state.ampTarget - state.amp) * Math.min(dt * 3, 1);
+  state.touch = Math.max(0, state.touch - dt * 2.5);
+  const touchNow = state.touch + (state.mouseIn && !state.dragging ? 0.35 : 0) + (state.dragging ? 0.15 : 0);
+
+  const mu = modeUniforms(state.u);
+  const hz = mu.hzSq * Math.pow(mu.hzCi / mu.hzSq, state.shapeBlend);
+  if (osc && state.tone) {
+    osc.frequency.setTargetAtTime(hz, actx.currentTime, 0.08);
+    osc2.frequency.setTargetAtTime(hz * 2.003, actx.currentTime, 0.08);
+  }
+  micUpdate();
+
+  elFreq.innerHTML = hz.toFixed(1) + '<span>Hz</span>';
+  elMode.textContent = (state.shapeBlend > 0.5 ? mu.labelCi : mu.labelSq)
+    + (state.mic ? ' · LISTENING' : state.sweep ? ' · SWEEP' : '');
+
+  /* --- 1. 粒子シミュレーション --- */
+  gl.disable(gl.BLEND);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, stateFBO[1 - ping]);
+  gl.viewport(0, 0, TEX_W, TEX_H);
+  gl.useProgram(prgSim.p);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, stateTex[ping]);
+  gl.uniform1i(prgSim.u.uState, 0);
+  gl.uniform1f(prgSim.u.uTime, simTime);
+  gl.uniform1f(prgSim.u.uAmp, state.amp);
+  gl.uniform1f(prgSim.u.uScatter, state.scatter > 0 ? 1 : 0);
+  gl.uniform1f(prgSim.u.uTouch, touchNow);
+  gl.uniform2f(prgSim.u.uMouse, state.mouse[0], state.mouse[1]);
+  setFieldUniforms(prgSim.u);
+  gl.bindVertexArray(quadVAO);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  ping = 1 - ping;
+  if (state.scatter > 0) state.scatter -= 1;
+
+  /* --- 2. シーン描画 (HDR) --- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, sceneFBO);
+  gl.viewport(0, 0, W, H);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+
+  gl.useProgram(prgBg.p);
+  gl.uniform2f(prgBg.u.uRes, W, H);
+  gl.uniform1f(prgBg.u.uTime, simTime);
+  gl.uniform1f(prgBg.u.uAmp, state.amp);
+  setFieldUniforms(prgBg.u);
+  gl.bindVertexArray(quadVAO);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE); // 加算合成
+  gl.useProgram(prgPts.p);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, stateTex[ping]);
+  gl.uniform1i(prgPts.u.uState, 0);
+  gl.uniform2f(prgPts.u.uRes, W, H);
+  gl.uniform1f(prgPts.u.uTexW, TEX_W);
+  gl.uniform1f(prgPts.u.uTime, simTime);
+  gl.bindVertexArray(ptsVAO);
+  gl.drawArrays(gl.POINTS, 0, NPTS);
+  gl.disable(gl.BLEND);
+
+  /* --- 3. ブルーム --- */
+  gl.viewport(0, 0, BW, BH);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, bloomFBO[0]);
+  gl.useProgram(prgBright.p);
+  gl.bindTexture(gl.TEXTURE_2D, sceneTex);
+  gl.uniform1i(prgBright.u.uTex, 0);
+  gl.bindVertexArray(quadVAO);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  for (let i = 0; i < 2; i++) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, bloomFBO[1]);
+    gl.useProgram(prgBlur.p);
+    gl.bindTexture(gl.TEXTURE_2D, bloomTex[0]);
+    gl.uniform1i(prgBlur.u.uTex, 0);
+    gl.uniform2f(prgBlur.u.uDir, (1.5 + i) / BW, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, bloomFBO[0]);
+    gl.bindTexture(gl.TEXTURE_2D, bloomTex[1]);
+    gl.uniform2f(prgBlur.u.uDir, 0, (1.5 + i) / BH);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  /* --- 4. 最終合成 --- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(prgFinal.p);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, sceneTex);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, bloomTex[0]);
+  gl.uniform1i(prgFinal.u.uScene, 0);
+  gl.uniform1i(prgFinal.u.uBloom, 1);
+  gl.uniform1f(prgFinal.u.uTime, simTime);
+  gl.uniform2f(prgFinal.u.uRes, W, H);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  requestAnimationFrame(frame);
+}
+document.getElementById('ui').classList.add('on');
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

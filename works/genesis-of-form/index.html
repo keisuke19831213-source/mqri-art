@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="description" content="幾何の創世 GENESIS OF FORM — 無から最初の円が引かれ、ヴェシカ・パイシスからメタトロン・キューブまで、聖なる幾何学の生成順序を辿る。MQRI ART。">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="幾何の創世">
+<meta name="theme-color" content="#04050c">
+<link rel="manifest" href="manifest.webmanifest">
+<title>ART 06 — GENESIS OF FORM / 幾何の創世</title>
+<style>
+  html,body{margin:0;padding:0;background:#04050c;overflow:hidden;height:100%;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;}
+  /* touch-action:none が無いと、指のドラッグをブラウザのスクロールに奪われる */
+  canvas{display:block;width:100vw;height:100vh;cursor:grab;touch-action:none;}
+  canvas:active{cursor:grabbing;}
+  /* 操作案内は入力デバイスで出し分ける（指にホイールもキーボードも無い） */
+  .touch-only{display:none;}
+  @media (pointer:coarse){.pointer-only{display:none;}.touch-only{display:inline;}}
+  html.is-touch .pointer-only{display:none;}
+  html.is-touch .touch-only{display:inline;}
+  #hud{position:fixed;inset:0;pointer-events:none;
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    color:rgba(214,222,246,0.62);transition:opacity .6s ease;}
+  #hud.hidden{opacity:0;}
+  .corner{position:absolute;letter-spacing:.18em;}
+  #title{top:26px;left:30px;font-size:12px;line-height:1.9;}
+  #title .en{font-family:"Optima","Avenir Next",sans-serif;font-size:10px;
+    letter-spacing:.34em;opacity:.66;}
+  #stage{bottom:30px;left:30px;font-size:13px;line-height:1.8;}
+  #stage .en{font-family:"Optima","Avenir Next",sans-serif;font-size:9.5px;
+    letter-spacing:.4em;opacity:.6;}
+  #dots{display:flex;gap:7px;margin-top:10px;}
+  #dots i{width:4px;height:4px;border-radius:50%;
+    background:rgba(214,222,246,.22);transition:all .5s;}
+  #dots i.on{background:rgba(255,214,150,.95);box-shadow:0 0 8px rgba(255,200,120,.8);}
+  #help{bottom:30px;right:30px;font-size:10px;letter-spacing:.14em;opacity:.5;
+    font-family:"Hiragino Kaku Gothic ProN",sans-serif;text-align:right;line-height:2;}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="hud">
+  <div class="corner" id="title">
+    幾何の創世<br><span class="en">GENESIS OF FORM — CCF5 ART 06</span>
+  </div>
+  <div class="corner" id="stage">
+    <span id="stJa">無</span><br><span class="en" id="stEn">VOID</span>
+    <div id="dots"></div>
+  </div>
+  <div class="corner" id="help">
+    <span class="pointer-only">Space 一時停止 &nbsp;·&nbsp; ← → 段階移動 &nbsp;·&nbsp; R 最初から<br>
+    ドラッグ 回転 &nbsp;·&nbsp; ホイール 拡縮 &nbsp;·&nbsp; F 全画面 &nbsp;·&nbsp; H 表示</span><span class="touch-only">なぞる 回転 &nbsp;·&nbsp; ピンチ 拡縮 &nbsp;·&nbsp; タップ 一時停止</span>
+  </div>
+</div>
+<script>
+'use strict';
+// ================================================================
+//  GENESIS OF FORM — 幾何の創世
+//  void → circle → vesica piscis → seed → flower → fruit → metatron
+//  single-file WebGL2, HDR bloom pipeline, no dependencies
+// ================================================================
+const TAU = Math.PI*2;
+const LOOP = 68.0;               // total loop seconds
+
+// ---------- timeline helpers ----------
+const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
+const ss=(a,b,x)=>{x=clamp((x-a)/(b-a),0,1);return x*x*(3-2*x);};
+const mix=(a,b,t)=>a+(b-a)*t;
+const easeIO=x=>x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2;
+
+// ---------- circle score (birth, duration, group, start angle) ----
+const CIRC=[];
+function C(x,y,r,birth,dur,group,a0,span){CIRC.push({x,y,r,birth,dur,group,a0,span:span||1});}
+C(0,0,1, 5.0,4.5,'center',-Math.PI/2);
+for(let i=0;i<6;i++){                          // ring at r : vesica + seed
+  const a=i*TAU/6, x=Math.cos(a), y=Math.sin(a);
+  C(x,y,1, i===0?11.0:18.0+(i-1)*1.7, i===0?4.6:2.4,
+    i===0?'vesica':'seed', a+Math.PI);
+}
+for(let i=0;i<6;i++){                          // ring at r*sqrt3
+  const a=(i+0.5)*TAU/6, d=Math.sqrt(3);
+  C(d*Math.cos(a),d*Math.sin(a),1, 28.0+i*0.55,2.2,'flower',a+Math.PI);
+}
+for(let i=0;i<6;i++){                          // ring at 2r (fruit middle)
+  const a=i*TAU/6;
+  C(2*Math.cos(a),2*Math.sin(a),1, 31.2+i*0.55,2.2,'fruit2',a+Math.PI);
+}
+// 36 partial arcs completing the flower (hex-lattice centres at
+// sqrt7, 3, 2*sqrt3, sqrt13). Canonical rule: on each circle draw only
+// the 60-degree petal-edge segments whose BOTH endpoint lattice points
+// lie inside the enclosing circle (radius 3) — sqrt7 circles keep 180,
+// distance-3 circles 120, the rest a single 60 scallop.
+function arcSpan(cx,cy){
+  const ok=[];
+  for(let k=0;k<6;k++){const a=k*Math.PI/3;
+    ok.push(Math.hypot(cx+Math.cos(a),cy+Math.sin(a))<=3.005);}
+  const seg=[];for(let k=0;k<6;k++)seg.push(ok[k]&&ok[(k+1)%6]);
+  if(seg.every(s=>s))return {a0:0,span:1};
+  if(!seg.some(s=>s))return null;
+  let k0=0;while(!(seg[k0]&&!seg[(k0+5)%6]))k0++;
+  let n=0,k=k0;while(seg[k%6]&&n<6){n++;k++;}
+  return {a0:k0*Math.PI/3, span:n/6};
+}
+{
+  const arcs=[];
+  for(let i=-4;i<=4;i++)for(let j=-4;j<=4;j++){
+    const x=i+j*0.5, y=j*Math.sqrt(3)/2, d=Math.hypot(x,y);
+    if(d>2.01&&d<3.99)arcs.push({x,y,d});
+  }
+  arcs.sort((a,b)=>a.d-b.d);
+  arcs.forEach((a,k)=>{
+    const s=arcSpan(a.x,a.y);
+    if(!s)return;
+    C(a.x,a.y,1, 31.6+(a.d-2.55)*2.0+k*0.02, 0.6+1.8*s.span,
+      'flowerArc', s.a0, s.span);
+  });
+}
+C(0,0,3.00,35.0,3.0,'enclose',-Math.PI/2);     // enclosing double circle
+C(0,0,3.14,35.6,3.0,'enclose', Math.PI/2);
+for(let i=0;i<6;i++){                          // ring at 4r (fruit outer)
+  const a=i*TAU/6;
+  C(4*Math.cos(a),4*Math.sin(a),1, 39.0+i*0.5,2.0,'fruit4',a+Math.PI);
+}
+const NC=CIRC.length;
+
+// metatron cube vertices = fruit-of-life centres
+const PTS=[[0,0]];
+for(let i=0;i<6;i++){const a=i*TAU/6;PTS.push([2*Math.cos(a),2*Math.sin(a)]);}
+for(let i=0;i<6;i++){const a=i*TAU/6;PTS.push([4*Math.cos(a),4*Math.sin(a)]);}
+
+function groupAlpha(g,t){
+  const dimF=ss(38,42.5,t);          // fruit stage: non-fruit dims
+  const met =ss(46,52,t);            // metatron: everything yields to lines
+  switch(g){
+    case 'center': return mix(1,0.95,dimF)*mix(1,0.62,met);
+    case 'vesica':
+    case 'seed'  : return mix(1,0.15,dimF)*mix(1,0.55,met);
+    case 'flower': return mix(1,0.13,dimF)*mix(1,0.5 ,met);
+    case 'flowerArc':return mix(1,0.10,dimF)*mix(1,0.5,met)*0.85;
+    case 'fruit2': return mix(1,1.0 ,dimF)*mix(1,0.62,met);
+    case 'fruit4': return mix(1,1.0 ,dimF)*mix(1,0.62,met);
+    case 'enclose':return mix(1,0.22,dimF)*mix(1,0.4 ,met);
+  }
+  return 1;
+}
+function camScale(t){
+  let s=3.3-0.6*ss(0,9,t);
+  s+= (3.72-2.7)*ss(27.5,35,t);
+  s+= (5.72-3.72)*ss(37.5,44.5,t);
+  s+= 0.55*ss(56,66,t);
+  return s;
+}
+
+// ---------- GLSL ----------
+const VS=`#version 300 es
+layout(location=0) in vec2 aP; out vec2 vUv;
+void main(){vUv=aP*0.5+0.5;gl_Position=vec4(aP,0.,1.);}`;
+
+const SCENE_FS=`#version 300 es
+precision highp float;
+uniform vec2  uRes;
+uniform float uTime,uCam,uRot,uZoom;
+uniform int   uNC;
+uniform vec4  uC[64];      // x,y,r,drawProgress
+uniform vec4  uCP[64];     // alpha, startAngle, unused, arcSpanFraction
+uniform vec2  uPts[13];
+uniform float uLineProg,uLineAlpha;
+uniform float uCenterGlow,uVesica,uDissolve,uAmbient;
+uniform vec2  uMouse;
+out vec4 o;
+#define TAU 6.28318530718
+
+float hash(float n){return fract(sin(n)*43758.5453123);}
+float hash2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float noise(vec2 p){
+  vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+  return mix(mix(hash2(i),hash2(i+vec2(1,0)),f.x),
+             mix(hash2(i+vec2(0,1)),hash2(i+vec2(1,1)),f.x),f.y);}
+float fbm(vec2 p){
+  float v=0.,a=.5;
+  for(int i=0;i<4;i++){v+=a*noise(p);p=p*2.03+vec2(1.7,9.2);a*=.5;}
+  return v;}
+mat2 rot(float a){float c=cos(a),s=sin(a);return mat2(c,-s,s,c);}
+
+float dust(vec2 q,float sp){
+  vec2 id=floor(q),f=fract(q);
+  float ox=hash2(id),oy=hash2(id+7.7);
+  vec2 pos=0.5+0.34*sin(uTime*sp*vec2(0.63,0.81)+vec2(ox,oy)*TAU);
+  float d=length(f-pos);
+  float tw=0.5+0.5*sin(uTime*(0.4+ox)+oy*TAU);
+  return exp(-d*d*420.)*tw;}
+
+void main(){
+  vec2 uv=(gl_FragCoord.xy*2.-uRes)/min(uRes.x,uRes.y);
+  float rl=length(uv);
+  vec2 p=rot(uRot)*(uv+uMouse*0.03)*(uCam/uZoom);
+
+  // dissolve displacement (end of loop)
+  if(uDissolve>0.001){
+    vec2 w=vec2(fbm(p*1.7+uTime*0.21)-0.5, fbm(p*1.7+vec2(7.3,2.1)-uTime*0.17)-0.5);
+    p+=w*uDissolve*0.9;
+  }
+
+  // ----- background -----
+  vec3 col=mix(vec3(0.0035,0.0045,0.013), vec3(0.011,0.013,0.031), exp(-rl*rl*0.85));
+  float neb=fbm(p*0.32+vec2(uTime*0.012,0.0));
+  col+=vec3(0.020,0.014,0.042)*neb*neb;
+  col+=vec3(0.5,0.6,0.9)*(dust(p*2.1+13.1,0.22)+0.6*dust(p*1.2+3.7,0.15))
+       *(0.026+0.09*uDissolve);
+  // ambient halo behind formed figure
+  col+=vec3(0.05,0.035,0.016)*uAmbient*exp(-rl*rl*1.4);
+
+  vec3 acc=vec3(0);
+  float px=2.0*(uCam/uZoom)/min(uRes.x,uRes.y);   // world units per pixel
+  float w =1.35*px;                    // stroke core
+  float wg=8.0*px;                     // glow radius
+
+  // ----- genesis : light gathering from the void -----
+  if(uCenterGlow>0.001){
+    float rr=length(p)+1e-4;
+    float ray=fbm(p*1.8+normalize(p)*uTime*0.55);
+    acc+=vec3(1.1,0.85,0.50)*uCenterGlow*ray*ray*0.30*exp(-rr*0.95);
+    acc+=vec3(1.5,1.15,0.72)*uCenterGlow*0.014/(rr*rr+0.0022);
+  }
+
+  // ----- vesica piscis lens -----
+  if(uVesica>0.002){
+    float sd=max(length(p)-1.0, length(p-vec2(1.0,0.0))-1.0);
+    acc+=vec3(1.0,0.80,0.50)*uVesica*smoothstep(0.02,-0.55,sd)*0.055;
+    acc+=vec3(1.3,1.05,0.70)*uVesica*smoothstep(2.5*w,0.0,abs(sd))*0.5;
+  }
+
+  // ----- circles (arc-sweep birth) -----
+  vec3 gold=vec3(1.30,0.98,0.55);
+  vec3 goldHi=vec3(2.1,1.9,1.5);
+  for(int i=0;i<64;i++){
+    if(i>=uNC) break;
+    vec4 c=uC[i]; float al=uCP[i].x;
+    if(al<0.004||c.w<0.001) continue;
+    vec2 q=p-c.xy;
+    float d=abs(length(q)-c.z);
+    if(d>wg*14.0) continue;
+    float span=uCP[i].w;                 // fraction of the full turn
+    float lim=min(c.w,1.0)*span;
+    float mask=1.0;
+    if(lim<0.999){
+      float t01=fract((atan(q.y,q.x)-uCP[i].y)/TAU);
+      mask=1.0-smoothstep(lim-0.012,lim,t01);
+    }
+    float core=smoothstep(w,0.0,d);
+    float glow=wg/(d+wg)-0.5;           // soft, bounded halo
+    acc+=gold*al*mask*(core*0.95+max(glow,0.0)*0.19);
+    if(c.w<0.999){                       // drawing head : a living spark
+      float ha=uCP[i].y+c.w*span*TAU;
+      vec2 hp=c.xy+c.z*vec2(cos(ha),sin(ha));
+      float hd=length(p-hp);
+      acc+=goldHi*al*0.0022/(hd*hd+0.0007);
+    }
+  }
+
+  // ----- metatron's cube : 78 lines -----
+  if(uLineAlpha>0.003){
+    vec3 lc=vec3(0.52,0.75,1.30);
+    vec3 lch=vec3(1.4,1.7,2.2);
+    int k=0;
+    for(int i=1;i<13;i++)
+    for(int j=0;j<i;j++){
+      float h=hash(float(k)*7.31+1.7); k++;
+      float pr=clamp(uLineProg*1.7-h*0.7,0.0,1.0);
+      if(pr<0.002) continue;
+      vec2 a=uPts[i],b=uPts[j],ab=b-a;
+      float L2=dot(ab,ab);
+      float tt=clamp(dot(p-a,ab)/L2,0.0,1.0);
+      float ttc=min(tt,pr);
+      float d=length(p-(a+ab*ttc));
+      if(d>wg*8.0) continue;
+      float core=smoothstep(w*0.85,0.0,d);
+      float glow=max(wg*0.6/(d+wg*0.6)-0.5,0.0);
+      acc+=lc*uLineAlpha*(core*0.42+glow*0.10);
+      if(pr<0.999){
+        float hd=length(p-(a+ab*pr));
+        acc+=lch*uLineAlpha*0.0009/(hd*hd+0.0006);
+      }
+    }
+    // vertex nodes
+    float pulse=0.75+0.25*sin(uTime*1.7);
+    for(int i=0;i<13;i++){
+      vec2 q=p-uPts[i];
+      acc+=vec3(1.5,1.2,0.75)*uLineAlpha*pulse*0.0009/(dot(q,q)+0.0012);
+    }
+  }
+
+  // gentle global breathing
+  acc*=0.94+0.06*sin(uTime*0.7);
+  acc*=1.0-uDissolve*0.45;
+  col+=acc;
+  o=vec4(col,1.0);
+}`;
+
+const BRIGHT_FS=`#version 300 es
+precision highp float;
+uniform sampler2D uT; in vec2 vUv; out vec4 o;
+void main(){
+  vec3 c=texture(uT,vUv).rgb;
+  float l=dot(c,vec3(0.299,0.587,0.114));
+  o=vec4(c*smoothstep(0.42,1.05,l),1.0);
+}`;
+
+const BLUR_FS=`#version 300 es
+precision highp float;
+uniform sampler2D uT; uniform vec2 uDir; in vec2 vUv; out vec4 o;
+void main(){
+  float w[5]=float[](0.227027,0.1945946,0.1216216,0.054054,0.016216);
+  vec3 c=texture(uT,vUv).rgb*w[0];
+  for(int i=1;i<5;i++){
+    c+=texture(uT,vUv+uDir*float(i)).rgb*w[i];
+    c+=texture(uT,vUv-uDir*float(i)).rgb*w[i];
+  }
+  o=vec4(c,1.0);
+}`;
+
+const COMP_FS=`#version 300 es
+precision highp float;
+uniform sampler2D uScene,uB1,uB2;
+uniform vec2 uRes; uniform float uTime;
+in vec2 vUv; out vec4 o;
+vec3 aces(vec3 x){
+  return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0);}
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+void main(){
+  vec2 cv=vUv-0.5;
+  vec3 col=texture(uScene,vUv).rgb;
+  // bloom with a whisper of chromatic dispersion
+  vec2 ca=cv*0.0035;
+  vec3 bl;
+  bl.r=texture(uB1,vUv+ca).r  +texture(uB2,vUv+ca*2.0).r;
+  bl.g=texture(uB1,vUv).g     +texture(uB2,vUv).g;
+  bl.b=texture(uB1,vUv-ca).b  +texture(uB2,vUv-ca*2.0).b;
+  col+=bl*vec3(0.60,0.63,0.70);
+  // vignette
+  col*=1.0-0.42*pow(length(cv)*1.35,2.4);
+  col=aces(col*1.05);
+  col=pow(col,vec3(1.0/2.2));
+  col+=(hash(gl_FragCoord.xy+fract(uTime)*7.7)-0.5)*0.014;
+  o=vec4(col,1.0);
+}`;
+
+// ---------- GL boilerplate ----------
+const cvs=document.getElementById('cv');
+const gl=cvs.getContext('webgl2',{antialias:false,alpha:false});
+if(!gl){document.body.innerHTML='<p style="color:#889">WebGL2 not supported</p>';throw 0;}
+const extF=gl.getExtension('EXT_color_buffer_float');
+
+function sh(type,src){
+  const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))
+    throw new Error(gl.getShaderInfoLog(s)+'\n'+src);
+  return s;}
+function prog(fs){
+  const p=gl.createProgram();
+  gl.attachShader(p,sh(gl.VERTEX_SHADER,VS));
+  gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))
+    throw new Error(gl.getProgramInfoLog(p));
+  return p;}
+const pScene=prog(SCENE_FS),pBright=prog(BRIGHT_FS),
+      pBlur=prog(BLUR_FS),pComp=prog(COMP_FS);
+const U={};
+for(const [pn,pr] of [['s',pScene],['b',pBright],['l',pBlur],['c',pComp]]){
+  const n=gl.getProgramParameter(pr,gl.ACTIVE_UNIFORMS);U[pn]={};
+  for(let i=0;i<n;i++){const inf=gl.getActiveUniform(pr,i);
+    U[pn][inf.name.replace(/\[0\]$/,'')]=gl.getUniformLocation(pr,inf.name);}
+}
+// fullscreen triangle
+const vao=gl.createVertexArray();gl.bindVertexArray(vao);
+const vb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vb);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+
+function mkFBO(w,h){
+  const tex=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,tex);
+  gl.texImage2D(gl.TEXTURE_2D,0,extF?gl.RGBA16F:gl.RGBA8,w,h,0,gl.RGBA,
+                extF?gl.HALF_FLOAT:gl.UNSIGNED_BYTE,null);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  const fb=gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER,fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);
+  return {fb,tex,w,h};}
+
+let W,H,fScene,fB1,fB2,fQ1,fQ2;
+function resize(){
+  const dpr=Math.min(devicePixelRatio||1,2);
+  W=Math.floor(innerWidth*dpr);H=Math.floor(innerHeight*dpr);
+  cvs.width=W;cvs.height=H;
+  cvs.style.width=innerWidth+'px';cvs.style.height=innerHeight+'px';
+  const hw=W>>1,hh=H>>1,qw=W>>2,qh=H>>2;
+  fScene=mkFBO(W,H);fB1=mkFBO(hw,hh);fB2=mkFBO(hw,hh);
+  fQ1=mkFBO(qw,qh);fQ2=mkFBO(qw,qh);
+}
+addEventListener('resize',resize);resize();
+
+// ---------- interaction ----------
+let paused=false,tAcc=0,last=performance.now();
+let rotUser=0,rotTarget=0,zoom=1,zoomTarget=1;
+let mx=0,my=0,mtx=0,mty=0,dragging=false,px0=0;
+const hud=document.getElementById('hud');
+cvs.addEventListener('pointerdown',e=>{dragging=true;px0=e.clientX;});
+addEventListener('pointerup',()=>dragging=false);
+addEventListener('pointermove',e=>{
+  mtx=(e.clientX/innerWidth-0.5)*2;mty=(e.clientY/innerHeight-0.5)*2;
+  if(dragging){rotTarget+=(e.clientX-px0)*0.003;px0=e.clientX;}
+});
+addEventListener('wheel',e=>{
+  zoomTarget=clamp(zoomTarget*Math.exp(-e.deltaY*0.001),0.55,2.4);
+},{passive:true});
+
+// ---------- タッチ: 2本指=ピンチ拡縮 / タップ=一時停止 ----------
+// 指にホイールもキーボードも無いので、拡縮と停止の入口を用意する。
+// 1本指の回転は既存の pointer 系がそのまま拾う（canvas の touch-action:none が前提）。
+let pinchPrev=null, tapAt=0, tapMoved=false;
+cvs.addEventListener('touchstart',e=>{
+  document.documentElement.classList.add('is-touch');
+  if(e.touches.length===1){ tapAt=performance.now(); tapMoved=false; pinchPrev=null; }
+  else if(e.touches.length===2){
+    dragging=false; tapAt=0;                       // 2本指に移ったらタップ扱いをやめる
+    pinchPrev=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,
+                         e.touches[0].clientY-e.touches[1].clientY);
+  }
+},{passive:true});
+cvs.addEventListener('touchmove',e=>{
+  if(e.touches.length>=2){
+    const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,
+                       e.touches[0].clientY-e.touches[1].clientY);
+    if(pinchPrev&&d>0) zoomTarget=clamp(zoomTarget*(d/pinchPrev),0.55,2.4);
+    pinchPrev=d; tapMoved=true;
+  }else{ tapMoved=true; }
+},{passive:true});
+cvs.addEventListener('touchend',e=>{
+  if(e.touches.length===0){
+    // 短く触れただけならタップ＝一時停止（ドラッグと取り違えない）
+    if(tapAt&&!tapMoved&&performance.now()-tapAt<300) paused=!paused;
+    dragging=false; pinchPrev=null; tapAt=0;
+  }
+},{passive:true});
+const STAGES=[
+  [0   ,'無','VOID'],
+  [5   ,'最初の円','THE FIRST CIRCLE'],
+  [11  ,'ヴェシカ・パイシス','VESICA PISCIS'],
+  [18  ,'シード・オブ・ライフ','SEED OF LIFE'],
+  [27.5,'フラワー・オブ・ライフ','FLOWER OF LIFE'],
+  [37.5,'フルーツ・オブ・ライフ','FRUIT OF LIFE'],
+  [46  ,'メタトロン・キューブ',"METATRON'S CUBE"],
+  [61  ,'回帰','RETURN TO VOID'],
+];
+const dots=document.getElementById('dots');
+STAGES.forEach(()=>dots.appendChild(document.createElement('i')));
+function stageIdx(t){let s=0;for(let i=0;i<STAGES.length;i++)if(t>=STAGES[i][0])s=i;return s;}
+addEventListener('keydown',e=>{
+  if(e.code==='Space'){paused=!paused;e.preventDefault();}
+  else if(e.key==='r'||e.key==='R')tAcc=0;
+  else if(e.key==='h'||e.key==='H')hud.classList.toggle('hidden');
+  else if(e.key==='f'||e.key==='F'){
+    document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen();}
+  else if(e.key==='ArrowRight'){const s=stageIdx(tAcc);tAcc=STAGES[Math.min(s+1,STAGES.length-1)][0];}
+  else if(e.key==='ArrowLeft'){const s=stageIdx(tAcc);
+    tAcc=(tAcc-STAGES[s][0]>1.0)?STAGES[s][0]:STAGES[Math.max(s-1,0)][0];}
+});
+window.__setTime=t=>{tAcc=t;};   // debug hooks
+window.__pauseAt=t=>{tAcc=t;paused=true;};
+window.__play=()=>{paused=false;};
+
+// ---------- per-frame uniform data ----------
+const arrC=new Float32Array(NC*4), arrCP=new Float32Array(NC*4);
+const arrPts=new Float32Array(26);
+PTS.forEach((p,i)=>{arrPts[i*2]=p[0];arrPts[i*2+1]=p[1];});
+
+function draw(fbo,w,h){
+  gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);
+  gl.viewport(0,0,w,h);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+}
+
+function frame(now){
+  requestAnimationFrame(frame);
+  const dt=Math.min((now-last)/1000,0.1);last=now;
+  if(!paused)tAcc=(tAcc+dt)%LOOP;
+  const t=tAcc;
+  rotUser+=(rotTarget-rotUser)*0.06;
+  zoom+=(zoomTarget-zoom)*0.08;
+  mx+=(mtx-mx)*0.05;my+=(mty-my)*0.05;
+
+  const endFade=1-ss(62.5,66.8,t);
+  const dissolve=ss(61,66.5,t);
+  for(let i=0;i<NC;i++){
+    const c=CIRC[i];
+    const pr=easeIO(clamp((t-c.birth)/c.dur,0,1));
+    arrC[i*4]=c.x;arrC[i*4+1]=c.y;arrC[i*4+2]=c.r;arrC[i*4+3]=pr;
+    arrCP[i*4]=Math.min(1,pr*5)*groupAlpha(c.group,t)*endFade;
+    arrCP[i*4+1]=c.a0;
+    arrCP[i*4+2]=0;
+    arrCP[i*4+3]=c.span;
+  }
+  const lineProg=clamp((t-46)/10.5,0,1);
+  const lineAlpha=ss(46,48,t)*endFade;
+  const centerGlow=ss(0.8,4.2,t)*(1-ss(5.2,7.8,t));
+  const vesica=ss(12,15.5,t)*(1-ss(18.5,23,t))*0.9;
+  const ambient=ss(20,40,t)*endFade;
+  const rot=Math.pow(ss(47,66,t),1.5)*0.5+rotUser;
+
+  // stage HUD
+  const s=stageIdx(t);
+  document.getElementById('stJa').textContent=STAGES[s][1];
+  document.getElementById('stEn').textContent=STAGES[s][2];
+  [...dots.children].forEach((d,i)=>d.classList.toggle('on',i===s));
+
+  // ---- scene ----
+  gl.useProgram(pScene);const u=U.s;
+  gl.uniform2f(u.uRes,W,H);
+  gl.uniform1f(u.uTime,t);
+  gl.uniform1f(u.uCam,camScale(t));
+  gl.uniform1f(u.uRot,rot);
+  gl.uniform1f(u.uZoom,zoom);
+  gl.uniform1i(u.uNC,NC);
+  gl.uniform4fv(u.uC,arrC);
+  gl.uniform4fv(u.uCP,arrCP);
+  gl.uniform2fv(u.uPts,arrPts);
+  gl.uniform1f(u.uLineProg,lineProg);
+  gl.uniform1f(u.uLineAlpha,lineAlpha);
+  gl.uniform1f(u.uCenterGlow,centerGlow);
+  gl.uniform1f(u.uVesica,vesica);
+  gl.uniform1f(u.uDissolve,dissolve);
+  gl.uniform1f(u.uAmbient,ambient);
+  gl.uniform2f(u.uMouse,mx,my);
+  draw(fScene.fb,W,H);
+
+  // ---- bright pass (half res) ----
+  gl.useProgram(pBright);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,fScene.tex);
+  gl.uniform1i(U.b.uT,0);
+  draw(fB1.fb,fB1.w,fB1.h);
+
+  // ---- gaussian blur half res ×2 ----
+  gl.useProgram(pBlur);gl.uniform1i(U.l.uT,0);
+  for(let i=0;i<2;i++){
+    gl.bindTexture(gl.TEXTURE_2D,fB1.tex);
+    gl.uniform2f(U.l.uDir,1.35/fB1.w,0);draw(fB2.fb,fB2.w,fB2.h);
+    gl.bindTexture(gl.TEXTURE_2D,fB2.tex);
+    gl.uniform2f(U.l.uDir,0,1.35/fB1.h);draw(fB1.fb,fB1.w,fB1.h);
+  }
+  // ---- wide bloom quarter res ----
+  gl.useProgram(pBright);   // reuse as downsample? no: plain blit via blur dir 0
+  gl.useProgram(pBlur);
+  gl.bindTexture(gl.TEXTURE_2D,fB1.tex);
+  gl.uniform2f(U.l.uDir,0,0);draw(fQ1.fb,fQ1.w,fQ1.h);
+  for(let i=0;i<2;i++){
+    gl.bindTexture(gl.TEXTURE_2D,fQ1.tex);
+    gl.uniform2f(U.l.uDir,1.6/fQ1.w,0);draw(fQ2.fb,fQ2.w,fQ2.h);
+    gl.bindTexture(gl.TEXTURE_2D,fQ2.tex);
+    gl.uniform2f(U.l.uDir,0,1.6/fQ1.h);draw(fQ1.fb,fQ1.w,fQ1.h);
+  }
+
+  // ---- composite ----
+  gl.useProgram(pComp);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,fScene.tex);
+  gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,fB1.tex);
+  gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,fQ1.tex);
+  gl.uniform1i(U.c.uScene,0);gl.uniform1i(U.c.uB1,1);gl.uniform1i(U.c.uB2,2);
+  gl.uniform2f(U.c.uRes,W,H);gl.uniform1f(U.c.uTime,t);
+  draw(null,W,H);
+  gl.activeTexture(gl.TEXTURE0);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
