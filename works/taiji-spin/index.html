@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="description" content="太極回転 TAIJI SPIN — 回転速度と画面の更新間隔が噛み合うと、誰も描いていない模様が現れる。MQRI ART のインタラクティブ作品。">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="太極回転">
+<meta name="theme-color" content="#0a0a0b">
+<link rel="manifest" href="manifest.webmanifest">
+<title>TAIJI SPIN — 太極回転</title>
+<style>
+  :root {
+    --bg: #0a0a0b;
+    --fg: #e8e6e0;
+    --dim: #6b6a66;
+    --accent: #c9a86a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    height: 100dvh;
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: none;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "Hiragino Kaku Gothic ProN", "Helvetica Neue", Arial, sans-serif;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.4s ease;
+  }
+  /* 反転時はUIの明暗も入れ替える(背景が明るくなるため) */
+  body.inverted {
+    --bg: #f2f0ea;
+    --fg: #16151a;
+    --dim: #8a887f;
+    --accent: #8a6a26;
+  }
+  #stage {
+    position: fixed;
+    inset: 0;
+    display: block;
+    cursor: grab;
+    touch-action: none;
+  }
+  #stage.dragging { cursor: grabbing; }
+  body.art #stage { cursor: none; }
+
+  /* ---- 速度表示(動画オマージュ) ---- */
+  #speedReadout {
+    position: fixed;
+    top: 28px;
+    left: 32px;
+    pointer-events: none;
+    line-height: 1.2;
+    transition: opacity 0.9s ease;
+  }
+  #speedValue {
+    font-size: clamp(28px, 4.5vw, 44px);
+    font-weight: 200;
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--fg);
+  }
+  #speedUnit {
+    font-size: 0.45em;
+    color: var(--dim);
+    margin-left: 6px;
+    font-weight: 300;
+  }
+  #speedSub {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--dim);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.08em;
+  }
+
+  #title {
+    position: fixed;
+    top: 30px;
+    right: 32px;
+    text-align: right;
+    pointer-events: none;
+    transition: opacity 0.9s ease;
+  }
+  #title h1 {
+    font-size: 15px;
+    font-weight: 300;
+    letter-spacing: 0.55em;
+    margin-right: -0.55em;
+    color: var(--fg);
+  }
+  #title p {
+    margin-top: 6px;
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    margin-right: -0.3em;
+    color: var(--dim);
+  }
+
+  /* ---- コントロールパネル ---- */
+  #panel {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    width: min(560px, calc(100vw - 40px));
+    padding: 18px 22px 16px;
+    background: rgba(16, 16, 18, 0.72);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 14px;
+    /* --py は折り畳み量(JSが設定)*/
+    transform: translateX(-50%) translateY(var(--py, 0px));
+    transition: opacity 0.4s ease, transform 0.42s cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+  /* 指で掴んでいる間はアニメーションを切って追従させる */
+  #panel.grabbing { transition: opacity 0.4s ease; }
+
+  /* 上下スワイプ用のつまみ */
+  #grip {
+    display: block;
+    width: 100%;
+    margin: -6px 0 8px;
+    padding: 8px 0;
+    cursor: grab;
+    touch-action: none;
+  }
+  #grip:active { cursor: grabbing; }
+  #grip::before {
+    content: '';
+    display: block;
+    width: 42px;
+    height: 4px;
+    margin: 0 auto;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.22);
+    transition: background 0.2s ease;
+  }
+  #grip:hover::before { background: rgba(255, 255, 255, 0.4); }
+  body.inverted #grip::before { background: rgba(0, 0, 0, 0.2); }
+  body.inverted #grip:hover::before { background: rgba(0, 0, 0, 0.36); }
+  #panel.hidden,
+  body.art #panel {
+    opacity: 0;
+    transform: translateX(-50%) translateY(calc(var(--py, 0px) + 12px));
+    pointer-events: none;
+  }
+  body.inverted #panel {
+    background: rgba(250, 249, 245, 0.72);
+    border-color: rgba(0, 0, 0, 0.08);
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 12px;
+  }
+  .row:last-child { margin-bottom: 0; }
+  .row label {
+    flex: 0 0 84px;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--dim);
+    white-space: nowrap;
+  }
+  .row input[type="number"] {
+    flex: 0 0 72px;
+    padding: 5px 8px;
+    text-align: right;
+    font-size: 12px;
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
+    color: var(--fg);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  .row input[type="number"]:focus {
+    outline: none;
+    border-color: rgba(201, 168, 106, 0.6);
+  }
+  .row input[type="number"]::-webkit-inner-spin-button,
+  .row input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  body.inverted .row input[type="number"] {
+    background: rgba(0, 0, 0, 0.04);
+    border-color: rgba(0, 0, 0, 0.14);
+  }
+  input[type="range"] {
+    flex: 1;
+    min-width: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 1px;
+    outline: none;
+  }
+  body.inverted input[type="range"] { background: rgba(0, 0, 0, 0.18); }
+  input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--fg);
+    border: none;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.25); }
+  input[type="range"]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--fg);
+    border: none;
+    cursor: pointer;
+  }
+  .btnrow {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-top: 12px;
+  }
+  button {
+    width: 100%;
+    padding: 9px 0;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    font-family: inherit;
+    color: var(--fg);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  }
+  body.inverted button {
+    background: rgba(0, 0, 0, 0.04);
+    border-color: rgba(0, 0, 0, 0.12);
+  }
+  button:hover { background: rgba(255, 255, 255, 0.11); }
+  body.inverted button:hover { background: rgba(0, 0, 0, 0.09); }
+  button.active {
+    background: rgba(201, 168, 106, 0.16);
+    border-color: rgba(201, 168, 106, 0.5);
+    color: var(--accent);
+  }
+  /* 鑑賞モードのボタンだけ一段目立たせる */
+  #artBtn {
+    margin-top: 16px;
+    padding: 11px 0;
+    letter-spacing: 0.3em;
+    text-indent: 0.3em;
+    background: rgba(201, 168, 106, 0.1);
+    border-color: rgba(201, 168, 106, 0.32);
+    color: var(--accent);
+  }
+  #artBtn:hover { background: rgba(201, 168, 106, 0.2); }
+
+  #hint {
+    position: fixed;
+    bottom: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--dim);
+    opacity: 0.6;
+    pointer-events: none;
+    white-space: nowrap;
+    transition: opacity 0.5s ease;
+  }
+  body.art #hint { opacity: 0; }
+
+  /* ---- 鑑賞モード ---- */
+  body.art #speedReadout { opacity: 0.4; }
+  body.art #title { opacity: 0.45; }
+  #artToast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(34px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    font-size: 11px;
+    letter-spacing: 0.28em;
+    text-indent: 0.28em;
+    color: var(--dim);
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.8s ease;
+  }
+  #artToast.show { opacity: 0.75; }
+
+  /* ---- スマートフォン ---- */
+  @media (max-width: 600px) {
+    #speedReadout { top: 16px; left: 18px; }
+    #speedValue { font-size: clamp(26px, 8.5vw, 38px); }
+    #speedSub { font-size: 10px; margin-top: 2px; }
+    #title { top: 20px; right: 18px; }
+    #title h1 { font-size: 11px; letter-spacing: 0.38em; margin-right: -0.38em; }
+    #title p { font-size: 8px; margin-top: 4px; }
+    #panel {
+      width: calc(100vw - 20px);
+      bottom: calc(12px + env(safe-area-inset-bottom));
+      padding: 15px 15px 13px;
+      border-radius: 13px;
+    }
+    .row { gap: 10px; margin-bottom: 11px; }
+    .row label { flex: 0 0 50px; font-size: 10px; letter-spacing: 0.04em; }
+    .row input[type="number"] { flex: 0 0 58px; padding: 7px 7px; font-size: 12px; }
+    /* 指で掴みやすいサイズに */
+    input[type="range"] { height: 3px; }
+    input[type="range"]::-webkit-slider-thumb { width: 20px; height: 20px; }
+    input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; }
+    button { padding: 11px 0; font-size: 10px; letter-spacing: 0.1em; }
+    #artBtn { margin-top: 14px; padding: 13px 0; letter-spacing: 0.24em; text-indent: 0.24em; }
+    .btnrow { gap: 6px; }
+    #hint { display: none; }
+    #artToast { font-size: 10px; bottom: calc(28px + env(safe-area-inset-bottom)); }
+  }
+  /* 横向きの低い画面ではパネルを詰める */
+  @media (max-height: 460px) {
+    #panel { padding: 11px 14px 10px; bottom: 10px; }
+    .row { margin-bottom: 8px; }
+    #artBtn { margin-top: 10px; padding: 9px 0; }
+    #title { display: none; }
+    /* 中央の図と重ならないよう隅に逃がす */
+    #artToast { left: 20px; bottom: 14px; transform: none; }
+  }
+  /* 横向きで幅に余裕があるときは、パネルを右に寄せて図の場所を空ける
+     (図の中心はJS側で左へずらす) */
+  @media (max-height: 460px) and (min-width: 560px) {
+    #panel {
+      left: auto;
+      right: 12px;
+      top: 50%;
+      bottom: auto;
+      width: 300px;
+      transform: translateY(-50%);
+    }
+    #panel.hidden, body.art #panel {
+      transform: translateY(-50%) translateX(14px);
+    }
+    /* 横向きは右寄せなので上下折り畳みはしない */
+    #grip { display: none; }
+    #speedReadout { top: 14px; left: 20px; }
+    #hint { display: none; }
+  }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<div id="speedReadout">
+  <div><span id="speedValue">0.0</span><span id="speedUnit">°/frame</span></div>
+  <div id="speedSub">0.00 rev/s</div>
+</div>
+
+<div id="title">
+  <h1>太極回転</h1>
+  <p>TAIJI SPIN</p>
+</div>
+
+<div id="panel">
+  <div id="grip" title="上下スワイプで折り畳み"></div>
+  <div class="row">
+    <label>速度 °/frame</label>
+    <input type="range" id="speedSlider" min="-180" max="180" step="0.1" value="0">
+    <input type="number" id="speedNum" min="-180" max="180" step="0.1" value="0">
+  </div>
+  <div class="row">
+    <label>残像 %</label>
+    <input type="range" id="trailSlider" min="0" max="93" step="1" value="0">
+    <input type="number" id="trailNum" min="0" max="93" step="1" value="0">
+  </div>
+  <div class="row">
+    <label>大きさ %</label>
+    <input type="range" id="sizeSlider" min="20" max="95" step="1" value="62">
+    <input type="number" id="sizeNum" min="20" max="95" step="1" value="62">
+  </div>
+  <div class="btnrow">
+    <button id="autoBtn">自動加速</button>
+    <button id="invertBtn">反転</button>
+    <button id="resetBtn">リセット</button>
+  </div>
+  <button id="artBtn">鑑賞モード</button>
+</div>
+
+<div id="artToast"></div>
+<div id="hint">ドラッグで回す · H でパネル表示切替 · Space で停止 · A で鑑賞モード</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+
+  // ---- 状態 ----
+  const state = {
+    angle: 0,          // 度
+    velocity: 0,       // 度/フレーム
+    trail: 0,          // 0..0.93 残像の強さ
+    sizeRatio: 0.62,   // 短辺に対する直径比
+    auto: false,       // 自動加速モード
+    autoAccel: 1.8,    // 自動加速 (度/frame)/秒 = 100秒で最高速
+    inverted: false,   // 白黒反転
+    dragging: false,
+  };
+
+  // ---- 鑑賞モード ----
+  // 加速 → 最高速を維持 → 減速 → 小休止 → 逆回転、を延々と繰り返す
+  const art = {
+    active: false,
+    phase: 'accel',
+    dir: 1,
+    t: 0,
+    ACCEL: 42,   // 0 → 180°/frame
+    HOLD: 9,     // 最高速で維持
+    DECEL: 26,   // 180 → 0°/frame
+    PAUSE: 2.4,  // 静止して呼吸を置く
+    SIZE: 0.88,  // 鑑賞中はここまで大きくする(縮めることはない)
+    boost: 0,    // 0..1 大きさの遷移用
+  };
+
+  let W = 0, H = 0, DPR = 1;
+  // 横向きレイアウトでは図の中心を左にずらして、右のパネルと重ねない
+  const sideMQ = window.matchMedia('(max-height: 460px) and (min-width: 560px)');
+  // 狭い画面ではパネルを避けて、その上の余白に図を収める
+  const narrowMQ = window.matchMedia('(max-width: 600px)');
+  let shiftX = 0;          // 現在のずらし量(なめらかに追従)
+  let cxNow = 0, cyNow = 0; // 実際に描いている中心(ドラッグ判定にも使う)
+  let maxRNow = 0;          // 使える領域に収まる最大半径
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    // リサイズ後は残像バッファが消えるので背景を塗り直す
+    paintBackground(1);
+  }
+  window.addEventListener('resize', resize);
+  // モバイルの回転・アドレスバー開閉に追従
+  window.addEventListener('orientationchange', () => setTimeout(resize, 300));
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+
+  function bgColor() { return state.inverted ? '#f2f0ea' : '#0a0a0b'; }
+  function inkColor() { return state.inverted ? '#0a0a0b' : '#f2f0ea'; }
+
+  function paintBackground(alpha) {
+    ctx.save();
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = bgColor();
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+
+  // ---- 太極図の描画 ----
+  // alpha < 1 で描くと過去フレームと混ざり、蓄積型のモーションブラーになる
+  function drawTaiji(cx, cy, R, angleDeg, alpha) {
+    const a = angleDeg * Math.PI / 180;
+    const ink = inkColor();
+    const paper = bgColor();
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(cx, cy);
+    ctx.rotate(a);
+
+    // 円全体(陽 = 明)
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.fillStyle = ink;
+    ctx.fill();
+
+    // 右半分(陰 = 暗)
+    ctx.beginPath();
+    ctx.arc(0, 0, R, -Math.PI / 2, Math.PI / 2, false);
+    ctx.closePath();
+    ctx.fillStyle = paper;
+    ctx.fill();
+
+    // 上のふくらみ(明が暗へ)
+    ctx.beginPath();
+    ctx.arc(0, -R / 2, R / 2, 0, Math.PI * 2);
+    ctx.fillStyle = ink;
+    ctx.fill();
+
+    // 下のふくらみ(暗が明へ)
+    ctx.beginPath();
+    ctx.arc(0, R / 2, R / 2, 0, Math.PI * 2);
+    ctx.fillStyle = paper;
+    ctx.fill();
+
+    // 陰中の陽・陽中の陰(目)
+    const dot = R / 9;
+    ctx.beginPath();
+    ctx.arc(0, -R / 2, dot, 0, Math.PI * 2);
+    ctx.fillStyle = paper;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, R / 2, dot, 0, Math.PI * 2);
+    ctx.fillStyle = ink;
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  // 外周の細いリング(回転してもぶれない基準線)
+  function drawRing(cx, cy, R) {
+    // 使える領域からはみ出さない位置に収める
+    const rr = Math.min(R + Math.max(10, R * 0.045), maxRNow);
+    if (rr <= R) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+    ctx.strokeStyle = state.inverted ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.14)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---- 鑑賞モードの進行 ----
+  // フレームレートに依存しないよう、すべて実時間(秒)で進める
+  function updateArt(dt) {
+    art.t += dt;
+    if (art.phase === 'accel') {
+      const p = Math.min(1, art.t / art.ACCEL);
+      state.velocity = art.dir * 180 * p;
+      if (p >= 1) { art.phase = 'hold'; art.t = 0; }
+    } else if (art.phase === 'hold') {
+      state.velocity = art.dir * 180;
+      if (art.t >= art.HOLD) { art.phase = 'decel'; art.t = 0; }
+    } else if (art.phase === 'decel') {
+      const p = Math.min(1, art.t / art.DECEL);
+      state.velocity = art.dir * 180 * (1 - p);
+      if (p >= 1) { art.phase = 'pause'; art.t = 0; }
+    } else {
+      state.velocity = 0;
+      // 向きを入れ替えて次の周へ
+      if (art.t >= art.PAUSE) { art.dir *= -1; art.phase = 'accel'; art.t = 0; }
+    }
+  }
+
+  // ---- メインループ ----
+  let lastT = performance.now();
+
+  function frame() {
+    const now = performance.now();
+    // タブ復帰時に一気に進まないよう上限を設ける
+    const dt = Math.min((now - lastT) / 1000, 0.1);
+    lastT = now;
+
+    if (art.active) {
+      updateArt(dt);
+    } else if (state.auto) {
+      state.velocity = Math.min(180, state.velocity + state.autoAccel * dt);
+      syncControls();
+    }
+    if (!state.dragging) {
+      state.angle = (state.angle + state.velocity) % 360;
+    }
+
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    const moving = state.dragging || Math.abs(state.velocity) > 0.01;
+    paintBackground(moving ? 1 - state.trail : 1);
+
+    // 鑑賞モードの出入りで大きさをなめらかに変化させる
+    art.boost += ((art.active ? 1 : 0) - art.boost) * Math.min(1, dt * 3);
+    const ratio = state.sizeRatio + Math.max(0, art.SIZE - state.sizeRatio) * art.boost;
+
+    // 狭い画面では、パネルが実際に覆っている高さを避けて上の余白に収める。
+    // 折り畳み中はこの値が連続的に減るので、図もなめらかに広がって中央へ戻る。
+    const occupied = panelOccupiedHeight();
+    const availH = H - occupied;
+    const R = Math.min(W, availH) * ratio / 2;
+    maxRNow = Math.min(W, availH) / 2 - 2;
+
+    // パネルが右にいるときだけ中心を左へ寄せる
+    const panelAside = sideMQ.matches && !art.active && !panel.classList.contains('hidden');
+    // 図が画面左に切れない範囲までしかずらさない
+    const maxShift = Math.max(0, W / 2 - (R + 14));
+    const targetShiftX = panelAside ? Math.min(160, maxShift) : 0;
+    shiftX += (targetShiftX - shiftX) * Math.min(1, dt * 5);
+    cxNow = W / 2 - shiftX;
+    cyNow = availH / 2;
+    const A = moving ? 1 - state.trail : 1;
+
+    // ±180°/frame ちょうどでは「図」と「そのネガ」が毎フレーム交互に出て
+    // 汚い点滅になる。180に近づいた分だけ半回転先の図を薄く混ぜて
+    // 交互点滅を打ち消す(176°/frame 未満では完全に無効)。
+    // 角度を180°で正規化し、毎フレーム同じペア・同じ重ね順で描くことで
+    // 明滅を完全になくす(180ちょうどで静止した二重露光像になる)。
+    const speed = state.dragging ? 0 : Math.abs(state.velocity);
+    const w = Math.min(1, Math.max(0, (speed - 176) / 4)) * 0.5;
+    if (w > 0) {
+      const base = ((state.angle % 180) + 180) % 180;
+      drawTaiji(cxNow, cyNow, R, base, A * (1 - w));
+      drawTaiji(cxNow, cyNow, R, base + 180, A * w);
+    } else {
+      drawTaiji(cxNow, cyNow, R, state.angle, A);
+    }
+    drawRing(cxNow, cyNow, R);
+
+    updateReadout();
+    requestAnimationFrame(frame);
+  }
+
+  // ---- 表示更新 ----
+  const speedValue = document.getElementById('speedValue');
+  const speedSub = document.getElementById('speedSub');
+  function updateReadout() {
+    speedValue.textContent = state.velocity.toFixed(1);
+    // 60fps想定: 度/frame → 回転/秒
+    const revPerSec = state.velocity * 60 / 360;
+    speedSub.textContent = revPerSec.toFixed(2) + ' rev/s';
+  }
+
+  // ---- コントロール ----
+  const speedSlider = document.getElementById('speedSlider');
+  const speedNum = document.getElementById('speedNum');
+  const trailSlider = document.getElementById('trailSlider');
+  const trailNum = document.getElementById('trailNum');
+  const sizeSlider = document.getElementById('sizeSlider');
+  const sizeNum = document.getElementById('sizeNum');
+  const autoBtn = document.getElementById('autoBtn');
+  const invertBtn = document.getElementById('invertBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const artBtn = document.getElementById('artBtn');
+  const artToast = document.getElementById('artToast');
+  const hint = document.getElementById('hint');
+  const panel = document.getElementById('panel');
+
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+  // 入力中のフィールドは上書きしない(タイピングを邪魔しないため)
+  function syncControls() {
+    const ae = document.activeElement;
+    if (ae !== speedSlider) speedSlider.value = state.velocity;
+    if (ae !== speedNum) speedNum.value = state.velocity.toFixed(1);
+    const t = Math.round(state.trail * 100);
+    if (ae !== trailSlider) trailSlider.value = t;
+    if (ae !== trailNum) trailNum.value = t;
+    const sz = Math.round(state.sizeRatio * 100);
+    if (ae !== sizeSlider) sizeSlider.value = sz;
+    if (ae !== sizeNum) sizeNum.value = sz;
+  }
+
+  function setVelocity(v) {
+    state.velocity = clamp(v, -180, 180);
+    state.auto = false;
+    autoBtn.classList.remove('active');
+    syncControls();
+  }
+
+  speedSlider.addEventListener('input', () => setVelocity(parseFloat(speedSlider.value)));
+  speedNum.addEventListener('input', () => {
+    const v = parseFloat(speedNum.value);
+    if (!isNaN(v)) setVelocity(v);
+  });
+  speedNum.addEventListener('change', () => syncControls());
+
+  function setTrail(pct) {
+    state.trail = clamp(pct, 0, 93) / 100;
+    syncControls();
+  }
+  trailSlider.addEventListener('input', () => setTrail(parseFloat(trailSlider.value)));
+  trailNum.addEventListener('input', () => {
+    const v = parseFloat(trailNum.value);
+    if (!isNaN(v)) setTrail(v);
+  });
+  trailNum.addEventListener('change', () => syncControls());
+
+  function setSize(pct) {
+    state.sizeRatio = clamp(pct, 20, 95) / 100;
+    syncControls();
+  }
+  sizeSlider.addEventListener('input', () => setSize(parseFloat(sizeSlider.value)));
+  sizeNum.addEventListener('input', () => {
+    const v = parseFloat(sizeNum.value);
+    if (!isNaN(v)) setSize(v);
+  });
+  sizeNum.addEventListener('change', () => syncControls());
+
+  autoBtn.addEventListener('click', () => {
+    state.auto = !state.auto;
+    autoBtn.classList.toggle('active', state.auto);
+  });
+  invertBtn.addEventListener('click', () => {
+    state.inverted = !state.inverted;
+    invertBtn.classList.toggle('active', state.inverted);
+    // UI側の明暗も合わせて反転させる
+    document.body.classList.toggle('inverted', state.inverted);
+    paintBackground(1);
+  });
+  resetBtn.addEventListener('click', () => {
+    exitArt();
+    state.velocity = 0;
+    state.angle = 0;
+    state.auto = false;
+    autoBtn.classList.remove('active');
+    syncControls();
+    paintBackground(1);
+  });
+
+  // ---- パネルの折り畳み(上下スワイプ / つまみをタップ) ----
+  const grip = document.getElementById('grip');
+  let collapsed = false;
+  let dragPy = null;   // スワイプ中の一時的なずらし量
+
+  // 畳んだときのずらし量。つまみの下端までを画面内に残し、
+  // その下(スライダー等)はちょうど画面外に送る
+  function collapseDistance() {
+    const gripBottom = grip.offsetTop + grip.offsetHeight;
+    const bottomGap = parseFloat(getComputedStyle(panel).bottom) || 0;
+    return Math.max(0, panel.offsetHeight + bottomGap - gripBottom - 6);
+  }
+
+  function applyPanelOffset() {
+    const py = dragPy !== null ? dragPy : (collapsed ? collapseDistance() : 0);
+    panel.style.setProperty('--py', py + 'px');
+  }
+
+  function setCollapsed(v) {
+    collapsed = v;
+    dragPy = null;
+    panel.classList.remove('grabbing');
+    applyPanelOffset();
+  }
+
+  // パネルが実際に画面下部を覆っている高さ(狭い画面のみ考慮)
+  function panelOccupiedHeight() {
+    if (art.active || panel.classList.contains('hidden')) return 0;
+    if (sideMQ.matches || !narrowMQ.matches) return 0;
+    const top = panel.getBoundingClientRect().top;
+    return Math.max(0, H - top);
+  }
+
+  // つまみ、またはパネルの余白を上下にスワイプして開閉(つまみはタップでも開閉)
+  let gripStartY = 0, gripBase = 0, gripMoved = 0, gripOnHandle = false;
+
+  function startGrip(e, onHandle) {
+    if (sideMQ.matches) return;   // 横向きは右寄せレイアウトなので畳まない
+    gripStartY = e.clientY;
+    gripBase = collapsed ? collapseDistance() : 0;
+    gripMoved = 0;
+    gripOnHandle = onHandle;
+    dragPy = gripBase;
+    panel.classList.add('grabbing');
+    // 掴んだ指を最後まで追えるようにする(失敗してもwindow側で拾う)
+    try { e.target.setPointerCapture(e.pointerId); } catch (err) {}
+  }
+
+  grip.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    startGrip(e, true);
+  });
+
+  // スライダーやボタン以外の場所からでもスワイプで畳める
+  panel.addEventListener('pointerdown', (e) => {
+    if (e.target === grip || dragPy !== null) return;
+    if (e.target.closest('input, button')) return;
+    startGrip(e, false);
+  });
+
+  // 指がパネルの外へ出ても追従できるよう、移動と終了はwindowで受ける
+  window.addEventListener('pointermove', (e) => {
+    if (dragPy === null) return;
+    gripMoved = e.clientY - gripStartY;
+    // 開ききった上・畳みきった下より先へは行かせない(少しだけ余韻を残す)
+    const lim = collapseDistance();
+    dragPy = Math.max(-8, Math.min(lim + 8, gripBase + gripMoved));
+    applyPanelOffset();
+  });
+
+  function endGrip() {
+    if (dragPy === null) return;
+    const lim = collapseDistance();
+    let next;
+    if (Math.abs(gripMoved) < 8) {
+      // ほぼ動いていない = タップ。つまみの上でだけ開閉させる
+      next = gripOnHandle ? !collapsed : collapsed;
+    } else if (Math.abs(gripMoved) > 24) {
+      next = gripMoved > 0;              // はっきり動いた向きで決める
+    } else {
+      next = dragPy > lim / 2;           // 中途半端なら近いほうへ吸着
+    }
+    setCollapsed(next);
+  }
+  window.addEventListener('pointerup', endGrip);
+  window.addEventListener('pointercancel', endGrip);
+
+  // 画面サイズが変わると畳む量も変わる
+  window.addEventListener('resize', () => { if (collapsed) applyPanelOffset(); });
+
+  // ---- 鑑賞モードの出入り ----
+  let toastTimer = 0;
+  function showToast(msg) {
+    artToast.textContent = msg;
+    artToast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => artToast.classList.remove('show'), 3200);
+  }
+
+  // 鑑賞中は画面を消灯させない(対応ブラウザのみ)
+  let wakeLock = null;
+  async function requestWakeLock() {
+    try {
+      if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
+    } catch (e) { /* 非対応・不許可なら黙って諦める */ }
+  }
+  function releaseWakeLock() {
+    try { if (wakeLock) wakeLock.release(); } catch (e) {}
+    wakeLock = null;
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && art.active) requestWakeLock();
+  });
+
+  function enterArt() {
+    if (art.active) return;
+    art.active = true;
+    art.phase = 'accel';
+    art.t = 0;
+    art.dir = 1;
+    state.auto = false;
+    autoBtn.classList.remove('active');
+    state.velocity = 0;
+    document.body.classList.add('art');
+    artBtn.classList.add('active');
+    showToast(touchDevice ? 'タップで終了' : 'クリックまたはキーで終了');
+    requestWakeLock();
+  }
+
+  function exitArt() {
+    if (!art.active) return;
+    art.active = false;
+    document.body.classList.remove('art');
+    artBtn.classList.remove('active');
+    artToast.classList.remove('show');
+    clearTimeout(toastTimer);
+    syncControls();
+    releaseWakeLock();
+  }
+
+  artBtn.addEventListener('click', () => {
+    if (art.active) exitArt(); else enterArt();
+  });
+
+  // ---- ドラッグ操作(フリックで回す) ----
+  let lastPointerAngle = 0;
+  let angularSamples = [];   // {t, delta}
+
+  function pointerAngle(e) {
+    return Math.atan2(e.clientY - cyNow, e.clientX - cxNow) * 180 / Math.PI;
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    // 鑑賞中はどこを触っても「終了」だけ(回転は始めない)
+    if (art.active) { exitArt(); return; }
+    state.dragging = true;
+    canvas.classList.add('dragging');
+    canvas.setPointerCapture(e.pointerId);
+    lastPointerAngle = pointerAngle(e);
+    angularSamples = [];
+  });
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  canvas.addEventListener('pointermove', (e) => {
+    if (!state.dragging) return;
+    const now = performance.now();
+    const cur = pointerAngle(e);
+    let delta = cur - lastPointerAngle;
+    // 180度またぎの補正
+    if (delta > 180) delta -= 360;
+    if (delta < -180) delta += 360;
+    state.angle = (state.angle + delta) % 360;
+    lastPointerAngle = cur;
+    angularSamples.push({ t: now, delta });
+    // 直近120msのサンプルだけ残す
+    angularSamples = angularSamples.filter(s => now - s.t < 120);
+  });
+
+  function endDrag() {
+    if (!state.dragging) return;
+    state.dragging = false;
+    canvas.classList.remove('dragging');
+    // フリック速度: 直近サンプルの合計角度 / 経過フレーム数(60fps換算)
+    if (angularSamples.length >= 2) {
+      const total = angularSamples.reduce((s, x) => s + x.delta, 0);
+      const dt = performance.now() - angularSamples[0].t;
+      const frames = Math.max(dt / (1000 / 60), 1);
+      state.velocity = Math.max(-180, Math.min(180, total / frames));
+    } else {
+      state.velocity = 0;
+    }
+    state.auto = false;
+    autoBtn.classList.remove('active');
+    syncControls();
+  }
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+
+  // ---- キーボード ----
+  window.addEventListener('keydown', (e) => {
+    // 鑑賞中はどのキーでも終了
+    if (art.active) {
+      if (e.code === 'Space') e.preventDefault();
+      exitArt();
+      return;
+    }
+    if (e.code === 'Space') {
+      e.preventDefault();
+      state.velocity = 0;
+      state.auto = false;
+      autoBtn.classList.remove('active');
+      syncControls();
+    } else if (e.key === 'h' || e.key === 'H') {
+      panel.classList.toggle('hidden');
+    } else if (e.key === 'a' || e.key === 'A') {
+      enterArt();
+    }
+  });
+
+  // ---- 起動 ----
+  const touchDevice = window.matchMedia('(hover: none)').matches;
+  if (touchDevice) {
+    hint.textContent = 'スワイプで回す · つまみを上下にスワイプでパネル開閉';
+  }
+  // 狭い画面ではパネルの上の余白いっぱいに描く(その領域に対する比率)
+  if (narrowMQ.matches) {
+    state.sizeRatio = 0.88;
+  }
+
+  resize();
+  syncControls();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
