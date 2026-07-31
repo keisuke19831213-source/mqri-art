@@ -1,0 +1,808 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#050b12">
+  <meta name="description" content="夏至・光の静止点 Solstitial Still Point — 一年で最も長く光が地上に留まる日。地球の傾き23.44°と大気の散乱をリアルタイムの光の場として描く。MQRI ART。">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="夏至">
+  <link rel="manifest" href="manifest.webmanifest">
+  <title>Solstitial Still Point — 夏至・光の静止点</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #050b12;
+      --paper: rgba(255, 249, 222, 0.92);
+      --muted: rgba(231, 238, 224, 0.55);
+      --gold: #ffd777;
+      --line: rgba(255, 244, 202, 0.17);
+      --glass: rgba(4, 12, 18, 0.34);
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--ink);
+    }
+
+    body {
+      color: var(--paper);
+      font-family: Inter, "Helvetica Neue", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+      user-select: none;
+      touch-action: none;
+    }
+
+    canvas {
+      position: fixed;
+      inset: 0;
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      background: var(--ink);
+      cursor: default;
+      touch-action: none;
+    }
+
+    .atmosphere,
+    .vignette,
+    .grain {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .atmosphere {
+      opacity: 0.54;
+      mix-blend-mode: screen;
+      background:
+        radial-gradient(circle at 50% 34%, rgba(255, 223, 131, 0.045), transparent 31%),
+        radial-gradient(circle at 19% 22%, rgba(63, 213, 202, 0.025), transparent 29%),
+        radial-gradient(circle at 83% 76%, rgba(232, 86, 106, 0.024), transparent 34%);
+    }
+
+    .vignette {
+      background:
+        linear-gradient(180deg, rgba(1, 5, 9, 0.34), transparent 18%, transparent 73%, rgba(1, 4, 7, 0.55)),
+        radial-gradient(circle at 50% 47%, transparent 44%, rgba(0, 0, 0, 0.26) 76%, rgba(0, 0, 0, 0.72) 112%);
+    }
+
+    .grain {
+      inset: -10%;
+      opacity: 0.055;
+      mix-blend-mode: screen;
+      background-image:
+        repeating-radial-gradient(circle at 27% 41%, rgba(255,255,255,0.24) 0 0.55px, transparent 0.9px 3.8px),
+        repeating-radial-gradient(circle at 71% 63%, rgba(147,220,211,0.16) 0 0.5px, transparent 0.9px 4.7px);
+      background-size: 71px 67px, 103px 97px;
+      animation: grainShift 9s steps(5) infinite;
+    }
+
+    .masthead,
+    .telemetry,
+    .axis-note,
+    .fallback {
+      position: fixed;
+      z-index: 3;
+      pointer-events: none;
+      transition: opacity 500ms ease;
+    }
+
+    .masthead {
+      top: clamp(22px, 4.6vw, 66px);
+      left: clamp(22px, 5vw, 76px);
+      display: grid;
+      gap: 11px;
+      text-shadow: 0 0 32px rgba(255, 211, 107, 0.13);
+    }
+
+    .kicker,
+    .meta,
+    .telemetry,
+    .axis-note,
+    .fallback {
+      font-size: 10px;
+      line-height: 1.55;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+
+    .kicker {
+      color: rgba(255, 215, 119, 0.72);
+    }
+
+    h1 {
+      margin: 0;
+      font-family: "Iowan Old Style", "Baskerville", "Times New Roman", serif;
+      font-size: clamp(30px, 4.4vw, 68px);
+      line-height: 0.92;
+      font-weight: 400;
+      letter-spacing: 0.08em;
+    }
+
+    h1 small {
+      display: block;
+      margin-top: 12px;
+      color: rgba(255, 249, 222, 0.58);
+      font-family: Inter, "Helvetica Neue", sans-serif;
+      font-size: clamp(9px, 0.85vw, 12px);
+      line-height: 1.4;
+      font-weight: 400;
+      letter-spacing: 0.3em;
+    }
+
+    .meta {
+      color: var(--muted);
+      letter-spacing: 0.16em;
+    }
+
+    .axis-note {
+      top: 50%;
+      right: clamp(11px, 2.1vw, 32px);
+      color: rgba(222, 234, 220, 0.33);
+      writing-mode: vertical-rl;
+      transform: translateY(-50%);
+      letter-spacing: 0.3em;
+    }
+
+    .telemetry {
+      left: clamp(18px, 4vw, 62px);
+      right: clamp(18px, 4vw, 62px);
+      bottom: max(clamp(16px, 3.3vw, 44px), env(safe-area-inset-bottom));
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 20px;
+      min-height: 48px;
+      padding: 12px 15px;
+      color: var(--muted);
+      border: 1px solid var(--line);
+      border-radius: 2px;
+      background: var(--glass);
+      backdrop-filter: blur(14px) saturate(118%);
+      box-shadow: 0 16px 60px rgba(0, 0, 0, 0.22);
+    }
+
+    .telemetry > span:last-child { text-align: right; }
+
+    .zenith-mark {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: rgba(255, 244, 204, 0.72);
+      white-space: nowrap;
+    }
+
+    .zenith-mark::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #fff3c1;
+      box-shadow: 0 0 12px #ffd578, 0 0 32px rgba(255, 136, 70, 0.68);
+    }
+
+    .fallback {
+      right: 24px;
+      bottom: 88px;
+      display: none;
+      max-width: min(430px, calc(100vw - 48px));
+      padding: 12px 14px;
+      color: rgba(255, 242, 207, 0.72);
+      letter-spacing: 0.05em;
+      text-transform: none;
+      border: 1px solid var(--line);
+      background: rgba(4, 10, 15, 0.8);
+    }
+
+    .fallback.is-visible { display: block; }
+
+    body.hide-interface .masthead,
+    body.hide-interface .telemetry,
+    body.hide-interface .axis-note,
+    body.hide-interface .fallback { opacity: 0; }
+
+    @keyframes grainShift {
+      0% { transform: translate3d(0, 0, 0); }
+      25% { transform: translate3d(8px, -5px, 0); }
+      50% { transform: translate3d(-6px, 9px, 0); }
+      75% { transform: translate3d(4px, 7px, 0); }
+      100% { transform: translate3d(0, 0, 0); }
+    }
+
+    @media (max-width: 720px) {
+      .masthead {
+        top: max(18px, env(safe-area-inset-top));
+        left: 18px;
+        right: 40px;
+        gap: 7px;
+      }
+
+      h1 {
+        font-size: clamp(25px, 8.3vw, 40px);
+        letter-spacing: 0.045em;
+      }
+
+      h1 small {
+        margin-top: 8px;
+        font-size: 8px;
+        letter-spacing: 0.2em;
+      }
+
+      .kicker,
+      .meta,
+      .telemetry,
+      .axis-note { font-size: 8px; }
+
+      .meta { display: none; }
+      .axis-note { right: 7px; }
+
+      .telemetry {
+        left: 14px;
+        right: 14px;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        min-height: 42px;
+        padding: 10px 11px;
+        letter-spacing: 0.1em;
+      }
+
+      .telemetry > span:last-child { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .grain { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="stage" aria-label="夏至の太陽、地軸、光の反射を描くインタラクティブ生成作品"></canvas>
+  <div class="atmosphere"></div>
+  <div class="vignette"></div>
+  <div class="grain"></div>
+
+  <header class="masthead">
+    <span class="kicker">The longest light · 2026.06.21</span>
+    <h1>夏至・光の静止点<small>Solstitial Still Point</small></h1>
+    <span class="meta">Solar declination +23.44° / Northern zenith study</span>
+  </header>
+
+  <aside class="axis-note">Earth axial inclination · 23°26′</aside>
+
+  <footer class="telemetry" aria-live="polite">
+    <span id="state">Autonomous solar drift</span>
+    <span class="zenith-mark" id="phase">Light held at zenith</span>
+    <span>Click: irradiance · P: spectrum dissolve · Space: stillness · H: hide</span>
+  </footer>
+
+  <div class="fallback" id="fallback">WebGL2が利用できないため、Canvas 2D版で描画しています。</div>
+
+  <script id="vertex-shader" type="x-shader/x-vertex">#version 300 es
+    in vec2 aPosition;
+    void main() {
+      gl_Position = vec4(aPosition, 0.0, 1.0);
+    }
+  </script>
+
+  <script id="fragment-shader" type="x-shader/x-fragment">#version 300 es
+    precision highp float;
+
+    uniform vec2 uResolution;
+    uniform float uTime;
+    uniform float uPulse;
+    uniform float uSeed;
+    uniform float uPalette;
+
+    out vec4 fragColor;
+
+    #define PI 3.141592653589793
+    #define TAU 6.283185307179586
+
+    float saturate(float x) { return clamp(x, 0.0, 1.0); }
+
+    mat2 rot(float a) {
+      float c = cos(a), s = sin(a);
+      return mat2(c, -s, s, c);
+    }
+
+    float hash12(vec2 p) {
+      vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+      p3 += dot(p3, p3.yzx + 33.33 + uSeed);
+      return fract((p3.x + p3.y) * p3.z);
+    }
+
+    float valueNoise(vec2 p) {
+      vec2 i = floor(p);
+      vec2 f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), f.x),
+                 mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0)), f.x), f.y);
+    }
+
+    float fbm(vec2 p) {
+      float v = 0.0;
+      float a = 0.52;
+      mat2 m = mat2(1.63, 1.17, -1.17, 1.63);
+      for (int i = 0; i < 5; i++) {
+        v += a * valueNoise(p);
+        p = m * p + 7.13;
+        a *= 0.48;
+      }
+      return v;
+    }
+
+    float ridge(float x) {
+      return 1.0 - abs(x * 2.0 - 1.0);
+    }
+
+    float lineGlow(float d, float core, float halo) {
+      return exp(-abs(d) / halo) * 0.42 + exp(-abs(d) / core);
+    }
+
+    vec3 spectrum(float x) {
+      vec3 a = vec3(0.5);
+      vec3 b = vec3(0.5);
+      vec3 c = vec3(1.0);
+      vec3 d = vec3(0.02, 0.18, 0.38);
+      return a + b * cos(TAU * (c * x + d));
+    }
+
+    vec3 aces(vec3 x) {
+      const float a = 2.51;
+      const float b = 0.03;
+      const float c = 2.43;
+      const float d = 0.59;
+      const float e = 0.14;
+      return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+    }
+
+    vec3 paletteCycle(vec3 a, vec3 b, vec3 c) {
+      float phase = mod(uPalette, 3.0);
+      if (phase < 1.0) {
+        float blend = smoothstep(0.0, 1.0, phase);
+        return mix(a, b, blend);
+      }
+      if (phase < 2.0) {
+        float blend = smoothstep(0.0, 1.0, phase - 1.0);
+        return mix(b, c, blend);
+      }
+      float blend = smoothstep(0.0, 1.0, phase - 2.0);
+      return mix(c, a, blend);
+    }
+
+    vec3 paletteSky(float y) {
+      float height = saturate(y);
+      vec3 heliacal = mix(vec3(0.006, 0.015, 0.027), vec3(0.032, 0.13, 0.17), height);
+      vec3 chlorophyll = mix(vec3(0.008, 0.025, 0.028), vec3(0.055, 0.18, 0.16), height);
+      vec3 ultraviolet = mix(vec3(0.018, 0.008, 0.04), vec3(0.12, 0.055, 0.19), height);
+      return paletteCycle(heliacal, chlorophyll, ultraviolet);
+    }
+
+    vec3 paletteWarm(float x) {
+      vec3 heliacal = mix(vec3(0.42, 0.92, 0.88), vec3(1.0, 0.56, 0.20), x);
+      vec3 chlorophyll = mix(vec3(0.65, 1.0, 0.78), vec3(1.0, 0.74, 0.34), x);
+      vec3 ultraviolet = mix(vec3(0.52, 0.63, 1.0), vec3(1.0, 0.35, 0.62), x);
+      return paletteCycle(heliacal, chlorophyll, ultraviolet);
+    }
+
+    void main() {
+      vec2 frag = gl_FragCoord.xy;
+      vec2 p = (2.0 * frag - uResolution.xy) / min(uResolution.x, uResolution.y);
+      float t = uTime;
+      float horizon = -0.31;
+      vec2 sun = vec2(
+        0.045 + sin(t * 0.22) * 0.052 + sin(t * 0.067 + 1.4) * 0.016,
+        0.39 + sin(t * 0.17 + 2.1) * 0.029
+      );
+      vec2 q = p - sun;
+      float r = length(q);
+      float angle = atan(q.y, q.x);
+
+      float skyY = saturate((p.y - horizon) * 0.55 + 0.18);
+      vec3 col = paletteSky(skyY);
+
+      float hazeNoise = fbm(vec2(p.x * 0.48 + t * 0.035, p.y * 1.6 - t * 0.018));
+      float horizonHaze = exp(-abs(p.y - horizon) * 3.7) * (0.62 + 0.38 * hazeNoise);
+      col += paletteWarm(0.46) * horizonHaze * 0.08;
+
+      vec2 warpA = vec2(
+        fbm(q * 1.38 + vec2(0.0, t * 0.052)),
+        fbm(q * 1.38 + vec2(8.7, -t * 0.041))
+      ) - 0.5;
+      float atmosphericField = fbm(q * 2.05 + warpA * 1.25 + vec2(-t * 0.029, t * 0.021));
+      float aerialVeil = smoothstep(0.43, 0.92, atmosphericField) * exp(-r * 0.88);
+      col += paletteWarm(0.18 + 0.35 * saturate(q.y + 0.5)) * aerialVeil * 0.13;
+
+      float arcSpan = 1.55;
+      float normalizedX = p.x / arcSpan;
+      float arcY = horizon + 0.70 * sqrt(max(0.0, 1.0 - normalizedX * normalizedX));
+      float arcMask = 1.0 - smoothstep(0.92, 1.0, abs(normalizedX));
+      float dayArc = lineGlow(p.y - arcY, 0.0017, 0.018) * arcMask;
+      float arcDash = smoothstep(0.2, 0.8, sin((atan(normalizedX, (arcY - horizon) / 0.70) + 0.15) * 84.0 - t * 0.72) * 0.5 + 0.5);
+      col += paletteWarm(0.72) * dayArc * (0.13 + 0.07 * arcDash);
+
+      float tilt = radians(23.44);
+      vec2 axial = rot(-tilt) * (p - vec2(0.0, 0.025));
+      float axisCore = lineGlow(axial.y, 0.00115, 0.010) * smoothstep(1.48, 0.15, abs(axial.x));
+      float axisDashes = smoothstep(0.18, 0.82, sin(axial.x * 76.0 - t * 0.56) * 0.5 + 0.5);
+      col += paletteWarm(0.08) * axisCore * (0.11 + axisDashes * 0.095);
+
+      float ringOne = lineGlow(r - 0.305, 0.00135, 0.008);
+      float ringTwo = lineGlow(r - 0.455, 0.0011, 0.007);
+      float ringThree = lineGlow(r - 0.615, 0.0010, 0.006);
+      float ringDash = smoothstep(0.36, 0.72, sin(angle * 36.0 + t * 0.82) * 0.5 + 0.5);
+      float ringGate = 0.45 + 0.55 * smoothstep(-0.82, 0.3, sin(angle + 0.18 - t * 0.11));
+      col += paletteWarm(0.18) * ringOne * (0.045 + 0.07 * ringDash);
+      col += paletteWarm(0.55) * ringTwo * (0.027 + 0.05 * (1.0 - ringDash)) * ringGate;
+      col += paletteWarm(0.02) * ringThree * 0.018 * ringDash;
+
+      vec2 markerOne = sun + vec2(cos(t * 0.42 + 0.4), sin(t * 0.42 + 0.4)) * 0.305;
+      vec2 markerTwo = sun + vec2(cos(-t * 0.29 + 2.8), sin(-t * 0.29 + 2.8)) * 0.455;
+      vec2 markerThree = sun + vec2(cos(t * 0.21 + 4.6), sin(t * 0.21 + 4.6)) * 0.615;
+      float markerLight =
+        exp(-length(p - markerOne) * 180.0) +
+        exp(-length(p - markerTwo) * 155.0) * 0.86 +
+        exp(-length(p - markerThree) * 135.0) * 0.68;
+      float markerHalo =
+        exp(-length(p - markerOne) * 42.0) +
+        exp(-length(p - markerTwo) * 36.0) * 0.72 +
+        exp(-length(p - markerThree) * 31.0) * 0.52;
+      col += paletteWarm(0.36) * (markerLight * 0.72 + markerHalo * 0.08);
+
+      float tickRadius = mix(0.465, 0.505, smoothstep(0.66, 0.94, abs(sin(angle * 18.0 + t * 0.32))));
+      float ticks = lineGlow(r - tickRadius, 0.0012, 0.004) * smoothstep(0.83, 0.97, abs(cos(angle * 36.0 + t * 0.64)));
+      col += vec3(1.0, 0.88, 0.54) * ticks * 0.08;
+
+      float coronaNoise = ridge(fbm(vec2(angle * 2.65 + t * 0.045, r * 4.1 - t * 0.12) + warpA * 0.82));
+      float fineRays = pow(saturate(0.55 + 0.45 * cos((angle + t * 0.023) * 24.0 + atmosphericField * 5.2)), 9.0);
+      float broadRays = pow(saturate(0.54 + 0.46 * cos(angle * 7.0 - t * 0.31)), 13.0);
+      float corona = exp(-max(0.0, r - 0.11) * (3.1 + coronaNoise * 4.8));
+      corona *= 0.27 + coronaNoise * 0.72 + fineRays * 0.72 + broadRays * 0.36;
+      corona *= 1.0 - smoothstep(0.88, 1.46, r);
+      float solarBreath = 0.84 + 0.16 * sin(t * 0.92) * sin(t * 0.92);
+      col += paletteWarm(0.62 + 0.25 * sin(angle * 1.7)) * corona * 0.40 * solarBreath;
+
+      float mie = exp(-r * 4.15) + 0.22 * exp(-r * 1.28);
+      col += paletteWarm(0.72) * mie * 0.48;
+
+      float ghostA = exp(-length(q - vec2(0.022, 0.0)) * 38.0);
+      float ghostB = exp(-length(q + vec2(0.022, 0.0)) * 38.0);
+      col += vec3(0.10, 0.55, 0.62) * ghostA * 0.16;
+      col += vec3(0.78, 0.13, 0.09) * ghostB * 0.14;
+
+      float sunEdge = fwidth(r) * 1.35;
+      float sunDisc = 1.0 - smoothstep(0.124 - sunEdge, 0.124 + sunEdge, r);
+      float limb = pow(saturate(1.0 - r / 0.128), 0.26);
+      float granulation = fbm(q * 92.0 + vec2(t * 0.11, -t * 0.075));
+      vec3 sunColor = mix(vec3(1.0, 0.48, 0.12), vec3(1.55, 1.34, 0.82), limb);
+      sunColor *= 0.91 + granulation * 0.16;
+      col = mix(col, sunColor, sunDisc);
+
+      float flareH = exp(-abs(q.y) * 95.0) * exp(-abs(q.x) * 1.9);
+      float flareV = exp(-abs(q.x) * 130.0) * exp(-abs(q.y) * 2.7);
+      col += paletteWarm(0.62) * flareH * 0.15;
+      col += vec3(0.82, 0.94, 0.86) * flareV * 0.06;
+
+      float below = 1.0 - smoothstep(horizon - 0.012, horizon + 0.012, p.y);
+      float waterDepth = max(0.0, horizon - p.y);
+      vec2 waterP = vec2(p.x - sun.x, p.y - (2.0 * horizon - sun.y));
+      float waterWarp =
+        sin(p.x * 31.0 + t * 0.92 + fbm(vec2(p.x * 2.1, waterDepth * 4.0 + t * 0.035)) * 7.0) * 0.52 +
+        sin(p.x * 73.0 - t * 1.24 + waterDepth * 24.0) * 0.24 +
+        sin(p.x * 143.0 + t * 0.68) * 0.12;
+      float reflectionShape = exp(-abs(waterP.x) * (5.1 + waterDepth * 8.2));
+      float reflectedDisk = exp(-length(vec2(waterP.x * 1.8, waterP.y * 0.62 + waterWarp * 0.014)) * 7.2);
+      float glints = pow(saturate(waterWarp * 0.5 + 0.5), 8.0);
+      glints *= 0.28 + 0.72 * smoothstep(0.0, 0.9, reflectionShape);
+      float horizonLines = pow(saturate(0.54 + 0.46 * sin(waterDepth * 118.0 + waterWarp * 2.1)), 12.0);
+      float waterLight = below * reflectionShape * (0.20 + glints * 1.5 + horizonLines * 0.44);
+      waterLight += below * reflectedDisk * 0.22;
+      col += paletteWarm(0.70 - waterDepth * 0.3) * waterLight * exp(-waterDepth * 0.78);
+
+      float waterBase = below * (0.5 + 0.5 * fbm(vec2(p.x * 1.25 + t * 0.026, p.y * 4.0 + t * 0.043)));
+      col = mix(col, col * vec3(0.32, 0.48, 0.53), below * 0.53);
+      col += vec3(0.018, 0.065, 0.073) * waterBase * 0.33;
+      col += paletteWarm(0.6) * waterLight * 0.72;
+
+      float boundary = lineGlow(p.y - horizon, 0.0012, 0.011);
+      col += paletteWarm(0.33) * boundary * 0.08;
+
+      float pulseRadius = uPulse * 1.18;
+      float pulseRing = exp(-abs(length(p - sun) - pulseRadius) * 52.0);
+      pulseRing *= sin(uPulse * PI) * (1.0 - smoothstep(0.0, 1.0, uPulse));
+      col += paletteWarm(fract(angle / TAU + 0.5)) * pulseRing * 0.35;
+
+      vec3 prism = spectrum(fract(angle / TAU + r * 0.12 + t * 0.035));
+      float diffraction = fineRays * exp(-abs(r - 0.205) * 34.0);
+      col += prism * diffraction * 0.065;
+
+      float stars = smoothstep(0.9965, 1.0, hash12(floor(frag * 0.62)));
+      stars *= smoothstep(0.22, 0.9, p.y) * (0.35 + 0.65 * sin(hash12(floor(frag * 0.62) + 3.0) * TAU + t * 0.72));
+      col += vec3(0.52, 0.72, 0.71) * stars * 0.23;
+
+      float vignette = 1.0 - smoothstep(0.55, 1.62, length(p * vec2(0.72, 0.86)));
+      col *= mix(0.40, 1.0, vignette);
+
+      col = aces(col * 1.10);
+      float grain = hash12(frag + fract(t) * 193.7) - 0.5;
+      col += grain * (1.0 / 255.0) * 1.7;
+      col = pow(max(col, 0.0), vec3(0.94));
+      fragColor = vec4(col, 1.0);
+    }
+  </script>
+
+  <script>
+    (() => {
+      let canvas = document.getElementById("stage");
+      const fallbackMessage = document.getElementById("fallback");
+      const stateLabel = document.getElementById("state");
+      const phaseLabel = document.getElementById("phase");
+      const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const gl = canvas.getContext("webgl2", {
+        alpha: false,
+        antialias: false,
+        depth: false,
+        stencil: false,
+        preserveDrawingBuffer: true,
+        powerPreference: "high-performance"
+      });
+
+      let width = 0;
+      let height = 0;
+      let dpr = 1;
+      let start = performance.now();
+      let elapsed = 0;
+      let paused = false;
+      let paletteValue = 0;
+      let paletteTarget = 0;
+      let pulse = 2;
+      let lastFrame = performance.now();
+      let fallbackAnimation = 0;
+
+      function resize() {
+        width = innerWidth;
+        height = innerHeight;
+        dpr = Math.min(devicePixelRatio || 1, width < 760 ? 1.45 : 1.8);
+        canvas.width = Math.max(1, Math.floor(width * dpr));
+        canvas.height = Math.max(1, Math.floor(height * dpr));
+        canvas.style.width = `${width}px`;
+        canvas.style.height = `${height}px`;
+        if (gl) gl.viewport(0, 0, canvas.width, canvas.height);
+      }
+
+      function compile(type, source) {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+          const message = gl.getShaderInfoLog(shader);
+          gl.deleteShader(shader);
+          throw new Error(message || "Shader compilation failed");
+        }
+        return shader;
+      }
+
+      function createProgram() {
+        const program = gl.createProgram();
+        const vertex = compile(gl.VERTEX_SHADER, document.getElementById("vertex-shader").textContent.trim());
+        const fragment = compile(gl.FRAGMENT_SHADER, document.getElementById("fragment-shader").textContent.trim());
+        gl.attachShader(program, vertex);
+        gl.attachShader(program, fragment);
+        gl.linkProgram(program);
+        gl.deleteShader(vertex);
+        gl.deleteShader(fragment);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+          throw new Error(gl.getProgramInfoLog(program) || "Program link failed");
+        }
+        return program;
+      }
+
+      function saveFrame() {
+        const link = document.createElement("a");
+        link.download = `solstitial-still-point-${Date.now()}.png`;
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+      }
+
+      function bindInteractions() {
+        addEventListener("resize", resize, { passive: true });
+        addEventListener("pointerdown", () => {
+          pulse = 0;
+          phaseLabel.textContent = "Irradiance released";
+        });
+        addEventListener("keydown", (event) => {
+          if (event.key === " " || event.code === "Space") {
+            event.preventDefault();
+            paused = !paused;
+            phaseLabel.textContent = paused ? "Sun held still" : "Light held at zenith";
+          } else if (event.key.toLowerCase() === "p") {
+            paletteTarget += 1;
+            const nextPalette = Math.round(paletteTarget) % 3;
+            stateLabel.textContent = ["Spectrum dissolving: heliacal", "Spectrum dissolving: chlorophyll", "Spectrum dissolving: ultraviolet"][nextPalette];
+          } else if (event.key.toLowerCase() === "h") {
+            document.body.classList.toggle("hide-interface");
+          } else if (event.key.toLowerCase() === "s") {
+            saveFrame();
+          } else if (event.key.toLowerCase() === "r") {
+            pulse = 0;
+            paletteValue = 0;
+            paletteTarget = 0;
+            stateLabel.textContent = "Autonomous solar drift";
+          }
+        });
+      }
+
+      function runWebGL() {
+        let program;
+        try {
+          program = createProgram();
+        } catch (error) {
+          console.error(error);
+          runFallback();
+          return;
+        }
+
+        const vertices = new Float32Array([-1, -1, 3, -1, -1, 3]);
+        const buffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+        gl.useProgram(program);
+        const position = gl.getAttribLocation(program, "aPosition");
+        gl.enableVertexAttribArray(position);
+        gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+
+        const uniforms = {
+          resolution: gl.getUniformLocation(program, "uResolution"),
+          time: gl.getUniformLocation(program, "uTime"),
+          pulse: gl.getUniformLocation(program, "uPulse"),
+          seed: gl.getUniformLocation(program, "uSeed"),
+          palette: gl.getUniformLocation(program, "uPalette")
+        };
+
+        function render(now) {
+          const dt = Math.min(0.05, (now - lastFrame) / 1000);
+          lastFrame = now;
+          if (!paused) elapsed += dt * (reducedMotion ? 0.16 : 1);
+          pulse = Math.min(1.5, pulse + dt * 0.56);
+          const paletteEase = 1 - Math.exp(-dt * 1.28);
+          paletteValue += (paletteTarget - paletteValue) * paletteEase;
+          gl.useProgram(program);
+          gl.uniform2f(uniforms.resolution, canvas.width, canvas.height);
+          gl.uniform1f(uniforms.time, elapsed);
+          gl.uniform1f(uniforms.pulse, pulse);
+          gl.uniform1f(uniforms.seed, 6.21);
+          gl.uniform1f(uniforms.palette, paletteValue);
+          gl.drawArrays(gl.TRIANGLES, 0, 3);
+          requestAnimationFrame(render);
+        }
+
+        requestAnimationFrame(render);
+      }
+
+      function runFallback() {
+        fallbackMessage.classList.add("is-visible");
+        let ctx = canvas.getContext("2d", { alpha: false });
+        if (!ctx) {
+          const replacement = canvas.cloneNode(false);
+          canvas.replaceWith(replacement);
+          canvas = replacement;
+          resize();
+          ctx = canvas.getContext("2d", { alpha: false });
+        }
+        if (!ctx) return;
+
+        let fallbackLast = performance.now();
+        const cycleColor = (colors) => {
+          const phase = ((paletteValue % 3) + 3) % 3;
+          const index = Math.floor(phase);
+          const blend = phase - index;
+          const eased = blend * blend * (3 - 2 * blend);
+          const a = colors[index];
+          const b = colors[(index + 1) % 3];
+          return a.map((value, channel) => Math.round(value + (b[channel] - value) * eased));
+        };
+        const cssColor = (rgb, alpha = 1) => `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`;
+
+        function fallbackRender(now) {
+          const dt = Math.min(0.05, (now - fallbackLast) / 1000);
+          fallbackLast = now;
+          paletteValue += (paletteTarget - paletteValue) * (1 - Math.exp(-dt * 1.28));
+          const W = canvas.width;
+          const H = canvas.height;
+          const minSide = Math.min(W, H);
+          const time = now * 0.001;
+          const horizon = H * 0.66;
+          const sx = W * (0.52 + Math.sin(time * 0.22) * 0.031 + Math.sin(time * 0.067 + 1.4) * 0.010);
+          const sy = H * (0.35 + Math.sin(time * 0.17 + 2.1) * 0.020);
+          const sr = minSide * 0.083;
+          const skyTop = cycleColor([[3, 9, 17], [2, 13, 14], [10, 4, 24]]);
+          const skyMid = cycleColor([[11, 52, 64], [13, 68, 57], [54, 25, 86]]);
+          const horizonColor = cycleColor([[94, 76, 52], [72, 94, 52], [91, 42, 79]]);
+          const warm = cycleColor([[255, 183, 65], [210, 244, 123], [247, 93, 151]]);
+          const sky = ctx.createLinearGradient(0, 0, 0, H);
+          sky.addColorStop(0, cssColor(skyTop));
+          sky.addColorStop(0.55, cssColor(skyMid));
+          sky.addColorStop(0.67, cssColor(horizonColor));
+          sky.addColorStop(1, "#02070b");
+          ctx.fillStyle = sky;
+          ctx.fillRect(0, 0, W, H);
+
+          ctx.save();
+          ctx.globalCompositeOperation = "lighter";
+          const halo = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr * 6.5);
+          halo.addColorStop(0, "rgba(255,247,204,1)");
+          halo.addColorStop(0.15, cssColor(warm, 0.8));
+          halo.addColorStop(0.5, "rgba(71,201,193,.13)");
+          halo.addColorStop(1, "rgba(0,0,0,0)");
+          ctx.fillStyle = halo;
+          ctx.beginPath();
+          ctx.arc(sx, sy, sr * 6.5, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.translate(sx, sy);
+          for (let i = 0; i < 72; i++) {
+            const a = i / 72 * Math.PI * 2;
+            const length = sr * (2.0 + 1.7 * Math.sin(i * 17.1 + time * 0.92));
+            ctx.strokeStyle = `rgba(255,${160 + i % 80},100,${0.035 + (i % 5) * 0.008})`;
+            ctx.lineWidth = Math.max(1, dpr * 0.6);
+            ctx.beginPath();
+            ctx.moveTo(Math.cos(a) * sr * 1.05, Math.sin(a) * sr * 1.05);
+            ctx.lineTo(Math.cos(a) * length, Math.sin(a) * length);
+            ctx.stroke();
+          }
+          ctx.fillStyle = "#fff1b1";
+          ctx.beginPath();
+          ctx.arc(0, 0, sr, 0, Math.PI * 2);
+          ctx.fill();
+          for (const radius of [sr * 2.4, sr * 3.65, sr * 4.9]) {
+            ctx.strokeStyle = "rgba(255,226,143,.12)";
+            ctx.lineWidth = Math.max(1, dpr * 0.55);
+            ctx.beginPath();
+            ctx.arc(0, 0, radius, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          ctx.restore();
+
+          ctx.strokeStyle = "rgba(104,224,207,.17)";
+          ctx.lineWidth = Math.max(1, dpr * 0.7);
+          ctx.beginPath();
+          const tilt = 23.44 * Math.PI / 180;
+          const span = Math.hypot(W, H);
+          ctx.moveTo(W / 2 - Math.cos(tilt) * span, H / 2 + Math.sin(tilt) * span);
+          ctx.lineTo(W / 2 + Math.cos(tilt) * span, H / 2 - Math.sin(tilt) * span);
+          ctx.stroke();
+
+          ctx.globalCompositeOperation = "lighter";
+          for (let y = horizon; y < H; y += Math.max(4, dpr * 5)) {
+            const depth = (y - horizon) / (H - horizon);
+            const wave = Math.sin(y * 0.09 + time * 1.35 + Math.sin(y * 0.02)) * sr * depth * 0.24;
+            const half = sr * (0.3 + depth * 2.3) * (0.4 + 0.6 * Math.sin(y * 0.2 + time * 1.08) ** 2);
+            ctx.strokeStyle = `rgba(255,190,78,${0.15 * (1 - depth)})`;
+            ctx.beginPath();
+            ctx.moveTo(sx - half + wave, y);
+            ctx.lineTo(sx + half + wave, y);
+            ctx.stroke();
+          }
+          ctx.restore();
+          fallbackAnimation = requestAnimationFrame(fallbackRender);
+        }
+
+        fallbackAnimation = requestAnimationFrame(fallbackRender);
+      }
+
+      resize();
+      bindInteractions();
+      if (gl) runWebGL();
+      else runFallback();
+    })();
+  </script>
+</body>
+</html>

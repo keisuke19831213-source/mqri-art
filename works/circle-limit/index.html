@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="description" content="Circle Limit — Flower of Life。ポアンカレ円板の双曲平面に生命の花を敷き詰める。縁に向かって無限に小さくなりながら、隙間なく詰まっていく。MQRI ART。">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Circle Limit">
+<meta name="theme-color" content="#0a1428">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Circle Limit — Flower of Life</title>
+<script src="vendor/p5.min.js"></script>
+<style>
+  html, body { height: 100%; }
+  body { margin: 0; background: #0a1428; display: flex; justify-content: center; align-items: center;
+         min-height: 100vh; cursor: grab; overflow: hidden;
+         -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  body.dragging { cursor: grabbing; }
+  /* 指の操作を作品が受け取る（ブラウザのスクロール・ズームに奪わせない） */
+  canvas { display: block; touch-action: none; }
+</style>
+</head>
+<body>
+<script>
+// =====================================================
+// Circle Limit — Flower of Life
+// フラワーオブライフ × 世界最高水準の表現技法 第10弾
+// Poincaré円板 × {6,4}双曲タイリング × Möbius変換
+// インタラクション：ドラッグ / ホイールズーム / クリック波紋
+// =====================================================
+
+// 画面に合わせて可変にする（移設前は540px固定で、スマホでははみ出していた）。
+// 円板の半径と中心はキャンバスの寸法から毎回導く（比率 250/540 は原寸の設計値）
+const DISK_RATIO = 250 / 540;
+let SIZE = 540;
+let R = 250;
+let CX = 270;
+let CY = 270;
+
+function computeSize() {
+  SIZE = Math.floor(Math.min(windowWidth, windowHeight) * 0.95);
+  R = SIZE * DISK_RATIO;
+  CX = SIZE / 2;
+  CY = SIZE / 2;
+}
+
+// {6,4} タイリング定数
+const COSH_S = Math.sqrt(3 / 2);
+const S_HYP = Math.acosh(COSH_S);
+const COSH_RV = Math.sqrt(2);
+const R_VERTEX = Math.acosh(COSH_RV);
+const COSH_A = Math.sqrt(3);
+const APOTHEM = Math.acosh(COSH_A);
+const D_ADJ = 2 * APOTHEM;
+
+let tiles = [];
+let paused = false;
+let tMobius = 0;
+
+// ユーザー操作ビュー
+let viewOffset = [0, 0];
+let viewRotation = 0;
+let zoomFactor = 0;
+
+// ドラッグ
+let dragging = false;
+let dragStart = null;
+let dragStartOffset = null;
+let mouseDownX, mouseDownY, mouseDownTime;
+
+// 波紋
+let ripples = [];
+
+// ---------- 複素数 ----------
+const C = {
+  add: (a, b) => [a[0] + b[0], a[1] + b[1]],
+  sub: (a, b) => [a[0] - b[0], a[1] - b[1]],
+  mul: (a, b) => [a[0]*b[0] - a[1]*b[1], a[0]*b[1] + a[1]*b[0]],
+  div: (a, b) => {
+    const d = b[0]*b[0] + b[1]*b[1];
+    return [(a[0]*b[0] + a[1]*b[1]) / d, (a[1]*b[0] - a[0]*b[1]) / d];
+  },
+  conj: a => [a[0], -a[1]],
+  abs: a => Math.sqrt(a[0]*a[0] + a[1]*a[1]),
+  scale: (a, s) => [a[0]*s, a[1]*s],
+};
+
+// ---------- Möbius ----------
+function mobius(z, a, b) {
+  const num = C.add(C.mul(a, z), b);
+  const den = C.add(C.mul(C.conj(b), z), C.conj(a));
+  return C.div(num, den);
+}
+
+function translateParams(d, theta) {
+  const r = Math.tanh(d / 2);
+  const norm = 1 / Math.sqrt(1 - r*r);
+  const a = [norm, 0];
+  const b = [r * Math.cos(theta) * norm, r * Math.sin(theta) * norm];
+  return { a, b };
+}
+
+function rotateParams(theta) {
+  return { a: [Math.cos(theta/2), Math.sin(theta/2)], b: [0, 0] };
+}
+
+// M2 ∘ M1 の合成
+function composeMobius(m1, m2) {
+  const a = C.add(C.mul(m2.a, m1.a), C.mul(m2.b, C.conj(m1.b)));
+  const b = C.add(C.mul(m2.a, m1.b), C.mul(m2.b, C.conj(m1.a)));
+  return { a, b };
+}
+
+// ---------- 測地線 ----------
+function geodesic(z1, z2) {
+  const cross = z1[0]*z2[1] - z1[1]*z2[0];
+  if (Math.abs(cross) < 1e-8) return { straight: true };
+  const n1 = z1[0]*z1[0] + z1[1]*z1[1];
+  const n2 = z2[0]*z2[0] + z2[1]*z2[1];
+  const z1s = [z1[0]/n1, z1[1]/n1];
+  const z2s = [z2[0]/n2, z2[1]/n2];
+  const m1 = [(z1[0] + z1s[0]) / 2, (z1[1] + z1s[1]) / 2];
+  const m2 = [(z2[0] + z2s[0]) / 2, (z2[1] + z2s[1]) / 2];
+  const d1 = [-z1[1], z1[0]];
+  const d2 = [-z2[1], z2[0]];
+  const denom = d1[0]*d2[1] - d1[1]*d2[0];
+  if (Math.abs(denom) < 1e-10) return { straight: true };
+  const t = ((m2[0]-m1[0])*d2[1] - (m2[1]-m1[1])*d2[0]) / denom;
+  const cx = m1[0] + t*d1[0];
+  const cy = m1[1] + t*d1[1];
+  const cr = Math.sqrt((cx-z1[0])**2 + (cy-z1[1])**2);
+  return { straight: false, center: [cx, cy], radius: cr };
+}
+
+function drawGeodesic(z1, z2) {
+  const g = geodesic(z1, z2);
+  if (g.straight) {
+    line(z1[0]*R + CX, -z1[1]*R + CY, z2[0]*R + CX, -z2[1]*R + CY);
+  } else {
+    const scx = g.center[0] * R + CX;
+    const scy = -g.center[1] * R + CY;
+    const sr = g.radius * R;
+    let a1 = Math.atan2(-(z1[1] - g.center[1]), z1[0] - g.center[0]);
+    let a2 = Math.atan2(-(z2[1] - g.center[1]), z2[0] - g.center[0]);
+    let da = a2 - a1;
+    while (da > Math.PI) da -= 2*Math.PI;
+    while (da < -Math.PI) da += 2*Math.PI;
+    noFill();
+    arc(scx, scy, sr*2, sr*2, a1, a1 + da);
+  }
+}
+
+// ---------- タイリング生成 ----------
+function generateTiling() {
+  tiles = [];
+  const seen = new Set();
+  const MAX_TILES = 1200;
+  const MAX_RADIUS = 0.995;
+  const queue = [[0, 0]];
+  seen.add("0.0000,0.0000");
+
+  while (queue.length > 0 && tiles.length < MAX_TILES) {
+    const center = queue.shift();
+    tiles.push({ center });
+
+    for (let k = 0; k < 6; k++) {
+      const theta = Math.PI / 6 + k * Math.PI / 3;
+      const { a: aT, b: bT } = translateParams(D_ADJ, theta);
+      const neighborLocal = mobius([0, 0], aT, bT);
+
+      const cr = C.abs(center);
+      let neighbor;
+      if (cr < 1e-10) neighbor = neighborLocal;
+      else {
+        const argC = Math.atan2(center[1], center[0]);
+        const dC = 2 * Math.atanh(cr);
+        const { a: aC, b: bC } = translateParams(dC, argC);
+        neighbor = mobius(neighborLocal, aC, bC);
+      }
+
+      if (C.abs(neighbor) > MAX_RADIUS) continue;
+      const key = neighbor[0].toFixed(3) + "," + neighbor[1].toFixed(3);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      queue.push(neighbor);
+    }
+  }
+}
+
+function tileVertices(center) {
+  const verts = [];
+  const cr = C.abs(center);
+  for (let k = 0; k < 6; k++) {
+    const theta = k * Math.PI / 3;
+    const { a: aT, b: bT } = translateParams(R_VERTEX, theta);
+    const vLocal = mobius([0, 0], aT, bT);
+    let v;
+    if (cr < 1e-10) v = vLocal;
+    else {
+      const argC = Math.atan2(center[1], center[0]);
+      const dC = 2 * Math.atanh(cr);
+      const { a: aC, b: bC } = translateParams(dC, argC);
+      v = mobius(vLocal, aC, bC);
+    }
+    verts.push(v);
+  }
+  return verts;
+}
+
+// ---------- setup ----------
+function setup() {
+  computeSize();
+  const cnv = createCanvas(SIZE, SIZE);
+  pixelDensity(2);
+  generateTiling();
+  cnv.mousePressed(onMousePressed);
+  cnv.mouseReleased(onMouseReleased);
+}
+
+function windowResized() {
+  // タイリングは単位円板の座標で持っているので、寸法だけ組み直せばよい
+  computeSize();
+  resizeCanvas(SIZE, SIZE);
+}
+
+// ---------- 合成変換 ----------
+function getCurrentTransform() {
+  const offAbs = C.abs(viewOffset);
+  let M;
+  if (offAbs < 1e-10 && Math.abs(zoomFactor) < 1e-10) {
+    M = { a: [1, 0], b: [0, 0] };
+  } else {
+    const theta = offAbs < 1e-10 ? 0 : Math.atan2(viewOffset[1], viewOffset[0]);
+    const d = (offAbs < 1e-10 ? 0 : 2 * Math.atanh(Math.min(offAbs, 0.995))) + zoomFactor;
+    M = translateParams(d, theta);
+  }
+
+  if (Math.abs(viewRotation) > 1e-10) {
+    M = composeMobius(M, rotateParams(viewRotation));
+  }
+
+  if (!paused) {
+    const driftAbs = 0.15;
+    const driftArg = tMobius;
+    const dDrift = 2 * Math.atanh(driftAbs);
+    const driftM = translateParams(dDrift, driftArg);
+    M = composeMobius(M, driftM);
+  }
+
+  return M;
+}
+
+// ---------- draw ----------
+function draw() {
+  drawBackground();
+  if (!paused) tMobius += 0.002;
+
+  const M = getCurrentTransform();
+
+  const transformed = tiles.map(t => {
+    const c = mobius(t.center, M.a, M.b);
+    return { origCenter: t.center, center: c };
+  });
+  transformed.sort((a, b) => C.abs(b.center) - C.abs(a.center));
+
+  for (const t of transformed) {
+    if (C.abs(t.center) > 0.995) continue;
+    drawTileEdges(t.origCenter, M);
+  }
+
+  for (const t of transformed) {
+    if (C.abs(t.center) > 0.995) continue;
+    drawFlowerOfLife(t.origCenter, M);
+  }
+
+  updateAndDrawRipples(M);
+  drawDiskRim();
+}
+
+function drawBackground() {
+  background(10, 20, 40);
+  const steps = 60;
+  noStroke();
+  for (let i = steps; i >= 0; i--) {
+    const r = (i / steps) * R;
+    const t = i / steps;
+    fill(lerp(20, 10, t), lerp(40, 20, t), lerp(68, 40, t));
+    circle(CX, CY, r * 2);
+  }
+}
+
+function drawDiskRim() {
+  noFill();
+  stroke(201, 169, 97, 100);
+  strokeWeight(1.5);
+  circle(CX, CY, R * 2);
+}
+
+function drawTileEdges(origCenter, M) {
+  const verts = tileVertices(origCenter);
+  const tv = verts.map(v => mobius(v, M.a, M.b));
+  const cTrans = mobius(origCenter, M.a, M.b);
+  const dist = C.abs(cTrans);
+  const fadeBase = Math.pow(1 - Math.min(dist, 0.99), 1.2);
+  const alpha = 45 * fadeBase;
+  stroke(201, 169, 97, alpha);
+  strokeWeight(0.6);
+  noFill();
+  for (let i = 0; i < 6; i++) {
+    drawGeodesic(tv[i], tv[(i + 1) % 6]);
+  }
+}
+
+function drawFlowerOfLife(origCenter, M) {
+  const r_seed_hyp = S_HYP / 2;
+  const cr = C.abs(origCenter);
+  const argC = cr < 1e-10 ? 0 : Math.atan2(origCenter[1], origCenter[0]);
+  const dC = cr < 1e-10 ? 0 : 2 * Math.atanh(cr);
+  const { a: aC, b: bC } = translateParams(dC, argC);
+
+  const centers = [origCenter];
+  for (let k = 0; k < 6; k++) {
+    const theta = k * Math.PI / 3;
+    const { a: aT, b: bT } = translateParams(r_seed_hyp, theta);
+    const local = mobius([0, 0], aT, bT);
+    let c;
+    if (cr < 1e-10) c = local;
+    else c = mobius(local, aC, bC);
+    centers.push(c);
+  }
+
+  const centerT = mobius(origCenter, M.a, M.b);
+  const distT = C.abs(centerT);
+  if (distT > 0.995) return;
+
+  const fade = Math.pow(1 - Math.min(distT, 0.99), 1.5);
+  const alpha = 255 * (0.10 + 0.75 * fade);
+
+  stroke(232, 217, 168, alpha);
+  strokeWeight(0.8);
+  noFill();
+
+  for (const c of centers) {
+    drawHyperbolicCircle(c, r_seed_hyp, M);
+  }
+}
+
+function drawHyperbolicCircle(center, rh, M) {
+  const cr = C.abs(center);
+  const argC = cr < 1e-10 ? 0 : Math.atan2(center[1], center[0]);
+  const dC = cr < 1e-10 ? 0 : 2 * Math.atanh(cr);
+  const { a: aC, b: bC } = translateParams(dC, argC);
+
+  const NS = 20;
+  const pts = [];
+  for (let k = 0; k < NS; k++) {
+    const theta = (k / NS) * 2 * Math.PI;
+    const { a: aT, b: bT } = translateParams(rh, theta);
+    const local = mobius([0, 0], aT, bT);
+    let p;
+    if (cr < 1e-10) p = local;
+    else p = mobius(local, aC, bC);
+    p = mobius(p, M.a, M.b);
+    pts.push(p);
+  }
+
+  beginShape();
+  for (const p of pts) {
+    if (C.abs(p) > 0.999) { endShape(); return; }
+    vertex(p[0] * R + CX, -p[1] * R + CY);
+  }
+  endShape(CLOSE);
+}
+
+// ---------- 波紋 ----------
+function updateAndDrawRipples(M) {
+  for (let i = ripples.length - 1; i >= 0; i--) {
+    const rp = ripples[i];
+    rp.age += 1;
+    const lifeT = rp.age / rp.maxAge;
+    if (lifeT >= 1) { ripples.splice(i, 1); continue; }
+
+    const baseAlpha = 220 * Math.pow(1 - lifeT, 1.4);
+    // 3重の同心円（時間差で広がる）
+    for (let ring = 0; ring < 3; ring++) {
+      const rh = rp.age * 0.035 - ring * 0.28;
+      if (rh <= 0) continue;
+      const a = baseAlpha * (1 - ring * 0.3);
+      drawRippleCircle(rp.origin, rh, M, a, 1.4 - ring * 0.3);
+    }
+  }
+}
+
+function drawRippleCircle(center, rh, M, alpha, weight) {
+  noFill();
+  stroke(255, 235, 180, alpha);
+  strokeWeight(weight);
+
+  const cr = C.abs(center);
+  const argC = cr < 1e-10 ? 0 : Math.atan2(center[1], center[0]);
+  const dC = cr < 1e-10 ? 0 : 2 * Math.atanh(Math.min(cr, 0.995));
+  const { a: aC, b: bC } = translateParams(dC, argC);
+
+  const NS = 40;
+  const pts = [];
+  let allInside = true;
+  for (let k = 0; k < NS; k++) {
+    const theta = (k / NS) * 2 * Math.PI;
+    const { a: aT, b: bT } = translateParams(rh, theta);
+    const local = mobius([0, 0], aT, bT);
+    let p;
+    if (cr < 1e-10) p = local;
+    else p = mobius(local, aC, bC);
+    p = mobius(p, M.a, M.b);
+    if (C.abs(p) > 0.999) allInside = false;
+    pts.push(p);
+  }
+
+  beginShape();
+  for (const p of pts) {
+    if (C.abs(p) > 0.999) continue;
+    vertex(p[0] * R + CX, -p[1] * R + CY);
+  }
+  if (allInside) endShape(CLOSE);
+  else endShape();
+}
+
+// ---------- 入力 ----------
+function screenToDisk(sx, sy) {
+  return [(sx - CX) / R, -(sy - CY) / R];
+}
+
+function isInsideDisk(sx, sy) {
+  const dx = (sx - CX) / R;
+  const dy = (sy - CY) / R;
+  return dx*dx + dy*dy < 0.98 * 0.98;
+}
+
+function onMousePressed() {
+  if (!isInsideDisk(mouseX, mouseY)) return;
+  dragging = true;
+  dragStart = screenToDisk(mouseX, mouseY);
+  dragStartOffset = [viewOffset[0], viewOffset[1]];
+  document.body.classList.add('dragging');
+  mouseDownX = mouseX;
+  mouseDownY = mouseY;
+  mouseDownTime = millis();
+}
+
+function onMouseReleased() {
+  document.body.classList.remove('dragging');
+  dragging = false;
+  if (mouseDownX !== undefined) {
+    const dx = mouseX - mouseDownX;
+    const dy = mouseY - mouseDownY;
+    const dt = millis() - mouseDownTime;
+    // 小移動＆短時間 = クリック
+    if (dx*dx + dy*dy < 25 && dt < 300 && isInsideDisk(mouseX, mouseY)) {
+      const M = getCurrentTransform();
+      // 逆変換
+      const mInv = { a: C.conj(M.a), b: [-M.b[0], -M.b[1]] };
+      const clickDisk = screenToDisk(mouseX, mouseY);
+      const origin = mobius(clickDisk, mInv.a, mInv.b);
+      ripples.push({ origin, age: 0, maxAge: 130 });
+    }
+  }
+}
+
+function mouseDragged() {
+  if (!dragging) return;
+  const now = screenToDisk(mouseX, mouseY);
+  const delta = C.sub(now, dragStart);
+  let newOff = C.add(dragStartOffset, delta);
+  const na = C.abs(newOff);
+  if (na > 0.9) newOff = C.scale(newOff, 0.9 / na);
+  viewOffset = newOff;
+}
+
+function mouseWheel(ev) {
+  if (!isInsideDisk(mouseX, mouseY)) return;
+  zoomFactor += ev.delta * -0.003;
+  zoomFactor = Math.max(-2.5, Math.min(3.0, zoomFactor));
+  return false;
+}
+
+// -----------------------------------------------------
+// タッチ: 1本指=ドラッグ / 2本指=ピンチ（ホイールの代わり）
+// -----------------------------------------------------
+let pinchPrevDist = null;
+
+function touchStarted() {
+  if (touches.length === 1) {
+    pinchPrevDist = null;
+    // マウスと同じ経路に載せる（円板の外は無視される）
+    onMousePressed();
+  } else if (touches.length === 2) {
+    dragging = false;
+    document.body.classList.remove('dragging');
+    pinchPrevDist = dist(touches[0].x, touches[0].y, touches[1].x, touches[1].y);
+  }
+  return false;  // ブラウザのスクロール・ズームを抑制
+}
+
+function touchMoved() {
+  if (touches.length >= 2) {
+    const d = dist(touches[0].x, touches[0].y, touches[1].x, touches[1].y);
+    if (pinchPrevDist && d > 0) {
+      // ホイールと同じ量に効かせる（双曲距離なので加算でよい）
+      zoomFactor += Math.log(d / pinchPrevDist) * 1.6;
+      zoomFactor = Math.max(-2.5, Math.min(3.0, zoomFactor));
+    }
+    pinchPrevDist = d;
+  } else if (touches.length === 1) {
+    mouseDragged();
+  }
+  return false;
+}
+
+function touchEnded() {
+  if (touches.length === 0) {
+    onMouseReleased();
+    pinchPrevDist = null;
+  }
+  return false;
+}
+
+function keyPressed() {
+  if (key === 's' || key === 'S') saveCanvas('circle-limit-fol', 'png');
+  if (key === ' ') paused = !paused;
+  if (key === 'r' || key === 'R') {
+    tMobius = 0;
+    viewOffset = [0, 0];
+    viewRotation = 0;
+    zoomFactor = 0;
+    ripples = [];
+  }
+  if (key === 'q' || key === 'Q') viewRotation += 0.15;
+  if (key === 'e' || key === 'E') viewRotation -= 0.15;
+}
+</script>
+</body>
+</html>

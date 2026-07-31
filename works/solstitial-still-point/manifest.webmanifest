@@ -1,0 +1,10 @@
+{
+  "name": "夏至・光の静止点 — Solstitial Still Point",
+  "short_name": "夏至",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#050b12",
+  "theme_color": "#050b12",
+  "start_url": ".",
+  "icons": []
+}

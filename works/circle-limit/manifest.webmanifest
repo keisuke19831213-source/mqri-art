@@ -1,0 +1,10 @@
+{
+  "name": "Circle Limit — Flower of Life",
+  "short_name": "Circle Limit",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#0a1428",
+  "theme_color": "#0a1428",
+  "start_url": ".",
+  "icons": []
+}
