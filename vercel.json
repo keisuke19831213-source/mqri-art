@@ -3,23 +3,33 @@
   "trailingSlash": true,
   "redirects": [
     {
-      "source": "/quantum-mandala",
-      "destination": "/works/quantum-mandala",
+      "source": "/quantum-mandala/",
+      "destination": "/works/quantum-mandala/",
       "permanent": true
     },
     {
-      "source": "/quantum-mandala/:path*",
-      "destination": "/works/quantum-mandala/:path*",
+      "source": "/quantum-mandala",
+      "destination": "/works/quantum-mandala/",
+      "permanent": true
+    },
+    {
+      "source": "/quantum-mandala/:path+",
+      "destination": "/works/quantum-mandala/:path+",
+      "permanent": true
+    },
+    {
+      "source": "/hopf-loom/",
+      "destination": "/works/hopf-loom/",
       "permanent": true
     },
     {
       "source": "/hopf-loom",
-      "destination": "/works/hopf-loom",
+      "destination": "/works/hopf-loom/",
       "permanent": true
     },
     {
-      "source": "/hopf-loom/:path*",
-      "destination": "/works/hopf-loom/:path*",
+      "source": "/hopf-loom/:path+",
+      "destination": "/works/hopf-loom/:path+",
       "permanent": true
     }
   ]
