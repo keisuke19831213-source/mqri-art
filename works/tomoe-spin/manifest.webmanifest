@@ -1,0 +1,10 @@
+{
+  "name": "巴回転 — TOMOE SPIN",
+  "short_name": "巴回転",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#0a0a0b",
+  "theme_color": "#0a0a0b",
+  "start_url": ".",
+  "icons": []
+}

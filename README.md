@@ -11,6 +11,7 @@
 | URL | 作品 | 概要 |
 |---|---|---|
 | [/works/taiji-spin/](https://art.mqri.or.jp/works/taiji-spin/) | 太極回転 TAIJI SPIN | 太極図の回転速度とディスプレイの更新間隔が噛み合うと現れるストロボ錯視。Canvas 2D・鑑賞モード(`A`)あり |
+| [/works/tomoe-spin/](https://art.mqri.or.jp/works/tomoe-spin/) | 巴回転 TOMOE SPIN | 勾玉ひとつを回すと巴紋が結晶する。速度を360で割った既約分数の分母が紋の枚数。太極回転の姉妹作 |
 | [/quantum-mandala/](https://art.mqri.or.jp/quantum-mandala/) | 量子曼荼羅 Quantum Mandala | シュレーディンガー方程式の実時間GPU解法 × 神聖幾何学。iPad展示用にタッチ最適化済み(詳細は各フォルダのREADME) |
 | [/hopf-loom/](https://art.mqri.or.jp/hopf-loom/) | HOPF LOOM — S³の織物 | 四次元球面のHopfファイブレーション × 四次元正多胞体。マルチタッチ(1本指=視点/2本指=ズーム・4次元回転)でiPad展示用に最適化済み |
 

@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="description" content="巴回転 TOMOE SPIN — 円のなかに勾玉がひとつ。回すと三つになる。回転の速さが紋の数を決める。MQRI ART のインタラクティブ作品。">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="巴回転">
+<meta name="theme-color" content="#0a0a0b">
+<link rel="manifest" href="manifest.webmanifest">
+<title>TOMOE SPIN — 巴回転</title>
+<style>
+  :root {
+    --bg: #0a0a0b;
+    --fg: #e8e6e0;
+    --dim: #6b6a66;
+    --accent: #c9a86a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    height: 100dvh;
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: none;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.4s ease;
+  }
+  body.inverted {
+    --bg: #f2f0ea;
+    --fg: #16151a;
+    --dim: #8a887f;
+    --accent: #8a6a26;
+  }
+  #stage {
+    position: fixed;
+    inset: 0;
+    display: block;
+    cursor: grab;
+    touch-action: none;
+  }
+  #stage.dragging { cursor: grabbing; }
+  body.art #stage { cursor: none; }
+
+  /* ---- 速度と、結晶した紋の名前 ---- */
+  #readout {
+    position: fixed;
+    top: 26px;
+    left: 30px;
+    pointer-events: none;
+    line-height: 1.15;
+    transition: opacity 0.9s ease;
+  }
+  #speedValue {
+    font-size: clamp(26px, 4.2vw, 40px);
+    font-weight: 300;
+    font-variant-numeric: tabular-nums;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+  }
+  #speedUnit {
+    font-size: 0.42em;
+    color: var(--dim);
+    margin-left: 6px;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+  }
+  #patternName {
+    margin-top: 8px;
+    font-size: clamp(15px, 2.2vw, 20px);
+    letter-spacing: 0.3em;
+    color: var(--accent);
+    opacity: 0;
+    transition: opacity 0.5s ease;
+    min-height: 1.4em;
+  }
+  #patternName.on { opacity: 1; }
+
+  #title {
+    position: fixed;
+    top: 28px;
+    right: 30px;
+    text-align: right;
+    pointer-events: none;
+    transition: opacity 0.9s ease;
+  }
+  #title h1 {
+    font-size: 15px;
+    font-weight: 400;
+    letter-spacing: 0.5em;
+    margin-right: -0.5em;
+  }
+  #title p {
+    margin-top: 6px;
+    font-size: 9px;
+    letter-spacing: 0.28em;
+    margin-right: -0.28em;
+    color: var(--dim);
+    font-family: "Helvetica Neue", Arial, sans-serif;
+  }
+
+  /* ---- パネル ---- */
+  #panel {
+    position: fixed;
+    left: 50%;
+    bottom: 22px;
+    width: min(560px, calc(100vw - 40px));
+    padding: 16px 22px 15px;
+    background: rgba(16, 16, 18, 0.72);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 14px;
+    transform: translateX(-50%) translateY(var(--py, 0px));
+    transition: opacity 0.4s ease, transform 0.42s cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+  #panel.grabbing { transition: opacity 0.4s ease; }
+  #panel.hidden, body.art #panel {
+    opacity: 0;
+    transform: translateX(-50%) translateY(calc(var(--py, 0px) + 12px));
+    pointer-events: none;
+  }
+  body.inverted #panel {
+    background: rgba(250, 249, 245, 0.72);
+    border-color: rgba(0, 0, 0, 0.08);
+  }
+
+  #grip {
+    display: block;
+    width: 100%;
+    margin: -5px 0 8px;
+    padding: 8px 0;
+    cursor: grab;
+    touch-action: none;
+  }
+  #grip::before {
+    content: '';
+    display: block;
+    width: 42px; height: 4px;
+    margin: 0 auto;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.22);
+    transition: background 0.2s ease;
+  }
+  #grip:hover::before { background: rgba(255, 255, 255, 0.4); }
+  body.inverted #grip::before { background: rgba(0, 0, 0, 0.2); }
+
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 10px;
+  }
+  .row label {
+    flex: 0 0 82px;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    color: var(--dim);
+    white-space: nowrap;
+  }
+  .row input[type="number"] {
+    flex: 0 0 66px;
+    padding: 5px 8px;
+    text-align: right;
+    font-size: 12px;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-variant-numeric: tabular-nums;
+    color: var(--fg);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+  .row input[type="number"]:focus { outline: none; border-color: rgba(201, 168, 106, 0.6); }
+  .row input[type="number"]::-webkit-inner-spin-button,
+  .row input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  body.inverted .row input[type="number"] {
+    background: rgba(0, 0, 0, 0.04);
+    border-color: rgba(0, 0, 0, 0.14);
+  }
+  input[type="range"] {
+    flex: 1;
+    min-width: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 1px;
+    outline: none;
+  }
+  body.inverted input[type="range"] { background: rgba(0, 0, 0, 0.18); }
+  input[type="range"]::-webkit-slider-thumb {
+    appearance: none; -webkit-appearance: none;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--fg); border: none; cursor: pointer;
+    transition: transform 0.15s ease;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.25); }
+  input[type="range"]::-moz-range-thumb {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--fg); border: none; cursor: pointer;
+  }
+
+  /* 巴の数を選ぶ列 */
+  .snaprow {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+    margin: 13px 0 9px;
+  }
+  .btnrow {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  button {
+    width: 100%;
+    padding: 8px 0;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    font-family: inherit;
+    color: var(--fg);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  }
+  body.inverted button { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.12); }
+  button:hover { background: rgba(255, 255, 255, 0.11); }
+  body.inverted button:hover { background: rgba(0,0,0,0.09); }
+  button.active {
+    background: rgba(201, 168, 106, 0.16);
+    border-color: rgba(201, 168, 106, 0.5);
+    color: var(--accent);
+  }
+  #artBtn {
+    grid-column: 1 / -1;
+    margin-top: 8px;
+    padding: 11px 0;
+    letter-spacing: 0.3em;
+    text-indent: 0.3em;
+    background: rgba(201, 168, 106, 0.1);
+    border-color: rgba(201, 168, 106, 0.32);
+    color: var(--accent);
+  }
+  #artBtn:hover { background: rgba(201, 168, 106, 0.2); }
+
+  #hint {
+    position: fixed;
+    bottom: 5px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    color: var(--dim);
+    opacity: 0.6;
+    pointer-events: none;
+    white-space: nowrap;
+    transition: opacity 0.5s ease;
+  }
+  body.art #hint { opacity: 0; }
+
+  body.art #readout { opacity: 0.55; }
+  body.art #title { opacity: 0.45; }
+  #artToast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(32px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    font-size: 11px;
+    letter-spacing: 0.26em;
+    text-indent: 0.26em;
+    color: var(--dim);
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.8s ease;
+  }
+  #artToast.show { opacity: 0.75; }
+
+  @media (max-width: 600px) {
+    #readout { top: 14px; left: 16px; }
+    #speedValue { font-size: clamp(24px, 8vw, 34px); }
+    #patternName { font-size: 16px; margin-top: 5px; }
+    #title { top: 18px; right: 16px; }
+    #title h1 { font-size: 11px; letter-spacing: 0.34em; margin-right: -0.34em; }
+    #title p { font-size: 8px; }
+    #panel {
+      width: calc(100vw - 20px);
+      bottom: calc(10px + env(safe-area-inset-bottom));
+      padding: 13px 14px 12px;
+    }
+    .row { gap: 10px; margin-bottom: 9px; }
+    .row label { flex: 0 0 48px; font-size: 10px; letter-spacing: 0.02em; }
+    .row input[type="number"] { flex: 0 0 54px; padding: 6px 6px; }
+    input[type="range"] { height: 3px; }
+    input[type="range"]::-webkit-slider-thumb { width: 20px; height: 20px; }
+    input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; }
+    .snaprow { gap: 4px; margin: 11px 0 8px; }
+    button { padding: 10px 0; font-size: 10px; letter-spacing: 0.02em; }
+    #artBtn { padding: 12px 0; letter-spacing: 0.24em; text-indent: 0.24em; }
+    #hint { display: none; }
+    #artToast { font-size: 10px; }
+  }
+  @media (max-height: 460px) and (min-width: 620px) {
+    #panel {
+      left: auto; right: 12px; top: 50%; bottom: auto;
+      width: 320px;
+      transform: translateY(-50%);
+    }
+    #panel.hidden, body.art #panel { transform: translateY(-50%) translateX(14px); }
+    #grip { display: none; }
+    #title { display: none; }
+    #hint { display: none; }
+    .row { margin-bottom: 7px; }
+    .snaprow { margin: 10px 0 7px; }
+    #artToast { left: 20px; bottom: 14px; transform: none; }
+  }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<div id="readout">
+  <div><span id="speedValue">0.0</span><span id="speedUnit">°/frame</span></div>
+  <div id="patternName"></div>
+</div>
+
+<div id="title">
+  <h1>巴回転</h1>
+  <p>TOMOE SPIN</p>
+</div>
+
+<div id="panel">
+  <div id="grip" title="上下スワイプで折り畳み"></div>
+  <div class="row">
+    <label>速度 °/f</label>
+    <input type="range" id="speedSlider" min="-180" max="180" step="0.1" value="0">
+    <input type="number" id="speedNum" min="-180" max="180" step="0.1" value="0">
+  </div>
+  <div class="row">
+    <label>残像 %</label>
+    <input type="range" id="trailSlider" min="0" max="95" step="1" value="88">
+    <input type="number" id="trailNum" min="0" max="95" step="1" value="88">
+  </div>
+  <div class="row">
+    <label>巻き °</label>
+    <input type="range" id="sweepSlider" min="40" max="280" step="1" value="170">
+    <input type="number" id="sweepNum" min="40" max="280" step="1" value="170">
+  </div>
+  <div class="row">
+    <label>太さ %</label>
+    <input type="range" id="thickSlider" min="10" max="42" step="1" value="30">
+    <input type="number" id="thickNum" min="10" max="42" step="1" value="30">
+  </div>
+  <div class="row">
+    <label>大きさ %</label>
+    <input type="range" id="sizeSlider" min="20" max="98" step="1" value="70">
+    <input type="number" id="sizeNum" min="20" max="98" step="1" value="70">
+  </div>
+  <div class="snaprow">
+    <button data-n="2">二つ</button>
+    <button data-n="3">三つ</button>
+    <button data-n="4">四つ</button>
+    <button data-n="5">五つ</button>
+    <button data-n="6">六つ</button>
+    <button data-n="8">八つ</button>
+    <button data-n="phi">黄金</button>
+  </div>
+  <div class="btnrow">
+    <button id="driftBtn" class="active">漂い</button>
+    <button id="invertBtn">反転</button>
+    <button id="resetBtn">リセット</button>
+    <button id="artBtn">鑑賞モード</button>
+  </div>
+</div>
+
+<div id="artToast"></div>
+<div id="hint">回すと巴紋が現れる · 黄金 = 決して結晶しない黄金角回転 · A で鑑賞モード</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+
+  // ---- 状態 ----
+  const state = {
+    angle: 0,
+    velocity: 0,      // 度/フレーム
+    trail: 0.88,      // 高いほど各巴の明るさが揃う
+    sweep: 170,       // 勾玉の巻き(度)
+    thick: 0.30,      // 頭の太さ(半径比)
+    pos: 0.36,        // 頭の中心距離(半径比)。小さいほど中心に寄る
+    drift: true,      // 紋をわずかに歳差回転させる(+0.05°/frame)
+    sizeRatio: 0.70,
+    inverted: false,
+    dragging: false,
+  };
+
+  // ---- 巴の数ごとの適正な形 ----
+  // 巴の数が増えるほど一つ分の取り分が狭くなるので、
+  // 巻きを浅く・頭を細くしないと隣とぶつかって紋にならない
+  const PRESET = {
+    2: { sweep: 230, thick: 0.34, pos: 0.38 },
+    3: { sweep: 170, thick: 0.30, pos: 0.36 },
+    4: { sweep: 126, thick: 0.25, pos: 0.41 },
+    5: { sweep: 98,  thick: 0.21, pos: 0.46 },
+    6: { sweep: 78,  thick: 0.18, pos: 0.50 },
+    8: { sweep: 56,  thick: 0.145, pos: 0.55 },
+    phi: { sweep: 150, thick: 0.24, pos: 0.40 },
+  };
+
+  // 黄金角 360/φ² = 137.5077…° — もっとも「割り切れない」回転角。
+  // どのNにも結晶せず、勾玉の残像がひまわりの種の配置(フィロタキシス)で
+  // 円を満たしていく
+  const GOLDEN = 360 * (1 - 1 / 1.618033988749895);
+
+  function presetSpeed(key) {
+    if (key === 'phi') return GOLDEN;
+    // 「漂い」: 厳密な 360/N からわずかにずらし、結晶した紋を
+    // ゆっくり歳差回転させる(ちょうどだと凍りついて見える)
+    return 360 / key + (state.drift ? 0.05 : 0);
+  }
+
+  // ---- 鑑賞モード ----
+  // 巴紋が結晶する速度を順に巡り、そのたび紋が組み上がっては崩れる
+  const TOUR = [2, 3, 4, 5, 6, 8, 'phi'];
+  const art = {
+    active: false,
+    idx: 0,
+    phase: 'glide',
+    t: 0,
+    dir: 1,
+    from: { v: 0, sweep: 170, thick: 0.30, pos: 0.36 },
+    GLIDE: 5.5,
+    HOLD: 9,
+    SIZE: 0.9,
+    boost: 0,
+  };
+
+  let W = 0, H = 0, DPR = 1;
+  const sideMQ = window.matchMedia('(max-height: 460px) and (min-width: 620px)');
+  const narrowMQ = window.matchMedia('(max-width: 600px)');
+  let shiftX = 0, cxNow = 0, cyNow = 0, maxRNow = 0;
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    commaDirty = true;
+    paintBackground(1);
+  }
+  window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', () => setTimeout(resize, 300));
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+
+  function bgColor() { return state.inverted ? '#f2f0ea' : '#0a0a0b'; }
+  function inkColor() { return state.inverted ? '#16151a' : '#f2f0ea'; }
+
+  function paintBackground(alpha) {
+    ctx.save();
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = bgColor();
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+
+  // ---- 勾玉(ひとつだけ)を用意する ----
+  // 中心へ向かって細くなりながら巻きこむ円の並びを、ひとつの図形として塗る。
+  // 半径を落としながら角度を進めるので、N枚重なっても互いの隙間へ入りこむ。
+  let commaCanvas = null, glowCanvas = null, commaR = 0, commaDirty = true, lastBuild = 0;
+
+  function lerpColor(a, b, t) {
+    return 'rgb(' +
+      Math.round(a[0] + (b[0] - a[0]) * t) + ',' +
+      Math.round(a[1] + (b[1] - a[1]) * t) + ',' +
+      Math.round(a[2] + (b[2] - a[2]) * t) + ')';
+  }
+
+  function buildComma(R) {
+    // グローのにじみが切れないよう、余白を広めに取る
+    const pad = Math.ceil(R * 0.09) + 4;
+    const size = Math.ceil(R * 2 + pad * 2);
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = size;
+    const g = cv.getContext('2d');
+    g.translate(size / 2, size / 2);
+
+    // 頭から尾へ沈んでいく色(通常: 金 / 反転: 墨)
+    const head = state.inverted ? [22, 20, 17] : [242, 216, 152];
+    const tail = state.inverted ? [58, 51, 40] : [140, 95, 34];
+
+    // 伝統的な巴紋の構図:頭は中心近くに置き、尾は縁の内側に沿って
+    // 外へ巻きつきながら先細る。外縁(頭の外側 → 縁ぎわ)をなめらかに
+    // 持ち上げ、path半径 = 外縁 − 太さ で決める。
+    const E_MAX = 0.94, W_TIP = 0.008, RAMP = 0.42;
+    const eHead = state.pos + state.thick;
+    const STEPS = 260;
+    // 尾から描き、頭の明るい色を最後に載せる
+    for (let i = STEPS; i >= 0; i--) {
+      const t = i / STEPS;
+      const phi = (-90 + state.sweep * t) * Math.PI / 180;
+      // 頭から尾へ向かって先細り
+      const w = state.thick * Math.pow(1 - t, 1.4) + W_TIP;
+      // 外縁: 頭の高さから E_MAX へ滑らかに立ち上がり、以後は縁に沿う
+      const u = Math.min(1, t / RAMP);
+      const outer = eHead + (E_MAX - eHead) * u * u * (3 - 2 * u);
+      const rho = R * (outer - w);
+      const x = Math.cos(phi) * rho, y = Math.sin(phi) * rho;
+      g.fillStyle = lerpColor(head, tail, Math.pow(t, 0.85));
+      g.beginPath();
+      g.arc(x, y, R * w, 0, Math.PI * 2);
+      g.fill();
+    }
+    return cv;
+  }
+
+  // 勾玉のまわりに柔らかい光暈(ハロー)を焼き込む
+  function buildGlow(core, R) {
+    const cv = document.createElement('canvas');
+    cv.width = core.width;
+    cv.height = core.height;
+    const g = cv.getContext('2d');
+    g.filter = 'blur(' + Math.max(4, R * 0.045).toFixed(1) + 'px)';
+    g.drawImage(core, 0, 0);
+    return cv;
+  }
+
+  function ensureComma(R, now) {
+    const sizeChanged = !commaCanvas || Math.abs(R - commaR) > 0.5;
+    if (!commaDirty && !sizeChanged) return;
+    // 形だけの変化は作り直しを間引く(毎フレーム再構築すると重い)
+    if (!sizeChanged && now - lastBuild < 45) return;
+    commaR = R;
+    commaCanvas = buildComma(R);
+    glowCanvas = buildGlow(commaCanvas, R);
+    commaDirty = false;
+    lastBuild = now;
+  }
+
+  function drawComma(cx, cy, R, angleDeg, alpha, now) {
+    ensureComma(R, now);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angleDeg * Math.PI / 180);
+    const s = commaCanvas.width;
+    if (!state.inverted) {
+      // 黒地では光として加算合成する。重なりは濁らず、明るくなる
+      ctx.globalCompositeOperation = 'lighter';
+      const a = Math.min(1, alpha * 1.35);
+      ctx.globalAlpha = a * 0.35;
+      ctx.drawImage(glowCanvas, -s / 2, -s / 2);
+      ctx.globalAlpha = a;
+      ctx.drawImage(commaCanvas, -s / 2, -s / 2);
+    } else {
+      // 紙地では墨としてふつうに重ねる
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(commaCanvas, -s / 2, -s / 2);
+    }
+    ctx.restore();
+  }
+
+  function drawRing(cx, cy, R) {
+    const rr = Math.min(R + Math.max(9, R * 0.05), maxRNow);
+    if (rr <= R) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+    ctx.strokeStyle = state.inverted ? 'rgba(0,0,0,0.16)' : 'rgba(201,168,106,0.30)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---- 見えている紋の名前 ----
+  // 360/N に十分近ければ N つ巴。「漂い」のずれ(+0.05)は許容内に収める
+  const KANJI = ['', '一つ巴', '二つ巴', '三つ巴', '四つ巴', '五つ巴',
+                 '六つ巴', '七つ巴', '八つ巴', '九つ巴'];
+  function patternLabel(v) {
+    if (!isFinite(v)) return '';
+    const s = Math.abs(v);
+    if (s < 0.05) return '';
+    if (Math.abs(s - GOLDEN) < 0.3) return '黄金角 φ';
+    let best = 0, err = 0.3;
+    for (let n = 2; n <= 12; n++) {
+      const d = Math.abs(s - 360 / n);
+      if (d < err) { err = d; best = n; }
+    }
+    if (!best) return '';
+    return best <= 9 ? KANJI[best] : best + 'つ巴';
+  }
+
+  // ---- 鑑賞モードの進行 ----
+  function updateArt(dt) {
+    art.t += dt;
+    const n = TOUR[art.idx];
+    const p0 = PRESET[n];
+    const tv = art.dir * presetSpeed(n);
+    if (art.phase === 'glide') {
+      const p = Math.min(1, art.t / art.GLIDE);
+      const e = p * p * (3 - 2 * p);            // なめらかに寄せて止める
+      state.velocity = art.from.v + (tv - art.from.v) * e;
+      // 速度と一緒に勾玉の形も変わっていく
+      const sw = art.from.sweep + (p0.sweep - art.from.sweep) * e;
+      const th = art.from.thick + (p0.thick - art.from.thick) * e;
+      const ps = art.from.pos + (p0.pos - art.from.pos) * e;
+      if (Math.abs(sw - state.sweep) > 0.3 || Math.abs(th - state.thick) > 0.002 ||
+          Math.abs(ps - state.pos) > 0.002) {
+        state.sweep = sw;
+        state.thick = th;
+        state.pos = ps;
+        commaDirty = true;
+      }
+      if (p >= 1) {
+        state.velocity = tv;
+        state.sweep = p0.sweep;
+        state.thick = p0.thick;
+        state.pos = p0.pos;
+        commaDirty = true;
+        art.phase = 'hold';
+        art.t = 0;
+      }
+    } else {
+      state.velocity = tv;
+      if (art.t >= art.HOLD) {
+        art.from = { v: state.velocity, sweep: state.sweep, thick: state.thick, pos: state.pos };
+        art.idx++;
+        if (art.idx >= TOUR.length) { art.idx = 0; art.dir *= -1; }
+        art.phase = 'glide';
+        art.t = 0;
+      }
+    }
+  }
+
+  // ---- メインループ ----
+  let lastT = performance.now();
+
+  function frame() {
+    const now = performance.now();
+    const dt = Math.min((now - lastT) / 1000, 0.1);
+    lastT = now;
+
+    if (art.active) updateArt(dt);
+    if (!state.dragging) state.angle = (state.angle + state.velocity) % 360;
+
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    const moving = state.dragging || Math.abs(state.velocity) > 0.01;
+    paintBackground(moving ? 1 - state.trail : 1);
+
+    art.boost += ((art.active ? 1 : 0) - art.boost) * Math.min(1, dt * 3);
+    const ratio = state.sizeRatio + Math.max(0, art.SIZE - state.sizeRatio) * art.boost;
+
+    const occupied = panelOccupiedHeight();
+    const availH = H - occupied;
+    const R = Math.min(W, availH) * ratio / 2;
+    maxRNow = Math.min(W, availH) / 2 - 2;
+
+    const panelAside = sideMQ.matches && !art.active && !panel.classList.contains('hidden');
+    const maxShift = Math.max(0, W / 2 - (R + 14));
+    const targetShiftX = panelAside ? Math.min(170, maxShift) : 0;
+    shiftX += (targetShiftX - shiftX) * Math.min(1, dt * 5);
+    cxNow = W / 2 - shiftX;
+    cyNow = availH / 2;
+
+    drawComma(cxNow, cyNow, R, state.angle, moving ? 1 - state.trail : 1, now);
+    drawRing(cxNow, cyNow, R);
+
+    updateReadout();
+    requestAnimationFrame(frame);
+  }
+
+  // ---- 表示 ----
+  const speedValue = document.getElementById('speedValue');
+  const patternName = document.getElementById('patternName');
+  function updateReadout() {
+    speedValue.textContent = state.velocity.toFixed(1);
+    const name = patternLabel(state.velocity);
+    if (patternName.textContent !== name) patternName.textContent = name;
+    patternName.classList.toggle('on', !!name);
+  }
+
+  // ---- コントロール ----
+  const panel = document.getElementById('panel');
+  const grip = document.getElementById('grip');
+  const hint = document.getElementById('hint');
+  const artToast = document.getElementById('artToast');
+  const driftBtn = document.getElementById('driftBtn');
+  const invertBtn = document.getElementById('invertBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const artBtn = document.getElementById('artBtn');
+
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const $ = (id) => document.getElementById(id);
+
+  function syncControls() {
+    const ae = document.activeElement;
+    const put = (sl, nu, v, dec) => {
+      if (ae !== sl) sl.value = v;
+      if (ae !== nu) nu.value = dec ? v.toFixed(1) : Math.round(v);
+    };
+    put($('speedSlider'), $('speedNum'), state.velocity, true);
+    put($('trailSlider'), $('trailNum'), state.trail * 100);
+    put($('sweepSlider'), $('sweepNum'), state.sweep);
+    put($('thickSlider'), $('thickNum'), state.thick * 100);
+    put($('sizeSlider'), $('sizeNum'), state.sizeRatio * 100);
+    document.querySelectorAll('.snaprow button').forEach(b => {
+      const key = b.dataset.n;
+      const v = key === 'phi' ? GOLDEN : 360 / parseInt(key, 10);
+      b.classList.toggle('active', Math.abs(Math.abs(state.velocity) - v) < 0.3);
+    });
+  }
+
+  // スライダーと数値入力を一組にまとめる
+  function bindPair(slId, numId, apply, scale) {
+    const sl = $(slId), nu = $(numId);
+    const handle = (raw) => {
+      const v = parseFloat(raw);
+      if (isNaN(v)) return;
+      apply(v / (scale || 1));
+      syncControls();
+    };
+    sl.addEventListener('input', () => handle(sl.value));
+    nu.addEventListener('input', () => handle(nu.value));
+    nu.addEventListener('change', () => syncControls());
+  }
+
+  function setVelocity(v) {
+    state.velocity = clamp(v, -180, 180);
+    exitArt();
+  }
+  bindPair('speedSlider', 'speedNum', setVelocity);
+  bindPair('trailSlider', 'trailNum', (v) => { state.trail = clamp(v, 0, 0.95); }, 100);
+  bindPair('sweepSlider', 'sweepNum', (v) => { state.sweep = clamp(v, 40, 280); commaDirty = true; });
+  bindPair('thickSlider', 'thickNum', (v) => { state.thick = clamp(v, 0.10, 0.42); commaDirty = true; }, 100);
+  bindPair('sizeSlider', 'sizeNum', (v) => { state.sizeRatio = clamp(v, 0.2, 0.98); }, 100);
+
+  // 巴の数を選ぶ。速度だけでなく、その数で紋が組める形にも合わせる
+  function applyTomoe(key) {
+    const p = PRESET[key];
+    const sign = state.velocity < 0 ? -1 : 1;
+    setVelocity(sign * presetSpeed(key));
+    if (p) {
+      state.sweep = p.sweep;
+      state.thick = p.thick;
+      state.pos = p.pos;
+      commaDirty = true;
+    }
+    syncControls();
+  }
+  document.querySelectorAll('.snaprow button').forEach(b => {
+    b.addEventListener('click', () => {
+      applyTomoe(b.dataset.n === 'phi' ? 'phi' : parseInt(b.dataset.n, 10));
+    });
+  });
+
+  // いまの速度がどれかの紋に合っていれば、そのキーを返す
+  function matchedPreset() {
+    const s = Math.abs(state.velocity);
+    if (Math.abs(s - GOLDEN) < 0.3) return 'phi';
+    for (const k of [2, 3, 4, 5, 6, 8]) {
+      if (Math.abs(s - 360 / k) < 0.3) return k;
+    }
+    return null;
+  }
+
+  driftBtn.addEventListener('click', () => {
+    state.drift = !state.drift;
+    driftBtn.classList.toggle('active', state.drift);
+    // いま紋に合っているなら、新しい設定で速度を合わせ直す
+    const m = matchedPreset();
+    if (m && m !== 'phi') {
+      const sign = state.velocity < 0 ? -1 : 1;
+      setVelocity(sign * presetSpeed(m));
+      syncControls();
+    }
+  });
+
+  invertBtn.addEventListener('click', () => {
+    state.inverted = !state.inverted;
+    invertBtn.classList.toggle('active', state.inverted);
+    document.body.classList.toggle('inverted', state.inverted);
+    commaDirty = true;
+    paintBackground(1);
+  });
+
+  resetBtn.addEventListener('click', () => {
+    exitArt();
+    state.velocity = 0;
+    state.angle = 0;
+    syncControls();
+    paintBackground(1);
+  });
+
+  // ---- パネルの折り畳み ----
+  let collapsed = false, dragPy = null;
+
+  function collapseDistance() {
+    const gripBottom = grip.offsetTop + grip.offsetHeight;
+    const bottomGap = parseFloat(getComputedStyle(panel).bottom) || 0;
+    return Math.max(0, panel.offsetHeight + bottomGap - gripBottom - 6);
+  }
+  function applyPanelOffset() {
+    const py = dragPy !== null ? dragPy : (collapsed ? collapseDistance() : 0);
+    panel.style.setProperty('--py', py + 'px');
+  }
+  function setCollapsed(v) {
+    collapsed = v;
+    dragPy = null;
+    panel.classList.remove('grabbing');
+    applyPanelOffset();
+  }
+  function panelOccupiedHeight() {
+    if (art.active || panel.classList.contains('hidden')) return 0;
+    if (sideMQ.matches || !narrowMQ.matches) return 0;
+    return Math.max(0, H - panel.getBoundingClientRect().top);
+  }
+
+  let gripStartY = 0, gripBase = 0, gripMoved = 0, gripOnHandle = false;
+  function startGrip(e, onHandle) {
+    if (sideMQ.matches) return;
+    gripStartY = e.clientY;
+    gripBase = collapsed ? collapseDistance() : 0;
+    gripMoved = 0;
+    gripOnHandle = onHandle;
+    dragPy = gripBase;
+    panel.classList.add('grabbing');
+    try { e.target.setPointerCapture(e.pointerId); } catch (err) {}
+  }
+  grip.addEventListener('pointerdown', (e) => { e.preventDefault(); startGrip(e, true); });
+  panel.addEventListener('pointerdown', (e) => {
+    if (e.target === grip || dragPy !== null) return;
+    if (e.target.closest('input, button')) return;
+    startGrip(e, false);
+  });
+  window.addEventListener('pointermove', (e) => {
+    if (dragPy === null) return;
+    gripMoved = e.clientY - gripStartY;
+    const lim = collapseDistance();
+    dragPy = Math.max(-8, Math.min(lim + 8, gripBase + gripMoved));
+    applyPanelOffset();
+  });
+  function endGrip() {
+    if (dragPy === null) return;
+    const lim = collapseDistance();
+    let next;
+    if (Math.abs(gripMoved) < 8) next = gripOnHandle ? !collapsed : collapsed;
+    else if (Math.abs(gripMoved) > 24) next = gripMoved > 0;
+    else next = dragPy > lim / 2;
+    setCollapsed(next);
+  }
+  window.addEventListener('pointerup', endGrip);
+  window.addEventListener('pointercancel', endGrip);
+  window.addEventListener('resize', () => { if (collapsed) applyPanelOffset(); });
+
+  // ---- 鑑賞モード ----
+  let toastTimer = 0;
+  function showToast(msg) {
+    artToast.textContent = msg;
+    artToast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => artToast.classList.remove('show'), 3200);
+  }
+  let wakeLock = null;
+  async function requestWakeLock() {
+    try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+  }
+  function releaseWakeLock() {
+    try { if (wakeLock) wakeLock.release(); } catch (e) {}
+    wakeLock = null;
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && art.active) requestWakeLock();
+  });
+
+  function enterArt() {
+    if (art.active) return;
+    art.active = true;
+    art.idx = 0;
+    art.phase = 'glide';
+    art.t = 0;
+    art.dir = 1;
+    art.from = { v: state.velocity, sweep: state.sweep, thick: state.thick, pos: state.pos };
+    document.body.classList.add('art');
+    artBtn.classList.add('active');
+    showToast(touchDevice ? 'タップで終了' : 'クリックまたはキーで終了');
+    requestWakeLock();
+  }
+  function exitArt() {
+    if (!art.active) return;
+    art.active = false;
+    document.body.classList.remove('art');
+    artBtn.classList.remove('active');
+    artToast.classList.remove('show');
+    clearTimeout(toastTimer);
+    syncControls();
+    releaseWakeLock();
+  }
+  artBtn.addEventListener('click', () => { if (art.active) exitArt(); else enterArt(); });
+
+  // ---- ドラッグで回す ----
+  let lastPointerAngle = 0, angularSamples = [];
+  const pointerAngle = (e) => Math.atan2(e.clientY - cyNow, e.clientX - cxNow) * 180 / Math.PI;
+
+  canvas.addEventListener('pointerdown', (e) => {
+    if (art.active) { exitArt(); return; }
+    state.dragging = true;
+    canvas.classList.add('dragging');
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+    lastPointerAngle = pointerAngle(e);
+    angularSamples = [];
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!state.dragging) return;
+    const now = performance.now();
+    const cur = pointerAngle(e);
+    let d = cur - lastPointerAngle;
+    if (d > 180) d -= 360;
+    if (d < -180) d += 360;
+    state.angle = (state.angle + d) % 360;
+    lastPointerAngle = cur;
+    angularSamples.push({ t: now, d });
+    angularSamples = angularSamples.filter(s => now - s.t < 120);
+  });
+  function endDrag() {
+    if (!state.dragging) return;
+    state.dragging = false;
+    canvas.classList.remove('dragging');
+    if (angularSamples.length >= 2) {
+      const total = angularSamples.reduce((s, x) => s + x.d, 0);
+      const ms = performance.now() - angularSamples[0].t;
+      const frames = Math.max(ms / (1000 / 60), 1);
+      state.velocity = clamp(total / frames, -180, 180);
+    } else {
+      state.velocity = 0;
+    }
+    syncControls();
+  }
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // ---- キーボード ----
+  window.addEventListener('keydown', (e) => {
+    if (art.active) {
+      if (e.code === 'Space') e.preventDefault();
+      exitArt();
+      return;
+    }
+    if (e.code === 'Space') {
+      e.preventDefault();
+      state.velocity = 0;
+      syncControls();
+    } else if (e.key === 'h' || e.key === 'H') {
+      panel.classList.toggle('hidden');
+    } else if (e.key === 'a' || e.key === 'A') {
+      enterArt();
+    } else if (e.key === 'g' || e.key === 'G') {
+      applyTomoe('phi');
+    } else if (PRESET[e.key]) {
+      applyTomoe(parseInt(e.key, 10));
+    }
+  });
+
+  // ---- 起動 ----
+  const touchDevice = window.matchMedia('(hover: none)').matches;
+  if (touchDevice) hint.textContent = 'スワイプで回すと巴紋が現れる';
+  if (narrowMQ.matches) state.sizeRatio = 0.86;
+
+  resize();
+  syncControls();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
