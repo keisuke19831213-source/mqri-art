@@ -29,6 +29,22 @@
 | [/works/quantum-mandala/](https://art.mqri.or.jp/works/quantum-mandala/) | 量子曼荼羅 Quantum Mandala | シュレーディンガー方程式の実時間GPU解法 × 神聖幾何学。iPad展示用にタッチ最適化済み(詳細は各フォルダのREADME) |
 | [/works/hopf-loom/](https://art.mqri.or.jp/works/hopf-loom/) | HOPF LOOM — S³の織物 | 四次元球面のHopfファイブレーション × 四次元正多胞体。マルチタッチ(1本指=視点/2本指=ズーム・4次元回転)でiPad展示用に最適化済み |
 
+## 展示モード（投影用）
+
+`exhibit/` — 作品を全画面で自動巡回する投影用ページ。🌐 https://art.mqri.or.jp/exhibit/
+`ccf5-gallery/kiosk.html` から移設したもので、上映順と操作系（`→` `←` `Space` `F` `L` `C`）はそのまま。
+運用は [`EXHIBITION.md`](EXHIBITION.md) を参照。
+
+> ⚠ `ORDER` に作品を足すときは `HIDE`（作品固有UIを隠すセレクタ）にも行を足す。セレクタは
+> **必ずその作品の `index.html` を見て確認する**。同じ作品名でも実装が違うことがある
+> （`hopf-loom` は iPad展示版なので `#topbar,#controls`。ccf5-gallery 時代の `#hud,.jp,.keys` では効かない）。
+> `file://` で開くと iframe が別オリジンになり自動非表示もキー中継も効かないので、ローカルでもサーバ経由で開くこと。
+
+## 旧URLについて
+
+- `/quantum-mandala/` `/hopf-loom/` → `vercel.json` の恒久リダイレクト(308)で `works/` 配下へ。**iPad常設展示のホーム画面アプリが依存しているので消さない**
+- `keisuke19831213-source.github.io/ccf5-gallery/` → 各ページを meta refresh + canonical で誘導。**REGEN DAY 2026-07-13 で配布したQRの飛び先なので、あちらのリポジトリも消さない**
+
 ## 作品の追加手順
 
 1. `works/<slug>/` フォルダを作り `index.html`(単一HTML推奨・外部依存なし)を置く
