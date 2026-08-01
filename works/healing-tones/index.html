@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="description" content="Healing Tones — 周波数ミュージックジェネレーター。ソルフェジオ周波数・音色・A4=432Hz調律・鍵盤/16パッド/バイノーラルを備えた音の道具。MQRI ART。">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Healing Tones">
+<meta name="theme-color" content="#0d1524">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Healing Tones — 周波数ミュージックジェネレーター</title>
+<style>
+  :root{
+    --bg0:#0b1220; --bg1:#101a2e; --bg2:#16233c;
+    --panel:#131e33; --panel2:#1a2a45;
+    --line:#25395c; --line2:#31497050;
+    --text:#dce7f5; --dim:#8fa5c4; --faint:#5c729450;
+    --teal:#4fd8c4; --teal-dim:#2a9d8f;
+    --amber:#f4b860; --red:#e76a6a;
+    --pad:#2b2f36; --pad-hi:#3a4049;
+    --radius:14px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",system-ui,sans-serif;
+    background:radial-gradient(1200px 800px at 70% -10%, #1a2f4a 0%, var(--bg0) 55%) fixed, var(--bg0);
+    color:var(--text);
+    -webkit-font-smoothing:antialiased;
+    padding:max(14px, env(safe-area-inset-top)) max(clamp(10px,3vw,28px), env(safe-area-inset-right)) max(60px, env(safe-area-inset-bottom)) max(clamp(10px,3vw,28px), env(safe-area-inset-left));
+  }
+  h1{font-size:19px; font-weight:700; letter-spacing:.04em; display:flex; align-items:center; gap:10px;}
+  h1 .logo{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,var(--teal),#7ab8f5);display:inline-block;box-shadow:0 0 14px #4fd8c455;}
+  h1 small{font-size:11px; color:var(--dim); font-weight:400;}
+  header{display:flex; flex-wrap:wrap; align-items:center; gap:14px 22px; padding:6px 2px 14px;}
+  header .spacer{flex:1;}
+  .ctl{display:flex; align-items:center; gap:8px; font-size:11.5px; color:var(--dim); white-space:nowrap;}
+  input[type=range]{-webkit-appearance:none; appearance:none; height:4px; border-radius:2px; background:var(--line); outline:none; cursor:pointer;}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none; width:15px;height:15px;border-radius:50%;background:var(--teal);box-shadow:0 0 8px #4fd8c488; cursor:pointer;}
+  input[type=range]::-moz-range-thumb{width:15px;height:15px;border:none;border-radius:50%;background:var(--teal); cursor:pointer;}
+  button{
+    font-family:inherit; font-size:12.5px; color:var(--text);
+    background:var(--panel2); border:1px solid var(--line); border-radius:10px;
+    padding:7px 14px; cursor:pointer; transition:background .15s, border-color .15s, box-shadow .15s;
+  }
+  button:hover{background:#22355a;}
+  button.on{background:#153f3a; border-color:var(--teal-dim); color:var(--teal); box-shadow:0 0 10px #4fd8c422 inset;}
+  button.danger{color:#f0a0a0;}
+  button.rec.on{background:#4a1d22; border-color:#a04b52; color:#ff9b9b; box-shadow:0 0 12px #e76a6a33;}
+  .panel{
+    background:linear-gradient(180deg,var(--panel2) 0%,var(--panel) 100%);
+    border:1px solid var(--line); border-radius:var(--radius);
+    padding:16px 18px; margin-bottom:14px;
+  }
+  /* ---- 周波数パネル ---- */
+  .freq-top{display:flex; flex-wrap:wrap; align-items:center; gap:16px 26px;}
+  .freq-display{display:flex; align-items:baseline; gap:6px; min-width:210px;}
+  .freq-display .val{font-size:44px; font-weight:200; letter-spacing:.02em; color:var(--teal); font-variant-numeric:tabular-nums; text-shadow:0 0 24px #4fd8c433;}
+  .freq-display .unit{font-size:16px; color:var(--dim);}
+  .freq-inputs{display:flex; flex-direction:column; gap:8px; flex:1; min-width:230px;}
+  .freq-inputs .row{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+  #freqNum{width:96px; font-size:15px; font-family:inherit; color:var(--text); background:var(--bg1); border:1px solid var(--line); border-radius:8px; padding:6px 8px; font-variant-numeric:tabular-nums;}
+  #freqSlider{flex:1; min-width:140px;}
+  #playFreq{min-width:120px; font-size:13px;}
+  .chips{display:flex; flex-wrap:wrap; gap:7px; margin-top:13px;}
+  .chip{
+    font-size:11.5px; padding:5px 11px; border-radius:999px;
+    background:#182946; border:1px solid var(--line); color:var(--dim); cursor:pointer;
+    transition:all .15s;
+  }
+  .chip:hover{color:var(--teal); border-color:var(--teal-dim);}
+  .chip.sel{background:#153f3a; border-color:var(--teal-dim); color:var(--teal);}
+  .chip b{color:inherit; font-weight:600;}
+  .subrow{display:flex; flex-wrap:wrap; gap:10px 24px; align-items:center; margin-top:14px; padding-top:12px; border-top:1px solid var(--line2); font-size:11.5px; color:var(--dim);}
+  select,input[type=number]{font-family:inherit; font-size:12px; color:var(--text); background:var(--bg1); border:1px solid var(--line); border-radius:8px; padding:5px 8px;}
+  label.sw{display:flex; align-items:center; gap:7px; cursor:pointer; user-select:none;}
+  .toggle{width:34px;height:19px;border-radius:10px;background:var(--line);position:relative;transition:background .2s; flex:none;}
+  .toggle::after{content:"";position:absolute;top:2.5px;left:3px;width:14px;height:14px;border-radius:50%;background:#c7d6ec;transition:left .2s;}
+  input.swbox{display:none;}
+  input.swbox:checked + .toggle{background:var(--teal-dim);}
+  input.swbox:checked + .toggle::after{left:17px;}
+  /* ---- タブ ---- */
+  .tabs{display:flex; gap:6px; margin-bottom:-1px; padding:0 8px;}
+  .tab{
+    font-size:13px; padding:9px 20px; border:1px solid var(--line); border-bottom:none;
+    border-radius:12px 12px 0 0; background:#0f1830; color:var(--dim); cursor:pointer;
+  }
+  .tab.on{background:linear-gradient(180deg,var(--panel2),var(--panel) 90%); color:var(--teal); font-weight:600;}
+  .tabpanel{display:none;}
+  .tabpanel.on{display:block;}
+  /* ---- 鍵盤 ---- */
+  .kb-bar{display:flex; align-items:center; gap:12px; margin-bottom:14px; font-size:12px; color:var(--dim); flex-wrap:wrap;}
+  .kb-wrap{position:relative; height:190px; user-select:none; touch-action:none;}
+  .wkeys{display:flex; height:100%; gap:3px;}
+  .wkey{
+    flex:1; min-width:0; overflow:hidden; background:linear-gradient(180deg,#f2f5fa 0%,#dde5f0 92%); border-radius:0 0 7px 7px;
+    position:relative; cursor:pointer; border:1px solid #b9c6da; border-top:3px solid #9fb0ca;
+    display:flex; flex-direction:column; justify-content:flex-end; align-items:center; padding-bottom:7px;
+    transition:background .08s;
+  }
+  .wkey.down{background:linear-gradient(180deg,#bfeee6,#8fd8cb); border-color:var(--teal-dim);}
+  .wkey .nn{font-size:10px; color:#4a5a72; font-weight:600;}
+  .wkey .hz{font-size:8.5px; color:#8d9cb4; font-variant-numeric:tabular-nums;}
+  .bkey{
+    position:absolute; top:0; width:7.5%; height:58%;
+    background:linear-gradient(180deg,#2a3448,#141c2c); border:1px solid #000a;
+    border-radius:0 0 5px 5px; cursor:pointer; z-index:2;
+    display:flex; align-items:flex-end; justify-content:center; padding-bottom:5px;
+  }
+  .bkey.down{background:linear-gradient(180deg,#1f6b60,#12443d);}
+  .bkey .hz{font-size:7.5px; color:#7f92ad;}
+  .hint{font-size:10.5px; color:var(--faint); margin-top:10px; color:#5c7294;}
+  /* ---- パッド ---- */
+  .pad-bar{display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap;}
+  .pad-grid{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; max-width:620px; margin:0 auto;}
+  .pad{min-width:0; overflow:hidden;}
+  .pad{
+    aspect-ratio:1/.82; border-radius:10px; cursor:pointer; user-select:none; touch-action:none;
+    background:linear-gradient(180deg,#343a44 0%,var(--pad) 12%, #23272e 100%);
+    border:1px solid #12151a; border-bottom:4px solid #101318;
+    box-shadow:0 3px 8px #0007, inset 0 1px 0 #ffffff14;
+    display:flex; flex-direction:column; justify-content:space-between; padding:9px 10px;
+    position:relative; transition:box-shadow .12s;
+  }
+  .pad .plabel{font-size:11.5px; font-weight:600; color:#cfd8e6; margin-top:17px;}
+  .pad .pfreq{font-size:9.5px; color:#7e8ba0; font-variant-numeric:tabular-nums;}
+  .pad .ptimbre{font-size:9px; color:#5f6e86; position:absolute; top:8px; right:10px;}
+  .pad .pkey{font-size:8.5px; color:#525f75; position:absolute; top:8px; left:10px; border:1px solid #3a4557; border-radius:4px; padding:0 4px;}
+  .pad.hit{
+    background:linear-gradient(180deg,#7a4a3a, #4a2a22 90%);
+    box-shadow:0 0 22px #f4b86088, inset 0 0 16px #ffb37033;
+    border-color:#a2622f;
+  }
+  .pad.hit .plabel{color:#ffe2b8;}
+  .pad.droning{box-shadow:0 0 16px #4fd8c466, inset 0 0 12px #4fd8c422; border-color:var(--teal-dim);}
+  .pad.editing{outline:2px dashed var(--amber); outline-offset:2px;}
+  .pad-editor{
+    max-width:620px; margin:14px auto 0; padding:14px 16px; border:1px solid #4a3c22;
+    background:#1c1a12; border-radius:12px; display:none; gap:10px 16px; flex-wrap:wrap; align-items:center;
+    font-size:12px; color:var(--dim);
+  }
+  .pad-editor.on{display:flex;}
+  .pad-editor input[type=text]{font-family:inherit; font-size:12px; color:var(--text); background:var(--bg1); border:1px solid var(--line); border-radius:8px; padding:5px 8px;}
+  /* ---- バイノーラル ---- */
+  .bi-grid{display:flex; flex-wrap:wrap; gap:14px 30px; align-items:center;}
+  .bi-note{font-size:11.5px; color:var(--amber); margin-top:12px;}
+  .bi-detail{font-size:12px; color:var(--dim); margin-top:8px; font-variant-numeric:tabular-nums;}
+  /* ---- ドローンリスト ---- */
+  #droneList{display:flex; flex-wrap:wrap; gap:8px; margin-top:2px;}
+  #droneList:empty::after{content:"（持続音なし — ドローンモードON で音がラッチされます）"; font-size:11px; color:var(--faint); color:#4a5f80;}
+  .drone-item{
+    display:flex; align-items:center; gap:8px; font-size:11.5px; color:var(--teal);
+    background:#12302c; border:1px solid var(--teal-dim); border-radius:999px; padding:4px 6px 4px 12px;
+    font-variant-numeric:tabular-nums;
+  }
+  .drone-item button{padding:2px 8px; font-size:10px; border-radius:999px;}
+  /* ---- viz ---- */
+  #viz{width:100%; height:56px; display:block; border-radius:10px; background:#0d1526; border:1px solid var(--line2); margin-top:14px;}
+  #recInfo{font-size:11.5px; color:var(--dim); display:flex; align-items:center; gap:8px;}
+  #recInfo a{color:var(--teal);}
+  .recdot{width:8px;height:8px;border-radius:50%;background:var(--red);animation:blink 1s infinite; display:inline-block;}
+  @keyframes blink{50%{opacity:.15;}}
+  @media (max-width:640px){
+    .freq-display .val{font-size:34px;}
+    .kb-wrap{height:150px;}
+    .wkey .hz{display:none;}
+    .bkey .hz{display:none;}
+    .wkey .nn{font-size:8.5px;}
+    .pad-grid{gap:8px;}
+    .pad .pkey{display:none;}
+    .pad .ptimbre{display:none;}
+    .pad{padding:7px 8px; aspect-ratio:1/.95;}
+    .pad .plabel{margin-top:0; font-size:10px;}
+    .pad .pfreq{font-size:8px;}
+    header{gap:10px 14px;}
+  }
+
+  /* touch-action:none が無いと、指の操作をブラウザのスクロールに奪われる */
+  canvas{touch-action:none}
+  html,body{-webkit-tap-highlight-color:transparent}
+  /* 操作案内は入力デバイスで出し分ける（指にキーボードもホイールも無い）。
+     メディアクエリは初期推定、実際に触られたら html.is-touch が優先する */
+  .touch-only{display:none}
+  @media (pointer:coarse){.pointer-only{display:none}.touch-only{display:inline}}
+  html.is-touch .pointer-only{display:none}
+  html.is-touch .touch-only{display:inline}
+</style>
+<script>addEventListener('touchstart',()=>document.documentElement.classList.add('is-touch'),{once:true,passive:true});</script>
+</head>
+<body>
+
+<header>
+  <h1><span class="logo"></span>Healing Tones <small>周波数ミュージックジェネレーター</small></h1>
+  <div class="spacer"></div>
+  <div class="ctl">音量 <input type="range" id="masterVol" min="0" max="100" value="80" style="width:90px"></div>
+  <div class="ctl">リバーブ <input type="range" id="reverbAmt" min="0" max="100" value="35" style="width:90px"></div>
+  <button id="recBtn" class="rec">● 録音</button>
+  <span id="recInfo"></span>
+  <button id="panicBtn" class="danger">■ 全て停止</button>
+</header>
+
+<!-- 周波数コントロール -->
+<div class="panel">
+  <div class="freq-top">
+    <div class="freq-display"><span class="val" id="freqVal">528.0</span><span class="unit">Hz</span></div>
+    <div class="freq-inputs">
+      <div class="row">
+        <input type="number" id="freqNum" min="20" max="20000" step="0.1" value="528">
+        <input type="range" id="freqSlider" min="0" max="1000" value="0">
+        <button id="playFreq">▶ この周波数を再生</button>
+      </div>
+      <div class="row chips" id="solfChips" style="margin-top:2px;"></div>
+    </div>
+  </div>
+  <div class="subrow">
+    <span>音色:</span>
+    <span class="chips" id="timbreChips" style="margin-top:0;"></span>
+  </div>
+  <div class="subrow">
+    <span class="ctl">チューニング A4=
+      <select id="tuning">
+        <option value="440">440 Hz（標準）</option>
+        <option value="432" selected>432 Hz（ヒーリング）</option>
+        <option value="custom">カスタム</option>
+      </select>
+      <input type="number" id="tuningCustom" value="432" min="400" max="480" step="0.1" style="width:70px; display:none;">
+    </span>
+    <label class="sw"><input type="checkbox" class="swbox" id="droneMode"><span class="toggle"></span>ドローンモード（音をラッチして持続）</label>
+  </div>
+  <div class="subrow" style="border-top:none; padding-top:2px;">
+    <span style="color:var(--dim); font-size:11.5px;">持続音:</span>
+    <div id="droneList"></div>
+  </div>
+  <canvas id="viz"></canvas>
+</div>
+
+<!-- タブ -->
+<nav class="tabs">
+  <button class="tab on" data-tab="kb">🎹 鍵盤</button>
+  <button class="tab" data-tab="pads">⬜ 16パッド</button>
+  <button class="tab" data-tab="binaural">🎧 バイノーラル</button>
+</nav>
+
+<div class="panel tabpanel on" id="tab-kb">
+  <div class="kb-bar">
+    <button id="octDown">◀ オクターブ</button>
+    <span id="octLabel" style="font-variant-numeric:tabular-nums;">C4 – B5</span>
+    <button id="octUp">オクターブ ▶</button>
+    <span style="margin-left:auto; font-size:11px; color:#5c7294;">PCキー: A W S E D F T G Y H U J K O L P ;</span>
+  </div>
+  <div class="kb-wrap" id="kbWrap"><div class="wkeys" id="wkeys"></div></div>
+  <div class="hint">鍵盤の周波数は選択中のチューニング基準（A4）から算出されます。クリック／タッチ、またはPCキーボードで演奏できます。</div>
+</div>
+
+<div class="panel tabpanel" id="tab-pads">
+  <div class="pad-bar">
+    <button id="editPads">✎ パッド編集</button>
+    <button id="resetPads">初期バンクに戻す</button>
+    <span style="margin-left:auto; font-size:11px; color:#5c7294;">PCキー: 1234 / QWER / ASDF / ZXCV</span>
+  </div>
+  <div class="pad-grid" id="padGrid"></div>
+  <div class="pad-editor" id="padEditor">
+    <b style="color:var(--amber);">パッド編集</b>
+    <span id="peTarget">編集するパッドをクリック</span>
+    <label>ラベル <input type="text" id="peLabel" style="width:110px;"></label>
+    <label>周波数Hz（カンマ区切りで和音） <input type="text" id="peFreqs" style="width:150px;"></label>
+    <label>音色 <select id="peTimbre"></select></label>
+    <button id="peSave">保存</button>
+  </div>
+</div>
+
+<div class="panel tabpanel" id="tab-binaural">
+  <div class="bi-grid">
+    <div class="ctl">ベース周波数 <input type="number" id="biBase" value="200" min="50" max="800" step="1" style="width:76px;"> Hz</div>
+    <div class="ctl">ビート差 <input type="number" id="biBeat" value="6" min="0.5" max="40" step="0.5" style="width:66px;"> Hz</div>
+    <button id="biStart">▶ 再生</button>
+  </div>
+  <div class="chips" id="biChips"></div>
+  <div class="bi-detail" id="biDetail"></div>
+  <div class="bi-note">🎧 バイノーラルビートはヘッドホン／イヤホンでの再生を推奨します（左右の耳に異なる周波数を届ける必要があるため）。</div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   Healing Tones — 周波数ミュージックジェネレーター
+   Web Audio API のみで実装（依存ライブラリなし）
+============================================================ */
+
+/* ---------- ユーティリティ ---------- */
+const $ = id => document.getElementById(id);
+const clamp = (v,a,b) => Math.min(b, Math.max(a, v));
+const fmt = f => f >= 1000 ? f.toFixed(0) : f.toFixed(1);
+
+/* ---------- オーディオグラフ ---------- */
+let ctx=null, masterIn, wetGain, dryGain, masterGain, comp, analyser, recTapNode=null;
+
+function audio(){
+  if(!ctx){
+    ctx = new (window.AudioContext||window.webkitAudioContext)();
+    masterIn   = ctx.createGain();
+    dryGain    = ctx.createGain();
+    wetGain    = ctx.createGain();
+    masterGain = ctx.createGain();
+    comp       = ctx.createDynamicsCompressor();
+    analyser   = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    comp.threshold.value = -14; comp.ratio.value = 4; comp.knee.value = 12;
+
+    const conv = ctx.createConvolver();
+    conv.buffer = makeImpulse(3.2, 2.4);
+
+    masterIn.connect(dryGain).connect(masterGain);
+    masterIn.connect(conv).connect(wetGain).connect(masterGain);
+    masterGain.connect(comp).connect(analyser).connect(ctx.destination);
+
+    applyMixer();
+    startViz();
+  }
+  if(ctx.state === "suspended") ctx.resume();
+  return ctx;
+}
+
+/* プロシージャル・インパルス応答（外部ファイル不要のリバーブ） */
+function makeImpulse(seconds, decay){
+  const rate = ctx.sampleRate, len = rate*seconds;
+  const buf = ctx.createBuffer(2, len, rate);
+  for(let c=0; c<2; c++){
+    const d = buf.getChannelData(c);
+    for(let i=0; i<len; i++){
+      d[i] = (Math.random()*2-1) * Math.pow(1-i/len, decay);
+    }
+  }
+  return buf;
+}
+
+function applyMixer(){
+  if(!ctx) return;
+  const v = $("masterVol").value/100, r = $("reverbAmt").value/100;
+  masterGain.gain.setTargetAtTime(v*v, ctx.currentTime, .05);
+  wetGain.gain.setTargetAtTime(r*1.4, ctx.currentTime, .05);
+  dryGain.gain.setTargetAtTime(1 - r*0.35, ctx.currentTime, .05);
+}
+$("masterVol").addEventListener("input", applyMixer);
+$("reverbAmt").addEventListener("input", applyMixer);
+
+/* ---------- 共有ノイズバッファ ---------- */
+let noiseBuf=null;
+function getNoise(){
+  if(!noiseBuf){
+    const len = ctx.sampleRate*2;
+    noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i] = Math.random()*2-1;
+  }
+  return noiseBuf;
+}
+function noiseSrc(){
+  const s = ctx.createBufferSource();
+  s.buffer = getNoise(); s.loop = true;
+  return s;
+}
+
+/* ---------- 音色定義 ----------
+   build(freq, out) は {sources:[startできるノード], stop:任意} を返す。
+   エンベロープは共通の Voice が担当。autoDecay=true は打音系（自然減衰）。 */
+const TIMBRES = {
+  pure:    { name:"ピュアトーン",     attack:.06, release:1.2,  gain:.55, },
+  crystal: { name:"クリスタルボウル", attack:.12, release:5.0,  gain:.5,  },
+  bowl:    { name:"シンギングボウル", attack:.35, release:6.0,  gain:.5,  },
+  bell:    { name:"ベル/チャイム",    attack:.005,release:.3,   gain:.6,  autoDecay:6 },
+  pad:     { name:"パッド",           attack:1.4, release:3.0,  gain:.3,  },
+  flute:   { name:"フルート風",       attack:.15, release:.6,   gain:.5,  },
+  ocean:   { name:"オーシャン",       attack:2.2, release:3.5,  gain:.6,  },
+};
+
+function buildTimbre(kind, freq, out){
+  const t = ctx.currentTime, sources = [], nodes = [];
+  const osc = (type, f, g, detuneCents=0) => {
+    const o = ctx.createOscillator(); o.type = type; o.frequency.value = f;
+    if(detuneCents) o.detune.value = detuneCents;
+    const gn = ctx.createGain(); gn.gain.value = g;
+    o.connect(gn).connect(out);
+    sources.push(o); nodes.push(gn);
+    return o;
+  };
+
+  switch(kind){
+    case "pure":
+      osc("sine", freq, 1);
+      break;
+
+    case "crystal": {
+      // わずかにデチューンしたペアで「うなり」を作る（周波数比 1:1.0015 ≒ ゆっくりした揺らぎ）
+      osc("sine", freq, .6);
+      osc("sine", freq*1.0015, .5);
+      osc("sine", freq*2.32, .1);
+      osc("sine", freq*4.25, .035);
+      break;
+    }
+    case "bowl": {
+      // 非整数次倍音＋うなり（チベタンボウル系）
+      osc("sine", freq, .55);
+      osc("sine", freq*1.0035, .45);
+      osc("sine", freq*2.71, .16);
+      osc("sine", freq*2.717, .13);
+      osc("sine", freq*5.42, .05);
+      break;
+    }
+    case "bell": {
+      // 教会鐘の部分音比。各部分音を個別に減衰させる
+      const parts = [[.56,.5,5],[.92,.35,5],[1.19,.5,4.5],[1.71,.3,3.5],[2.0,.35,3],[2.74,.15,2],[3.0,.12,1.6],[3.76,.08,1.2],[4.07,.06,1]];
+      for(const [r, a, dur] of parts){
+        const o = ctx.createOscillator(); o.type = "sine"; o.frequency.value = freq*r;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(a, t);
+        g.gain.exponentialRampToValueAtTime(.0001, t+dur);
+        o.connect(g).connect(out);
+        sources.push(o);
+      }
+      break;
+    }
+    case "pad": {
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass"; lp.frequency.value = clamp(freq*2.5, 300, 5000); lp.Q.value = .4;
+      lp.connect(out);
+      const mk = (type, det, g) => {
+        const o = ctx.createOscillator(); o.type = type; o.frequency.value = freq; o.detune.value = det;
+        const gn = ctx.createGain(); gn.gain.value = g;
+        o.connect(gn).connect(lp); sources.push(o);
+      };
+      mk("sawtooth", -8, .16); mk("sawtooth", 8, .16); mk("triangle", 0, .5);
+      break;
+    }
+    case "flute": {
+      const o = osc("triangle", freq, .8);
+      // ビブラート（少し遅れて深くなる）
+      const lfo = ctx.createOscillator(); lfo.frequency.value = 5;
+      const lfoG = ctx.createGain();
+      lfoG.gain.setValueAtTime(0, t);
+      lfoG.gain.linearRampToValueAtTime(freq*.006, t+1.2);
+      lfo.connect(lfoG).connect(o.frequency);
+      sources.push(lfo);
+      // ブレスノイズ
+      const n = noiseSrc();
+      const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = clamp(freq*2, 300, 6000); bp.Q.value = 9;
+      const ng = ctx.createGain(); ng.gain.value = .05;
+      n.connect(bp).connect(ng).connect(out);
+      sources.push(n);
+      break;
+    }
+    case "ocean": {
+      // 周波数はフィルタの中心に反映される波音レイヤー
+      const center = clamp(freq*1.5, 120, 3200);
+      const n = noiseSrc();
+      const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.Q.value = .8;
+      lp.frequency.value = center;
+      const swellG = ctx.createGain(); swellG.gain.value = .55;
+      n.connect(lp).connect(swellG).connect(out);
+      sources.push(n);
+      // 波のうねり：ゲインとフィルタをゆっくり揺らす
+      const l1 = ctx.createOscillator(); l1.frequency.value = .08;
+      const l1g = ctx.createGain(); l1g.gain.value = .35;
+      l1.connect(l1g).connect(swellG.gain); sources.push(l1);
+      const l2 = ctx.createOscillator(); l2.frequency.value = .05;
+      const l2g = ctx.createGain(); l2g.gain.value = center*.4;
+      l2.connect(l2g).connect(lp.frequency); sources.push(l2);
+      break;
+    }
+  }
+  return sources;
+}
+
+/* ---------- ボイス（発音の単位） ---------- */
+const activeVoices = new Set();
+function playVoice(kind, freqs, {velocity=1}={}){
+  audio();
+  const def = TIMBRES[kind];
+  const vGain = ctx.createGain();
+  vGain.connect(masterIn);
+  const t = ctx.currentTime;
+  const peak = def.gain * velocity / Math.sqrt(freqs.length);
+  vGain.gain.setValueAtTime(.0001, t);
+  vGain.gain.linearRampToValueAtTime(peak, t + def.attack);
+
+  const sources = [];
+  for(const f of freqs) sources.push(...buildTimbre(kind, f, vGain));
+  sources.forEach(s => s.start(t));
+
+  const voice = {
+    kind, freqs, stopped:false,
+    stop(){
+      if(this.stopped) return; this.stopped = true;
+      const now = ctx.currentTime;
+      vGain.gain.cancelScheduledValues(now);
+      vGain.gain.setValueAtTime(Math.max(vGain.gain.value, .0001), now);
+      vGain.gain.exponentialRampToValueAtTime(.0001, now + def.release);
+      const end = now + def.release + .1;
+      sources.forEach(s => { try{ s.stop(end); }catch(e){} });
+      setTimeout(()=>{ vGain.disconnect(); activeVoices.delete(voice); }, (def.release+.3)*1000);
+    }
+  };
+  activeVoices.add(voice);
+
+  if(def.autoDecay){ // 打音系は自然減衰で自動終了
+    setTimeout(()=>voice.stop(), def.autoDecay*1000);
+  }
+  return voice;
+}
+
+/* ---------- ドローン管理 ---------- */
+const drones = new Map(); // key -> {voice, label}
+function droneOn(){ return $("droneMode").checked; }
+
+function toggleDrone(key, kind, freqs, label){
+  if(drones.has(key)){
+    drones.get(key).voice.stop();
+    drones.delete(key);
+  }else{
+    if(TIMBRES[kind].autoDecay){ // 打音系はラッチせず一発再生
+      playVoice(kind, freqs);
+      return;
+    }
+    const voice = playVoice(kind, freqs);
+    drones.set(key, {voice, label});
+  }
+  renderDrones();
+}
+function stopDrone(key){
+  const d = drones.get(key);
+  if(d){ d.voice.stop(); drones.delete(key); renderDrones(); }
+}
+function renderDrones(){
+  const el = $("droneList");
+  el.innerHTML = "";
+  for(const [key, d] of drones){
+    const item = document.createElement("span");
+    item.className = "drone-item";
+    item.innerHTML = `<span>${d.label}</span>`;
+    const btn = document.createElement("button");
+    btn.textContent = "停止";
+    btn.onclick = () => stopDrone(key);
+    item.appendChild(btn);
+    el.appendChild(item);
+  }
+  document.querySelectorAll(".pad").forEach((p,i)=>p.classList.toggle("droning", drones.has("pad"+i)));
+}
+
+/* 全て停止 */
+$("panicBtn").addEventListener("click", ()=>{
+  for(const v of [...activeVoices]) v.stop();
+  drones.clear(); renderDrones();
+  stopBinaural();
+  heldNotes.clear();
+  document.querySelectorAll(".wkey.down,.bkey.down").forEach(k=>k.classList.remove("down"));
+  if(freqVoice){ freqVoice = null; $("playFreq").textContent = "▶ この周波数を再生"; $("playFreq").classList.remove("on"); }
+});
+
+/* ---------- 周波数コントロール ---------- */
+let currentFreq = 528, currentTimbre = "crystal";
+
+const SLIDER_MIN = 20, SLIDER_MAX = 2000;
+function freqToSlider(f){ return Math.round(1000 * Math.log(f/SLIDER_MIN) / Math.log(SLIDER_MAX/SLIDER_MIN)); }
+function sliderToFreq(v){ return SLIDER_MIN * Math.pow(SLIDER_MAX/SLIDER_MIN, v/1000); }
+
+function setFreq(f, fromSlider){
+  currentFreq = clamp(f, 20, 20000);
+  $("freqVal").textContent = fmt(currentFreq);
+  $("freqNum").value = Math.round(currentFreq*10)/10;
+  if(!fromSlider) $("freqSlider").value = freqToSlider(clamp(currentFreq, SLIDER_MIN, SLIDER_MAX));
+  document.querySelectorAll("#solfChips .chip").forEach(c =>
+    c.classList.toggle("sel", Math.abs(parseFloat(c.dataset.f)-currentFreq) < .05));
+  if(freqVoice) restartFreqVoice(); // 再生中なら新しい周波数で鳴らし直す
+}
+$("freqNum").addEventListener("input", e => { const v = parseFloat(e.target.value); if(v>0) setFreq(v); });
+$("freqSlider").addEventListener("input", e => setFreq(sliderToFreq(+e.target.value), true));
+
+/* ▶ この周波数を再生（トグルで持続） */
+let freqVoice = null;
+$("playFreq").addEventListener("click", ()=>{
+  if(freqVoice){
+    freqVoice.stop(); freqVoice = null;
+    $("playFreq").textContent = "▶ この周波数を再生";
+    $("playFreq").classList.remove("on");
+  }else{
+    freqVoice = playVoice(currentTimbre, [currentFreq]);
+    $("playFreq").textContent = "■ 停止";
+    $("playFreq").classList.add("on");
+    if(TIMBRES[currentTimbre].autoDecay){ // 打音系は自動で戻る
+      setTimeout(()=>{ if(freqVoice){ freqVoice=null; $("playFreq").textContent="▶ この周波数を再生"; $("playFreq").classList.remove("on"); } }, TIMBRES[currentTimbre].autoDecay*1000);
+    }
+  }
+});
+function restartFreqVoice(){
+  if(!freqVoice) return;
+  freqVoice.stop();
+  freqVoice = playVoice(currentTimbre, [currentFreq]);
+}
+
+/* ソルフェジオ周波数プリセット */
+const SOLFEGGIO = [
+  [174,"癒し・鎮痛"],[285,"再生・回復"],[396,"解放"],[417,"変化"],[528,"奇跡・DNA"],
+  [639,"調和・人間関係"],[741,"浄化・表現"],[852,"直感"],[963,"覚醒・高次"],
+];
+for(const [f, label] of SOLFEGGIO){
+  const c = document.createElement("button");
+  c.className = "chip"; c.dataset.f = f;
+  c.innerHTML = `<b>${f}</b> ${label}`;
+  c.addEventListener("click", ()=>{
+    setFreq(f);
+    if(droneOn()) toggleDrone("solf"+f, currentTimbre, [f], `${f}Hz ${TIMBRES[currentTimbre].name}`);
+    else { const v = playVoice(currentTimbre, [f]); if(!TIMBRES[currentTimbre].autoDecay) setTimeout(()=>v.stop(), 1800); }
+  });
+  $("solfChips").appendChild(c);
+}
+
+/* 音色チップ */
+for(const [key, def] of Object.entries(TIMBRES)){
+  const c = document.createElement("button");
+  c.className = "chip" + (key===currentTimbre ? " sel" : "");
+  c.dataset.k = key; c.textContent = def.name;
+  c.addEventListener("click", ()=>{
+    currentTimbre = key;
+    document.querySelectorAll("#timbreChips .chip").forEach(x=>x.classList.toggle("sel", x.dataset.k===key));
+    if(freqVoice) restartFreqVoice();
+  });
+  $("timbreChips").appendChild(c);
+}
+
+/* チューニング */
+function a4(){
+  const sel = $("tuning").value;
+  return sel === "custom" ? (parseFloat($("tuningCustom").value)||432) : parseFloat(sel);
+}
+$("tuning").addEventListener("change", ()=>{
+  $("tuningCustom").style.display = $("tuning").value==="custom" ? "" : "none";
+  buildKeyboard();
+});
+$("tuningCustom").addEventListener("input", buildKeyboard);
+
+/* ---------- 鍵盤 ---------- */
+const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+let baseOctave = 4;
+const heldNotes = new Map(); // id -> voice
+
+function midiFreq(midi){ return a4() * Math.pow(2, (midi-69)/12); }
+
+function noteOn(midi, el){
+  const id = "n"+midi;
+  const f = midiFreq(midi);
+  const label = `${NOTE_NAMES[midi%12]}${Math.floor(midi/12)-1} ${fmt(f)}Hz`;
+  if(droneOn()){
+    toggleDrone(id, currentTimbre, [f], `${label} ${TIMBRES[currentTimbre].name}`);
+    el && el.classList.toggle("down", drones.has(id));
+    return;
+  }
+  if(heldNotes.has(id)) return;
+  heldNotes.set(id, playVoice(currentTimbre, [f]));
+  el && el.classList.add("down");
+}
+function noteOff(midi, el){
+  if(droneOn()) return; // ドローン時はラッチ済み
+  const id = "n"+midi;
+  const v = heldNotes.get(id);
+  if(v){ v.stop(); heldNotes.delete(id); }
+  el && el.classList.remove("down");
+}
+
+function buildKeyboard(){
+  const wk = $("wkeys"); wk.innerHTML = "";
+  $("kbWrap").querySelectorAll(".bkey").forEach(b=>b.remove());
+  const startMidi = (baseOctave+1)*12; // C
+  const whiteIdx = [0,2,4,5,7,9,11];
+  const whites = [];
+  for(let oct=0; oct<2; oct++){
+    for(const wi of whiteIdx){
+      const midi = startMidi + oct*12 + wi;
+      const el = document.createElement("div");
+      el.className = "wkey"; el.dataset.midi = midi;
+      el.innerHTML = `<span class="nn">${NOTE_NAMES[midi%12]}${Math.floor(midi/12)-1}</span><span class="hz">${fmt(midiFreq(midi))}</span>`;
+      bindPlayable(el, midi);
+      wk.appendChild(el); whites.push({midi, el});
+    }
+  }
+  // 黒鍵（白鍵14本の隙間に配置）
+  const blackAfterWhite = {0:1,1:3,3:6,4:8,5:10}; // 白鍵index(オクターブ内)→黒鍵semitone
+  const wWidth = 100/14;
+  for(let oct=0; oct<2; oct++){
+    for(const [wIdxStr, semi] of Object.entries(blackAfterWhite)){
+      const wIdx = +wIdxStr + oct*7;
+      const midi = startMidi + oct*12 + semi;
+      const el = document.createElement("div");
+      el.className = "bkey"; el.dataset.midi = midi;
+      el.style.left = `calc(${(wIdx+1)*wWidth}% - 3.75%)`;
+      el.innerHTML = `<span class="hz">${fmt(midiFreq(midi))}</span>`;
+      bindPlayable(el, midi);
+      $("kbWrap").appendChild(el);
+    }
+  }
+  $("octLabel").textContent = `C${baseOctave} – B${baseOctave+1}`;
+}
+function bindPlayable(el, midi){
+  el.addEventListener("pointerdown", e => { e.preventDefault(); noteOn(midi, el); });
+  el.addEventListener("pointerup",   () => noteOff(midi, el));
+  el.addEventListener("pointerleave",() => noteOff(midi, el));
+  el.addEventListener("pointercancel",() => noteOff(midi, el));
+}
+$("octDown").addEventListener("click", ()=>{ baseOctave = clamp(baseOctave-1, 1, 6); buildKeyboard(); });
+$("octUp").addEventListener("click",   ()=>{ baseOctave = clamp(baseOctave+1, 1, 6); buildKeyboard(); });
+
+/* PCキーボード → 鍵盤（半音オフセット） */
+const PIANO_KEYS = {KeyA:0,KeyW:1,KeyS:2,KeyE:3,KeyD:4,KeyF:5,KeyT:6,KeyG:7,KeyY:8,KeyH:9,KeyU:10,KeyJ:11,KeyK:12,KeyO:13,KeyL:14,KeyP:15,Semicolon:16};
+/* PCキーボード → パッド */
+const PAD_KEYS = {Digit1:0,Digit2:1,Digit3:2,Digit4:3,KeyQ:4,KeyW:5,KeyE:6,KeyR:7,KeyA:8,KeyS:9,KeyD:10,KeyF:11,KeyZ:12,KeyX:13,KeyC:14,KeyV:15};
+const downCodes = new Set();
+
+document.addEventListener("keydown", e => {
+  if(e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+  if(/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
+  if(activeTab === "kb" && e.code in PIANO_KEYS){
+    e.preventDefault(); downCodes.add(e.code);
+    const midi = (baseOctave+1)*12 + PIANO_KEYS[e.code];
+    noteOn(midi, keyEl(midi));
+  }else if(activeTab === "pads" && e.code in PAD_KEYS){
+    e.preventDefault(); downCodes.add(e.code);
+    hitPad(PAD_KEYS[e.code]);
+  }
+});
+document.addEventListener("keyup", e => {
+  if(!downCodes.delete(e.code)) return;
+  if(e.code in PIANO_KEYS && activeTab === "kb"){
+    const midi = (baseOctave+1)*12 + PIANO_KEYS[e.code];
+    noteOff(midi, keyEl(midi));
+  }else if(e.code in PAD_KEYS && activeTab === "pads"){
+    releasePad(PAD_KEYS[e.code]);
+  }
+});
+function keyEl(midi){ return document.querySelector(`[data-midi="${midi}"]`); }
+
+/* ---------- 16パッド ---------- */
+const DEFAULT_PADS = [
+  {label:"癒し 174",   freqs:[174],           timbre:"crystal"},
+  {label:"再生 285",   freqs:[285],           timbre:"crystal"},
+  {label:"解放 396",   freqs:[396],           timbre:"crystal"},
+  {label:"変化 417",   freqs:[417],           timbre:"crystal"},
+  {label:"奇跡 528",   freqs:[528],           timbre:"crystal"},
+  {label:"調和 639",   freqs:[639],           timbre:"crystal"},
+  {label:"浄化 741",   freqs:[741],           timbre:"crystal"},
+  {label:"直感 852",   freqs:[852],           timbre:"crystal"},
+  {label:"覚醒 963",   freqs:[963],           timbre:"bell"},
+  {label:"OM 136.1",   freqs:[136.1],         timbre:"bowl"},
+  {label:"A=432",      freqs:[432],           timbre:"pure"},
+  {label:"瞑想 111",   freqs:[111],           timbre:"bowl"},
+  {label:"528 和音",   freqs:[528,660,792],   timbre:"pad"},
+  {label:"432 和音",   freqs:[432,540,648],   timbre:"pad"},
+  {label:"海 174",     freqs:[174],           timbre:"ocean"},
+  {label:"チャイム 528",freqs:[528],          timbre:"bell"},
+];
+const PAD_STORE = "healingTones.pads.v1";
+let pads;
+try{ pads = JSON.parse(localStorage.getItem(PAD_STORE)) || null; }catch(e){ pads = null; }
+if(!Array.isArray(pads) || pads.length !== 16) pads = structuredClone(DEFAULT_PADS);
+
+const PAD_KEY_LABELS = ["1","2","3","4","Q","W","E","R","A","S","D","F","Z","X","C","V"];
+const heldPads = new Map();
+let editMode = false, editTarget = -1;
+
+function renderPads(){
+  const grid = $("padGrid"); grid.innerHTML = "";
+  pads.forEach((p, i)=>{
+    const el = document.createElement("div");
+    el.className = "pad"; el.dataset.i = i;
+    el.innerHTML = `
+      <span class="pkey">${PAD_KEY_LABELS[i]}</span>
+      <span class="ptimbre">${TIMBRES[p.timbre].name}</span>
+      <span class="plabel">${p.label}</span>
+      <span class="pfreq">${p.freqs.map(fmt).join(" + ")} Hz</span>`;
+    el.addEventListener("pointerdown", e => {
+      e.preventDefault();
+      if(editMode){ selectEdit(i); return; }
+      hitPad(i);
+    });
+    el.addEventListener("pointerup",    ()=>releasePad(i));
+    el.addEventListener("pointerleave", ()=>releasePad(i));
+    el.addEventListener("pointercancel",()=>releasePad(i));
+    grid.appendChild(el);
+  });
+  renderDrones();
+}
+function padEl(i){ return document.querySelector(`.pad[data-i="${i}"]`); }
+
+function hitPad(i){
+  const p = pads[i], el = padEl(i);
+  el.classList.add("hit");
+  const label = `${p.label}（${p.freqs.map(fmt).join("+")}Hz）`;
+  if(droneOn()){
+    toggleDrone("pad"+i, p.timbre, p.freqs, label);
+    setTimeout(()=>el.classList.remove("hit"), 180);
+    return;
+  }
+  if(heldPads.has(i)) return;
+  heldPads.set(i, playVoice(p.timbre, p.freqs));
+}
+function releasePad(i){
+  const el = padEl(i);
+  el && el.classList.remove("hit");
+  if(droneOn()) return;
+  const v = heldPads.get(i);
+  if(v){ v.stop(); heldPads.delete(i); }
+}
+
+/* パッド編集 */
+$("editPads").addEventListener("click", ()=>{
+  editMode = !editMode;
+  $("editPads").classList.toggle("on", editMode);
+  $("padEditor").classList.toggle("on", editMode);
+  if(!editMode){ editTarget = -1; document.querySelectorAll(".pad").forEach(p=>p.classList.remove("editing")); }
+});
+$("resetPads").addEventListener("click", ()=>{
+  pads = structuredClone(DEFAULT_PADS);
+  localStorage.removeItem(PAD_STORE);
+  renderPads();
+});
+for(const [key, def] of Object.entries(TIMBRES)){
+  const o = document.createElement("option");
+  o.value = key; o.textContent = def.name;
+  $("peTimbre").appendChild(o);
+}
+function selectEdit(i){
+  editTarget = i;
+  document.querySelectorAll(".pad").forEach((p,j)=>p.classList.toggle("editing", j===i));
+  $("peTarget").textContent = `パッド ${PAD_KEY_LABELS[i]} を編集中`;
+  $("peLabel").value = pads[i].label;
+  $("peFreqs").value = pads[i].freqs.join(", ");
+  $("peTimbre").value = pads[i].timbre;
+}
+$("peSave").addEventListener("click", ()=>{
+  if(editTarget < 0) return;
+  const freqs = $("peFreqs").value.split(",").map(s=>parseFloat(s.trim())).filter(f=>f>=20 && f<=20000);
+  if(!freqs.length){ alert("周波数は 20〜20000Hz の数値で入力してください"); return; }
+  pads[editTarget] = {
+    label: $("peLabel").value.trim() || `${fmt(freqs[0])}Hz`,
+    freqs,
+    timbre: $("peTimbre").value,
+  };
+  localStorage.setItem(PAD_STORE, JSON.stringify(pads));
+  renderPads(); selectEdit(editTarget);
+});
+
+/* ---------- タブ ---------- */
+let activeTab = "kb";
+document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", ()=>{
+  activeTab = t.dataset.tab;
+  document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on", x===t));
+  document.querySelectorAll(".tabpanel").forEach(p=>p.classList.toggle("on", p.id === "tab-"+activeTab));
+}));
+
+/* ---------- バイノーラルビート ---------- */
+const BI_PRESETS = [
+  ["デルタ 2Hz（深い睡眠）", 2], ["シータ 6Hz（瞑想・まどろみ）", 6],
+  ["アルファ 10Hz（リラックス）", 10], ["ベータ 20Hz（集中）", 20],
+];
+let biNodes = null;
+for(const [label, beat] of BI_PRESETS){
+  const c = document.createElement("button");
+  c.className = "chip"; c.textContent = label;
+  c.addEventListener("click", ()=>{
+    $("biBeat").value = beat;
+    document.querySelectorAll("#biChips .chip").forEach(x=>x.classList.toggle("sel", x===c));
+    if(biNodes) startBinaural(); // 再生中なら差し替え
+    updateBiDetail();
+  });
+  $("biChips").appendChild(c);
+}
+function updateBiDetail(){
+  const base = parseFloat($("biBase").value)||200, beat = parseFloat($("biBeat").value)||6;
+  $("biDetail").textContent = `左耳: ${fmt(base)} Hz ／ 右耳: ${fmt(base+beat)} Hz → 知覚ビート: ${beat} Hz`;
+}
+$("biBase").addEventListener("input", ()=>{ updateBiDetail(); if(biNodes) startBinaural(); });
+$("biBeat").addEventListener("input", ()=>{ updateBiDetail(); if(biNodes) startBinaural(); });
+updateBiDetail();
+
+function startBinaural(){
+  audio();
+  stopBinaural(true);
+  const base = clamp(parseFloat($("biBase").value)||200, 50, 800);
+  const beat = clamp(parseFloat($("biBeat").value)||6, .5, 40);
+  const t = ctx.currentTime;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(.0001, t);
+  g.gain.linearRampToValueAtTime(.22, t+1.5);
+  g.connect(masterIn);
+  const mk = (f, pan) => {
+    const o = ctx.createOscillator(); o.type = "sine"; o.frequency.value = f;
+    const p = ctx.createStereoPanner(); p.pan.value = pan;
+    o.connect(p).connect(g); o.start(t);
+    return o;
+  };
+  biNodes = { g, oscs:[mk(base,-1), mk(base+beat,1)] };
+  $("biStart").textContent = "■ 停止";
+  $("biStart").classList.add("on");
+}
+function stopBinaural(swap){
+  if(!biNodes) return;
+  const {g, oscs} = biNodes;
+  const now = ctx.currentTime;
+  g.gain.cancelScheduledValues(now);
+  g.gain.setValueAtTime(Math.max(g.gain.value,.0001), now);
+  g.gain.exponentialRampToValueAtTime(.0001, now+1);
+  oscs.forEach(o=>o.stop(now+1.1));
+  biNodes = null;
+  if(!swap){ $("biStart").textContent = "▶ 再生"; $("biStart").classList.remove("on"); }
+}
+$("biStart").addEventListener("click", ()=> biNodes ? stopBinaural() : startBinaural());
+
+/* ---------- 録音 → WAV書き出し ---------- */
+let recording = false, recChunks = [], recLen = 0, recStart = 0, recTimer = null;
+
+async function makeRecTap(){
+  // AudioWorklet 優先、失敗時は ScriptProcessor にフォールバック
+  try{
+    if(ctx.audioWorklet && !makeRecTap.loaded){
+      const code = `class RecCap extends AudioWorkletProcessor{
+        process(inputs){ const ch=inputs[0];
+          if(ch && ch[0]) this.port.postMessage([ch[0].slice(0), (ch[1]||ch[0]).slice(0)]);
+          return true; } }
+        registerProcessor("rec-cap", RecCap);`;
+      await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([code],{type:"application/javascript"})));
+      makeRecTap.loaded = true;
+    }
+    if(makeRecTap.loaded){
+      const node = new AudioWorkletNode(ctx, "rec-cap", {numberOfInputs:1, numberOfOutputs:0});
+      node.port.onmessage = e => { if(recording){ recChunks.push(e.data); recLen += e.data[0].length; } };
+      return node;
+    }
+  }catch(e){ /* fallback below */ }
+  const sp = ctx.createScriptProcessor(4096, 2, 2);
+  sp.onaudioprocess = e => {
+    if(!recording) return;
+    recChunks.push([e.inputBuffer.getChannelData(0).slice(0), e.inputBuffer.getChannelData(1).slice(0)]);
+    recLen += e.inputBuffer.length;
+  };
+  const mute = ctx.createGain(); mute.gain.value = 0;
+  sp.connect(mute).connect(ctx.destination);
+  return sp;
+}
+
+$("recBtn").addEventListener("click", async ()=>{
+  audio();
+  if(!recording){
+    if(!recTapNode){ recTapNode = await makeRecTap(); analyser.connect(recTapNode); }
+    recChunks = []; recLen = 0; recording = true; recStart = Date.now();
+    $("recBtn").textContent = "■ 録音停止"; $("recBtn").classList.add("on");
+    recTimer = setInterval(()=>{
+      const s = Math.floor((Date.now()-recStart)/1000);
+      $("recInfo").innerHTML = `<span class="recdot"></span>${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
+    }, 250);
+  }else{
+    recording = false;
+    clearInterval(recTimer);
+    $("recBtn").textContent = "● 録音"; $("recBtn").classList.remove("on");
+    if(recLen === 0){ $("recInfo").textContent = ""; return; }
+    const blob = encodeWav(recChunks, recLen, ctx.sampleRate);
+    const url = URL.createObjectURL(blob);
+    const sec = Math.round(recLen/ctx.sampleRate);
+    const name = `healing-tones-${new Date().toISOString().replace(/[:.]/g,"-").slice(0,19)}.wav`;
+    $("recInfo").innerHTML = `<a href="${url}" download="${name}">⬇ WAVをダウンロード（${Math.floor(sec/60)}:${String(sec%60).padStart(2,"0")}）</a>`;
+  }
+});
+
+function encodeWav(chunks, totalLen, rate){
+  const L = new Float32Array(totalLen), R = new Float32Array(totalLen);
+  let off = 0;
+  for(const [l, r] of chunks){ L.set(l, off); R.set(r, off); off += l.length; }
+  const buf = new ArrayBuffer(44 + totalLen*4);
+  const dv = new DataView(buf);
+  const wstr = (o, s) => { for(let i=0;i<s.length;i++) dv.setUint8(o+i, s.charCodeAt(i)); };
+  wstr(0,"RIFF"); dv.setUint32(4, 36+totalLen*4, true); wstr(8,"WAVE");
+  wstr(12,"fmt "); dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,2,true);
+  dv.setUint32(24,rate,true); dv.setUint32(28,rate*4,true); dv.setUint16(32,4,true); dv.setUint16(34,16,true);
+  wstr(36,"data"); dv.setUint32(40,totalLen*4,true);
+  let p = 44;
+  for(let i=0;i<totalLen;i++){
+    dv.setInt16(p, clamp(L[i],-1,1)*0x7fff, true); p+=2;
+    dv.setInt16(p, clamp(R[i],-1,1)*0x7fff, true); p+=2;
+  }
+  return new Blob([buf], {type:"audio/wav"});
+}
+
+/* ---------- ビジュアライザー ---------- */
+function startViz(){
+  const cv = $("viz"), g2d = cv.getContext("2d");
+  const data = new Uint8Array(analyser.fftSize);
+  (function draw(){
+    requestAnimationFrame(draw);
+    const w = cv.clientWidth, h = cv.clientHeight;
+    if(cv.width !== w*devicePixelRatio){ cv.width = w*devicePixelRatio; cv.height = h*devicePixelRatio; g2d.scale(devicePixelRatio, devicePixelRatio); }
+    analyser.getByteTimeDomainData(data);
+    g2d.clearRect(0,0,w,h);
+    g2d.beginPath();
+    g2d.strokeStyle = "#4fd8c4"; g2d.lineWidth = 1.4;
+    for(let i=0;i<data.length;i++){
+      const x = i/data.length*w, y = (data[i]/255)*h;
+      i ? g2d.lineTo(x,y) : g2d.moveTo(x,y);
+    }
+    g2d.stroke();
+  })();
+}
+
+/* ---------- 初期化 ---------- */
+setFreq(528);
+buildKeyboard();
+renderPads();
+document.addEventListener("pointerdown", ()=>audio(), {once:false, passive:true});
+</script>
+</body>
+</html>

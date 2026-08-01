@@ -1,0 +1,10 @@
+{
+  "name": "Healing Tones",
+  "short_name": "Healing Tones",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#0d1524",
+  "theme_color": "#0d1524",
+  "start_url": ".",
+  "icons": []
+}

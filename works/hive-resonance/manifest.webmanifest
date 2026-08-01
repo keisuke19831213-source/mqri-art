@@ -1,0 +1,10 @@
+{
+  "name": "HIVE RESONANCE",
+  "short_name": "HIVE RESONANCE",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#060302",
+  "theme_color": "#060302",
+  "start_url": ".",
+  "icons": []
+}

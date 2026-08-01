@@ -1,0 +1,10 @@
+{
+  "name": "IRIS AQUAE",
+  "short_name": "IRIS AQUAE",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#030308",
+  "theme_color": "#030308",
+  "start_url": ".",
+  "icons": []
+}

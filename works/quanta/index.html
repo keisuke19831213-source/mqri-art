@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="description" content="QUANTA 幾何学と量子力学 — 固有状態の重ね合わせが描く量子カーペット。等高線が確率の地形を露わにする。MQRI ART。">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="QUANTA">
+<meta name="theme-color" content="#020207">
+<link rel="manifest" href="manifest.webmanifest">
+<title>QUANTA — 幾何学と量子力学</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#020207; }
+  canvas { display:block; width:100vw; height:100vh; cursor:pointer; }
+  .hud {
+    position:fixed; inset:0; pointer-events:none;
+    font-family:'Cormorant Garamond','Hiragino Mincho ProN','Yu Mincho',Georgia,serif;
+    color:rgba(220,228,255,0.92);
+    transition:opacity 1.6s ease;
+  }
+  .hud.hidden { opacity:0; }
+  .title {
+    position:absolute; top:max(34px, env(safe-area-inset-top)); left:max(42px, env(safe-area-inset-left));
+    letter-spacing:0.42em; font-size:21px; font-weight:400;
+    text-shadow:0 0 24px rgba(120,160,255,0.5);
+  }
+  .title small {
+    display:block; margin-top:9px;
+    font-size:10.5px; letter-spacing:0.34em;
+    color:rgba(190,200,235,0.55);
+  }
+  .movement {
+    position:absolute; bottom:max(44px, env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
+    text-align:center; letter-spacing:0.5em; font-size:13.5px;
+    color:rgba(215,222,250,0.85);
+    text-shadow:0 0 18px rgba(140,170,255,0.45);
+    transition:opacity 1.1s ease;
+  }
+  .movement small {
+    display:block; margin-top:8px;
+    font-size:10px; letter-spacing:0.38em;
+    color:rgba(185,195,230,0.5);
+  }
+  .hint {
+    position:absolute; bottom:max(40px, env(safe-area-inset-bottom)); right:max(44px, env(safe-area-inset-right));
+    font-size:10px; letter-spacing:0.28em;
+    color:rgba(180,190,225,0.35);
+  }
+  .frame {
+    position:absolute; inset:18px;
+    border:1px solid rgba(160,180,235,0.10);
+    pointer-events:none;
+  }
+  .frame::before, .frame::after {
+    content:''; position:absolute; width:14px; height:14px;
+    border-color:rgba(212,178,110,0.45); border-style:solid;
+  }
+  .frame::before { top:-1px; left:-1px; border-width:1px 0 0 1px; }
+  .frame::after { bottom:-1px; right:-1px; border-width:0 1px 1px 0; }
+
+  /* touch-action:none が無いと、指の操作をブラウザのスクロールに奪われる */
+  #c{touch-action:none}
+  html,body{-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+  /* 操作案内は入力デバイスで出し分ける（指にキーボードもホイールも無い）。
+     メディアクエリは初期推定、実際に触られたら html.is-touch が優先する */
+  .touch-only{display:none}
+  @media (pointer:coarse){.pointer-only{display:none}.touch-only{display:inline}}
+  html.is-touch .pointer-only{display:none}
+  html.is-touch .touch-only{display:inline}
+</style>
+<script>addEventListener('touchstart',()=>document.documentElement.classList.add('is-touch'),{once:true,passive:true});</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud" id="hud">
+  <div class="frame"></div>
+  <div class="title">QUANTA<small>幾何学と量子力学 — GEOMETRIA ET MECHANICA QUANTORUM</small></div>
+  <div class="movement" id="mv">I. UNDA<small>固有状態の重ね合わせ — 量子カーペット</small></div>
+  <div class="hint"><span class="pointer-only">CLICK / 1–3 — MUTATIO</span><span class="touch-only">TAP — MUTATIO</span></div>
+</div>
+<script>
+'use strict';
+
+/* ================================================================
+   QUANTA — Geometry & Quantum Mechanics
+   All quantum behaviour is analytic: superpositions of eigenstates
+   evolving as e^{-iE t}. No numerical PDE integration.
+     I.   UNDA       particle-in-a-box quantum carpet (domain coloring)
+     II.  ORBITALE   volumetric raymarched orbital superposition
+     III. COLLAPSUS  double-slit interference + one-by-one detection
+   Post: bright-pass bloom (2 octaves), ACES, chromatic aberration.
+   ================================================================ */
+
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias:false, alpha:false });
+if (!gl) { document.body.innerHTML = '<p style="color:#889;font:14px serif;padding:2em">WebGL2 required.</p>'; throw new Error('no webgl2'); }
+const hasFloat = !!gl.getExtension('EXT_color_buffer_float');
+
+/* ---------- shaders ---------- */
+
+const VERT = `#version 300 es
+layout(location=0) in vec2 a;
+out vec2 vUv;
+void main(){ vUv = a*0.5+0.5; gl_Position = vec4(a,0.0,1.0); }`;
+
+const COMMON = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+uniform vec2 u_res;
+uniform float u_time;
+#define PI  3.14159265359
+#define TAU 6.28318530718
+const vec3 GOLD = vec3(1.0,0.78,0.38);
+float hash12(vec2 p){ vec3 p3=fract(vec3(p.xyx)*0.1031); p3+=dot(p3,p3.yzx+33.33); return fract((p3.x+p3.y)*p3.z); }
+vec2  hash22(vec2 p){ vec3 p3=fract(vec3(p.xyx)*vec3(0.1031,0.1030,0.0973)); p3+=dot(p3,p3.yzx+33.33); return fract((p3.xx+p3.yz)*p3.zy); }
+/* phase palette: teal -> gold -> magenta -> deep blue */
+vec3 qpal(float t){ return vec3(0.36,0.34,0.52)+vec3(0.50,0.45,0.50)*cos(TAU*(t+vec3(0.62,0.82,0.28))); }
+vec2 cph(float a){ return vec2(cos(a),sin(a)); }
+`;
+
+const SCENE_FRAG = COMMON + `
+uniform float u_mtime;
+uniform int u_mov;
+
+/* ============ I. UNDA — quantum carpet ============ */
+vec3 movUnda(vec2 uv){
+  float A = u_res.x/u_res.y;
+  vec2 p = vec2(uv.x*A, uv.y);
+  float tau = u_mtime*0.16 + 6.0;
+
+  float ns[6]; ns[0]=1.; ns[1]=2.; ns[2]=2.; ns[3]=3.; ns[4]=4.; ns[5]=3.;
+  float ms[6]; ms[0]=2.; ms[1]=1.; ms[2]=3.; ms[3]=2.; ms[4]=1.; ms[5]=4.;
+  float as[6]; as[0]=1.0; as[1]=0.85; as[2]=0.72; as[3]=0.60; as[4]=0.50; as[5]=0.42;
+
+  vec2 psi = vec2(0.0);
+  for(int i=0;i<6;i++){
+    float kx = ns[i]*PI/A, ky = ms[i]*PI;
+    float E  = kx*kx + ky*ky;                 /* E ∝ k² : real dispersion */
+    float s  = sin(kx*p.x)*sin(ky*p.y)*as[i];
+    psi += s * cph(-E*tau*0.10);
+  }
+  float prob  = dot(psi,psi)*1.1;
+  float phase = atan(psi.y,psi.x)/TAU + 0.5;
+
+  vec3 col = qpal(phase) * pow(prob, 0.66) * 1.5;
+  col += vec3(0.012,0.022,0.050);                        /* abyssal floor  */
+
+  /* golden probability contours — the geometry of |ψ|² */
+  float c = prob*7.0;
+  float w = fwidth(c)*1.4 + 1e-4;
+  float contour = 1.0 - smoothstep(0.0, w*2.0, abs(fract(c)-0.5));
+  col += GOLD * contour * 0.22 * smoothstep(0.02,0.35,prob);
+
+  /* faint measurement grid */
+  vec2 g = abs(fract(p*12.0)-0.5);
+  float gline = smoothstep(0.465,0.5,max(g.x,g.y));
+  col += vec3(0.06,0.10,0.18) * gline * 0.7;
+
+  /* nodal shimmer: filaments where ψ ≈ 0 */
+  float nodal = exp(-prob*30.0);
+  col += vec3(0.07,0.14,0.30) * nodal * (0.55+0.45*sin(u_mtime*0.7+p.x*4.0));
+  return col;
+}
+
+/* ============ II. ORBITALE — volumetric orbitals ============ */
+mat3 lookAt(vec3 ro, vec3 ta){
+  vec3 f = normalize(ta-ro);
+  vec3 r = normalize(cross(f, vec3(0.0,1.0,0.0)));
+  return mat3(r, cross(r,f), f);
+}
+mat3 rotAx(vec3 ax, float a){
+  float s=sin(a), c=cos(a), ic=1.0-c;
+  return mat3(
+    c+ax.x*ax.x*ic,        ax.x*ax.y*ic-ax.z*s,  ax.x*ax.z*ic+ax.y*s,
+    ax.y*ax.x*ic+ax.z*s,   c+ax.y*ax.y*ic,       ax.y*ax.z*ic-ax.x*s,
+    ax.z*ax.x*ic-ax.y*s,   ax.z*ax.y*ic+ax.x*s,  c+ax.z*ax.z*ic );
+}
+vec2 psiAt(vec3 pos, float t){
+  float r2 = dot(pos,pos);
+  float r  = sqrt(r2);
+  float e2 = exp(-r*0.90);
+  float e3 = exp(-r*0.72);
+  /* real spherical-harmonic basis  r^l Y_lm(θ,φ) · R(r)  */
+  float b0 = (3.0*pos.z*pos.z - r2)          * e2 * 0.45;   /* d_z²   */
+  float b1 = (pos.x*pos.x - pos.y*pos.y)     * e2 * 0.50;   /* d_x²−y²*/
+  float b2 = (2.0*pos.x*pos.y)               * e2 * 0.50;   /* d_xy   */
+  float b3 = pos.z*(5.0*pos.z*pos.z-3.0*r2)  * e3 * 0.080;  /* f_z³   */
+  float b4 = pos.x*(pos.x*pos.x-3.0*pos.y*pos.y)*e3*0.090;  /* f_x³   */
+  /* slowly-breathing coefficients: the state itself drifts */
+  float c0 = 0.90 + 0.45*sin(t*0.110);
+  float c1 = 0.85 * sin(t*0.073 + 2.0);
+  float c2 = 0.85 * cos(t*0.091 + 4.0);
+  float c3 = 0.80 * sin(t*0.052 + 1.0);
+  float c4 = 0.70 * cos(t*0.063 + 3.0);
+  /* each eigenstate carries its own e^{-iE_k t} */
+  float w = t*0.85;
+  return b0*c0*cph(-2.00*w) + b1*c1*cph(-2.55*w) + b2*c2*cph(-3.15*w)
+       + b3*c3*cph(-3.90*w) + b4*c4*cph(-4.70*w);
+}
+vec3 movOrbitale(vec2 uv){
+  float A = u_res.x/u_res.y;
+  vec2 q = uv*2.0-1.0; q.x *= A;
+  float t = u_mtime;
+
+  float ca = t*0.11;
+  vec3 ro = vec3(13.5*cos(ca), 4.2*sin(t*0.067+1.2), 13.5*sin(ca));
+  mat3 cam = lookAt(ro, vec3(0.0));
+  vec3 rd = cam * normalize(vec3(q, 2.15));
+
+  vec3 col = vec3(0.008,0.012,0.028) * (1.2 - 0.5*length(q));  /* nebula bg */
+
+  /* bounding sphere R=8 */
+  float bq = -dot(ro,rd);
+  float h  = bq*bq - dot(ro,ro) + 64.0;
+  if(h < 0.0) return col;
+  float t0 = max(bq - sqrt(h), 0.0);
+  float t1 = bq + sqrt(h);
+  float dt = (t1-t0)/40.0;
+  float jit = hash12(gl_FragCoord.xy + fract(t)*61.7) * dt;
+
+  /* golden ring cage: three tilted circles — pure geometry vs the cloud */
+  mat3 R1 = rotAx(normalize(vec3(1.0,0.3,0.0)),  1.10);
+  mat3 R2 = rotAx(normalize(vec3(0.2,1.0,0.5)), -0.85 + t*0.05);
+  vec3 acc = vec3(0.0);
+  float tr = 1.0;
+  for(int i=0;i<40;i++){
+    vec3 pos = ro + rd*(t0 + dt*float(i) + jit);
+    vec2 psi = psiAt(pos, t);
+    float dens  = max(dot(psi,psi) - 0.035, 0.0)*1.7;   /* floor: keep vacuum dark */
+    float phase = atan(psi.y,psi.x)/TAU + 0.5;
+    acc += tr * qpal(phase) * dens * dt * 1.5;
+    /* ring glow */
+    vec3 p1 = pos;      float d1 = length(vec2(length(p1.xz)-5.6, p1.y));
+    vec3 p2 = R1*pos;   float d2 = length(vec2(length(p2.xz)-6.3, p2.y));
+    vec3 p3 = R2*pos;   float d3 = length(vec2(length(p3.xz)-4.9, p3.y));
+    float ring = exp(-d1*d1*14.0)+exp(-d2*d2*14.0)+exp(-d3*d3*14.0);
+    acc += tr * GOLD * ring * dt * 0.11;
+    tr *= exp(-dens*dt*1.35);
+    if(tr < 0.03) break;
+  }
+  return col*tr + acc;
+}
+
+/* ============ III. COLLAPSUS — double slit ============ */
+vec3 movCollapsus(vec2 uv){
+  float A = u_res.x/u_res.y;
+  vec2 p = uv*2.0-1.0; p.x *= A;
+  float t = u_mtime;
+  float cycle = 34.0;
+  float ct  = mod(t, cycle);
+  float gen = floor(t/cycle);
+
+  vec2 s1 = vec2(-0.36, 0.66), s2 = vec2(0.36, 0.66);
+  float k = 46.0, w = t*2.4;
+  float above = smoothstep(0.662, 0.672, p.y);
+  float r1 = length(p-s1)+1e-4, r2 = length(p-s2)+1e-4;
+  float a1 = inversesqrt(r1*9.0+1.0), a2 = inversesqrt(r2*9.0+1.0);
+  vec2 psi = cph(k*r1-w)*a1 + cph(k*r2-w)*a2;
+  /* above the barrier: the incoming plane wave, not yet split */
+  vec2 psiUp = cph(k*(1.4-p.y) - w) * 0.62;
+  psi = mix(psi, psiUp, above);
+  float I = dot(psi,psi);
+  float phase = atan(psi.y,psi.x)/TAU + 0.5;
+
+  /* the wave, faint — what exists before measurement */
+  vec3 col = qpal(phase) * I * 0.055;
+  col += vec3(0.009,0.015,0.034);
+
+  /* time-averaged envelope: the geometry of interference */
+  float env = a1*a1 + a2*a2 + 2.0*a1*a2*cos(k*(r1-r2));
+  env = clamp(env*0.85, 0.0, 1.0) * (1.0-above);
+  col += qpal(0.60) * env * 0.045;
+
+  /* detections: electrons arriving one by one (Tonomura) */
+  float cs = 0.021;
+  vec2 ci = floor(p/cs);
+  float rate = ct/cycle;
+  float endFade = smoothstep(0.0, 1.6, cycle-ct);
+  vec3 dots = vec3(0.0);
+  for(int dy=-1; dy<=1; dy++)
+  for(int dx=-1; dx<=1; dx++){
+    vec2 c = ci + vec2(float(dx),float(dy));
+    vec2 rnd = hash22(c + gen*17.31);
+    vec2 dp  = (c + 0.18 + 0.64*rnd)*cs;
+    float dr1 = length(dp-s1)+1e-4, dr2 = length(dp-s2)+1e-4;
+    float da1 = inversesqrt(dr1*9.0+1.0), da2 = inversesqrt(dr2*9.0+1.0);
+    float de  = clamp((da1*da1 + da2*da2 + 2.0*da1*da2*cos(k*(dr1-dr2)))*0.85, 0.0, 1.0);
+    de = pow(de, 1.4) * step(dp.y, 0.655);          /* detection below barrier */
+    float accp = hash12(c*1.71 + gen*31.7 + 5.3);   /* Born rule sampling */
+    float ta   = hash12(c*2.37 + gen*13.1 + 9.7);   /* arrival order      */
+    if(ta < rate && accp < de*0.9){
+      float d = length(p-dp);
+      float since = (rate-ta)*cycle;
+      float flash = exp(-since*1.8)*3.5;            /* impact scintilla   */
+      vec3 tint = mix(vec3(0.80,0.90,1.05), GOLD, step(0.86, hash12(c+2.29)));
+      dots += exp(-d*d/(2.2e-5)) * (0.55+flash) * tint;
+    }
+  }
+  col += dots * endFade;
+
+  /* the barrier and its two slits */
+  float bar  = 1.0 - smoothstep(0.0025, 0.007, abs(p.y-0.66));
+  float gaps = smoothstep(0.030, 0.052, abs(abs(p.x)-0.36));
+  col += GOLD * bar * gaps * 0.38;
+  /* reset flash: the field is re-prepared */
+  col *= 1.0 + exp(-ct*1.6)*0.6;
+  return col;
+}
+
+void main(){
+  vec3 col;
+  if(u_mov==0)      col = movUnda(vUv);
+  else if(u_mov==1) col = movOrbitale(vUv);
+  else              col = movCollapsus(vUv);
+  o = vec4(col, 1.0);
+}`;
+
+const BRIGHT_FRAG = COMMON + `
+uniform sampler2D u_tex;
+void main(){
+  vec3 c = texture(u_tex, vUv).rgb;
+  float l = dot(c, vec3(0.2126,0.7152,0.0722));
+  o = vec4(c * smoothstep(0.55, 1.35, l), 1.0);
+}`;
+
+const BLUR_FRAG = COMMON + `
+uniform sampler2D u_tex;
+uniform vec2 u_dir;
+void main(){
+  float wgt[5]; wgt[0]=0.227027; wgt[1]=0.194594; wgt[2]=0.121621; wgt[3]=0.054054; wgt[4]=0.016216;
+  vec3 c = texture(u_tex, vUv).rgb * wgt[0];
+  for(int i=1;i<5;i++){
+    vec2 off = u_dir*float(i);
+    c += texture(u_tex, vUv+off).rgb * wgt[i];
+    c += texture(u_tex, vUv-off).rgb * wgt[i];
+  }
+  o = vec4(c, 1.0);
+}`;
+
+const POST_FRAG = COMMON + `
+uniform sampler2D u_scene;
+uniform sampler2D u_bloom;
+uniform float u_fade;
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0); }
+void main(){
+  vec2 uv = vUv;
+  vec2 d = uv - 0.5;
+  float r2 = dot(d,d);
+  /* chromatic aberration, quadratic falloff */
+  float ab = 0.0035 * r2 * 2.5;
+  vec3 col;
+  col.r = texture(u_scene, uv + d*ab).r;
+  col.g = texture(u_scene, uv).g;
+  col.b = texture(u_scene, uv - d*ab).b;
+  col += texture(u_bloom, uv).rgb * 0.85;
+  col *= 1.0 - r2*0.75;                                  /* vignette */
+  col *= u_fade;
+  col = aces(col*1.15);
+  col = pow(col, vec3(0.4545));
+  col += (hash12(gl_FragCoord.xy + fract(u_time)*97.0)-0.5)*0.028;  /* grain */
+  o = vec4(col, 1.0);
+}`;
+
+/* ---------- GL plumbing ---------- */
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+    throw new Error(gl.getShaderInfoLog(s) + '\n---\n' + src.split('\n').map((l,i)=>(i+1)+': '+l).join('\n'));
+  return s;
+}
+function program(fsrc){
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, VERT));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fsrc));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+const progScene  = program(SCENE_FRAG);
+const progBright = program(BRIGHT_FRAG);
+const progBlur   = program(BLUR_FRAG);
+const progPost   = program(POST_FRAG);
+
+const vao = gl.createVertexArray();
+gl.bindVertexArray(vao);
+const vbo = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+function makeTarget(w, h){
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  const ifmt = hasFloat ? gl.RGBA16F : gl.RGBA8;
+  const type = hasFloat ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE;
+  gl.texImage2D(gl.TEXTURE_2D, 0, ifmt, w, h, 0, gl.RGBA, type, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return { tex, fb, w, h };
+}
+
+let W=0, H=0, SW=0, SH=0, tgScene=null, tgA=null, tgB=null;
+let renderScale = 1.0;   /* adaptive: drops on slow GPUs, recovers on fast */
+function rebuildTargets(){
+  for(const t of [tgScene,tgA,tgB]) if(t){ gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); }
+  SW = Math.max(1, Math.round(W*renderScale));
+  SH = Math.max(1, Math.round(H*renderScale));
+  tgScene = makeTarget(SW, SH);
+  const hw = Math.max(1, SW>>1), hh = Math.max(1, SH>>1);
+  tgA = makeTarget(hw, hh);
+  tgB = makeTarget(hw, hh);
+}
+function resize(){
+  let vw = Math.max(innerWidth, document.documentElement.clientWidth||0);
+  let vh = Math.max(innerHeight, document.documentElement.clientHeight||0);
+  if(vw < 2 || vh < 2){                     /* viewport not laid out yet  */
+    if(W > 0) return;                       /* keep last known good size  */
+    vw = 1280; vh = 720;                    /* bootstrap fallback         */
+  }
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const w = Math.round(vw*dpr), h = Math.round(vh*dpr);
+  if(w===W && h===H) return;
+  W=w; H=h;
+  canvas.width=W; canvas.height=H;
+  canvas.style.width = vw+'px'; canvas.style.height = vh+'px';
+  rebuildTargets();
+}
+addEventListener('resize', resize);
+resize();
+
+const U = {};
+for(const [name, prog] of [['scene',progScene],['bright',progBright],['blur',progBlur],['post',progPost]]){
+  U[name] = {};
+  const n = gl.getProgramParameter(prog, gl.ACTIVE_UNIFORMS);
+  for(let i=0;i<n;i++){ const info = gl.getActiveUniform(prog, i); U[name][info.name] = gl.getUniformLocation(prog, info.name); }
+}
+
+/* ---------- movement state machine ---------- */
+
+const MOVES = [
+  ['I. UNDA', '固有状態の重ね合わせ — 量子カーペット'],
+  ['II. ORBITALE', '球面調和関数 — 確率の雲'],
+  ['III. COLLAPSUS', '二重スリット — 観測による収縮'],
+];
+const AUTO = 45;   /* seconds per movement */
+const qs = new URLSearchParams(location.search);
+let mov = Math.min(2, Math.max(0, parseInt(qs.get('mov')||'0',10)||0)), movStart = performance.now()/1000;
+let fade = qs.has('mov') ? 1 : 0, fadeState = qs.has('mov') ? 'run' : 'in';   /* in | run | out */
+let pendingMov = -1;
+const mvEl = document.getElementById('mv');
+
+function setLabel(){
+  mvEl.style.opacity = 0;
+  setTimeout(()=>{
+    mvEl.innerHTML = MOVES[mov][0] + '<small>' + MOVES[mov][1] + '</small>';
+    mvEl.style.opacity = 1;
+  }, 500);
+}
+function advance(to){
+  if(fadeState === 'out') return;
+  pendingMov = (to !== undefined) ? to : (mov+1)%3;
+  if(pendingMov === mov){ pendingMov = -1; return; }
+  fadeState = 'out';
+}
+canvas.addEventListener('click', ()=>advance());
+addEventListener('keydown', e=>{
+  if(e.key>='1' && e.key<='3') advance(+e.key-1);
+});
+
+/* HUD auto-hide */
+const hud = document.getElementById('hud');
+let hudTimer = 0;
+function wakeHud(){
+  hud.classList.remove('hidden');
+  clearTimeout(hudTimer);
+  hudTimer = setTimeout(()=>hud.classList.add('hidden'), 5000);
+}
+addEventListener('mousemove', wakeHud);
+addEventListener('click', wakeHud);
+wakeHud();
+
+/* ---------- render loop ---------- */
+
+const t0 = performance.now()/1000;
+let prevNow = t0, dtAvg = 1/60, frameCount = 0, lastScaleChange = 0;
+function frame(){
+  requestAnimationFrame(frame);
+  render();
+}
+function render(){
+  if(!tgScene){ resize(); if(!tgScene) return; }
+  const now = performance.now()/1000;
+  const dt = Math.min(now - prevNow, 0.25);
+  prevNow = now;
+  const time = now - t0;
+  const mtime = now - movStart;
+
+  /* adaptive resolution: keep the piece fluid on any GPU */
+  dtAvg += (dt - dtAvg)*0.06;
+  frameCount++;
+  if(frameCount > 25 && now - lastScaleChange > 1.0){
+    if(dtAvg > 1/26 && renderScale > 0.34){
+      renderScale = Math.max(0.34, renderScale*0.78);
+      rebuildTargets(); lastScaleChange = now; dtAvg = 1/40;
+    } else if(dtAvg < 1/50 && renderScale < 1.0){
+      renderScale = Math.min(1.0, renderScale*1.12);
+      rebuildTargets(); lastScaleChange = now; dtAvg = 1/40;
+    }
+  }
+
+  /* fade-through-black transitions (time-based) */
+  if(fadeState === 'in'){ fade = Math.min(1, fade + dt/1.2); if(fade>=1) fadeState='run'; }
+  else if(fadeState === 'out'){
+    fade = Math.max(0, fade - dt/0.7);
+    if(fade<=0){ mov = pendingMov; pendingMov=-1; movStart = now; fadeState='in'; setLabel(); }
+  }
+  else if(mtime > AUTO){ advance(); }
+
+  gl.bindVertexArray(vao);
+
+  /* scene */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, tgScene.fb);
+  gl.viewport(0,0,SW,SH);
+  gl.useProgram(progScene);
+  gl.uniform2f(U.scene.u_res, SW, SH);
+  gl.uniform1f(U.scene.u_time, time);
+  gl.uniform1f(U.scene.u_mtime, mtime);
+  gl.uniform1i(U.scene.u_mov, mov);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  /* bright pass -> A */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, tgA.fb);
+  gl.viewport(0,0,tgA.w,tgA.h);
+  gl.useProgram(progBright);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, tgScene.tex);
+  gl.uniform1i(U.bright.u_tex, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  /* two blur octaves: A->B->A->B */
+  gl.useProgram(progBlur);
+  gl.uniform1i(U.blur.u_tex, 0);
+  const passes = [[tgA,tgB,1,0],[tgB,tgA,0,1],[tgA,tgB,2.6,0],[tgB,tgA,0,2.6],[tgA,tgB,5.0,0],[tgB,tgA,0,5.0]];
+  for(const [src,dst,dx,dy] of passes){
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
+    gl.viewport(0,0,dst.w,dst.h);
+    gl.bindTexture(gl.TEXTURE_2D, src.tex);
+    gl.uniform2f(U.blur.u_dir, dx/dst.w, dy/dst.h);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  /* composite */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0,0,W,H);
+  gl.useProgram(progPost);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, tgScene.tex);
+  gl.uniform1i(U.post.u_scene, 0);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, tgA.tex);
+  gl.uniform1i(U.post.u_bloom, 1);
+  gl.uniform2f(U.post.u_res, W, H);
+  gl.uniform1f(U.post.u_time, time);
+  gl.uniform1f(U.post.u_fade, fade*fade*(3-2*fade));
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+window.__render = render;   /* manual step (dev/verification) */
+frame();
+</script>
+</body>
+</html>

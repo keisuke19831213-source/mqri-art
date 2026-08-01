@@ -15,6 +15,12 @@
 | [/works/quintessence/](https://art.mqri.or.jp/works/quintessence/) | QUINTESSENCE 内接するプラトン立体 | 一つの立方体に五つの正多面体が内接。体対角線に整列すると13点のメタトロンキューブが結晶。純WebGL2 |
 | [/works/metatron/](https://art.mqri.or.jp/works/metatron/) | METATRON 立体メタトロン方陣 | 十三の球・七十八の光径。平面の方陣とベクトル平衡体を連続変形。純WebGL2 |
 | [/works/nijushisekki-ring/](https://art.mqri.or.jp/works/nijushisekki-ring/) | 二十四節気の円環 | 太陽黄経360°を24等分した暦の幾何学。**もとはNext.js+D1のアプリだったが、実行時に使われていないことを確かめて単一HTMLに書き直した**（[経緯と検算](works/nijushisekki-ring/README.md)） |
+| [/works/iris-aquae/](https://art.mqri.or.jp/works/iris-aquae/) | IRIS AQUAE 水面の虹色の輝き | 薄膜干渉を13波長で計算しCIE1931で色に戻す。夕暮れの海面に本物の構造色が立つ |
+| [/works/shimmer/](https://art.mqri.or.jp/works/shimmer/) | SHIMMER 薄膜のきらめきとグリント | 同じ薄膜干渉を闇に放つ。手続き的グリントが星のように瞬く。IRIS AQUAE の姉妹作 |
+| [/works/quanta/](https://art.mqri.or.jp/works/quanta/) | QUANTA 幾何学と量子力学 | 確率の地形を等高線で切る三楽章（量子カーペット／球面調和関数ほか）。タップで楽章が進む |
+| [/works/hive-resonance/](https://art.mqri.or.jp/works/hive-resonance/) | HIVE RESONANCE 蜂の巣と周波数 | 六角格子に周波数を通すと定在波が紋様になる。230Hz=蜂の羽音。音つき（開始オーバーレイでユーザー操作を取る） |
+| [/works/sekki-circle/](https://art.mqri.or.jp/works/sekki-circle/) | 環 二十四節気の円環 | 24節気＋七十二候を円環に。「今日」で現在の節気へ戻れる。※`nijushisekki-ring` と同じ主題の**別実装**（意図的に併存） |
+| [/works/healing-tones/](https://art.mqri.or.jp/works/healing-tones/) | Healing Tones 周波数ミュージックジェネレーター | **唯一の道具（作品ではない）**。9周波数×7音色・A4=440/432・鍵盤/16パッド/バイノーラル・録音。スクロールする文書レイアウトなので touch-action は canvas だけに掛ける |
 | [/works/senko/](https://art.mqri.or.jp/works/senko/) | 旋光 Senkō | 光渦（軌道角運動量）。角運動量に比例して周波数をずらすと場全体が厳密な剛体として回る。移設時に**touch-action欠落を修正**＋ピンチ・タップ・2本指タップ・長押しを実装 |
 | [/works/mizu-no-kioku/](https://art.mqri.or.jp/works/mizu-no-kioku/) | 水の記憶 Memory of Water | 浅水波をGPUで解き200万個の光子を屈折させて本物のコースティクスを結ぶ。移設時はsafe-areaと展示用metaのみ追加（タッチは元から対応済み） |
 | [/works/infinite-mandala/](https://art.mqri.or.jp/works/infinite-mandala/) | 無限曼荼羅 Infinite Mandala | 対数極座標の無限ズーム。中心のビンドゥには永遠に届かない。ピンチは元から実装済みで、safe-areaと展示用metaのみ追加 |

@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="description" content="HIVE RESONANCE 蜂の巣と周波数 — 六角格子の巣板に周波数を通すと定在波が紋様として立ち上がる。触れて共鳴をはじめる。MQRI ART。">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="HIVE RESONANCE">
+<meta name="theme-color" content="#060302">
+<link rel="manifest" href="manifest.webmanifest">
+<title>HIVE RESONANCE — 蜂の巣と周波数</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #060302; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+  #ui { position: fixed; inset: 0; pointer-events: none; font-family: "Hiragino Mincho ProN", "Yu Mincho", Georgia, serif; }
+
+  header {
+    position: absolute; top: max(28px, env(safe-area-inset-top)); left: max(34px, env(safe-area-inset-left)); color: #e8c87a;
+  }
+  header h1 {
+    font-size: 20px; font-weight: 400; letter-spacing: 0.42em;
+    text-shadow: 0 0 24px rgba(255, 180, 60, 0.35);
+  }
+  header p {
+    margin-top: 8px; font-size: 11px; letter-spacing: 0.28em;
+    color: rgba(232, 200, 122, 0.55);
+  }
+
+  #hint {
+    position: absolute; top: max(30px, env(safe-area-inset-top)); right: max(36px, env(safe-area-inset-right)); text-align: right;
+    font-size: 10.5px; letter-spacing: 0.18em; line-height: 2.1;
+    color: rgba(232, 200, 122, 0.4);
+  }
+
+  #freqbar {
+    position: absolute; bottom: max(30px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
+    display: flex; gap: 8px; align-items: center; pointer-events: auto;
+    padding: 10px 14px; border-radius: 40px;
+    background: rgba(14, 8, 3, 0.55);
+    border: 1px solid rgba(232, 200, 122, 0.18);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  }
+  .pill {
+    font-family: inherit; cursor: pointer; user-select: none;
+    background: transparent; border: 1px solid rgba(232, 200, 122, 0.22);
+    color: rgba(232, 200, 122, 0.72); border-radius: 30px;
+    padding: 7px 13px; font-size: 11.5px; letter-spacing: 0.08em;
+    transition: all 0.45s cubic-bezier(0.22, 1, 0.36, 1); white-space: nowrap;
+  }
+  .pill small { display: block; font-size: 8.5px; letter-spacing: 0.14em; opacity: 0.6; margin-top: 2px; }
+  .pill:hover { border-color: rgba(255, 210, 120, 0.6); color: #ffd98a; }
+  .pill.on {
+    background: rgba(255, 185, 70, 0.14); border-color: rgba(255, 205, 110, 0.85);
+    color: #ffe3a3; box-shadow: 0 0 22px rgba(255, 175, 55, 0.28), inset 0 0 12px rgba(255, 185, 70, 0.10);
+  }
+  #mute {
+    font-family: inherit; cursor: pointer; pointer-events: auto;
+    background: transparent; border: 1px solid rgba(232, 200, 122, 0.22);
+    color: rgba(232, 200, 122, 0.72); border-radius: 50%;
+    width: 38px; height: 38px; font-size: 15px;
+    transition: all 0.45s; flex: none;
+  }
+  #mute:hover { border-color: rgba(255, 210, 120, 0.6); }
+
+  #freqnow {
+    position: absolute; bottom: max(96px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
+    color: rgba(255, 215, 130, 0.85); font-size: 30px; letter-spacing: 0.22em;
+    text-shadow: 0 0 30px rgba(255, 170, 50, 0.4);
+    transition: opacity 1.2s;
+  }
+  #freqnow small { font-size: 12px; letter-spacing: 0.3em; opacity: 0.55; }
+
+  #start {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 18px; cursor: pointer; z-index: 10;
+    background: rgba(5, 3, 1, 0.35); backdrop-filter: blur(2px);
+    transition: opacity 1.6s ease; font-family: "Hiragino Mincho ProN", "Yu Mincho", Georgia, serif;
+  }
+  #start.gone { opacity: 0; pointer-events: none; }
+  #start .ring {
+    width: 92px; height: 92px; border-radius: 50%;
+    border: 1px solid rgba(255, 205, 110, 0.75);
+    display: flex; align-items: center; justify-content: center;
+    color: #ffe3a3; font-size: 30px;
+    box-shadow: 0 0 40px rgba(255, 175, 55, 0.3), inset 0 0 24px rgba(255, 185, 70, 0.12);
+    animation: breathe 3.2s ease-in-out infinite;
+  }
+  @keyframes breathe {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 40px rgba(255,175,55,0.30), inset 0 0 24px rgba(255,185,70,0.12); }
+    50%      { transform: scale(1.07); box-shadow: 0 0 64px rgba(255,175,55,0.50), inset 0 0 30px rgba(255,185,70,0.20); }
+  }
+  #start p { color: rgba(232, 200, 122, 0.8); font-size: 12px; letter-spacing: 0.4em; }
+
+  @media (max-width: 720px) {
+    #freqbar { max-width: 94vw; overflow-x: auto; }
+    header h1 { font-size: 15px; }
+    #hint { display: none; }
+    #freqnow { font-size: 22px; bottom: 104px; }
+  }
+
+  /* touch-action:none が無いと、指の操作をブラウザのスクロールに奪われる */
+  #gl{touch-action:none}
+  html,body{-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+  /* 操作案内は入力デバイスで出し分ける（指にキーボードもホイールも無い）。
+     メディアクエリは初期推定、実際に触られたら html.is-touch が優先する */
+  .touch-only{display:none}
+  @media (pointer:coarse){.pointer-only{display:none}.touch-only{display:inline}}
+  html.is-touch .pointer-only{display:none}
+  html.is-touch .touch-only{display:inline}
+</style>
+<script>addEventListener('touchstart',()=>document.documentElement.classList.add('is-touch'),{once:true,passive:true});</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div id="ui">
+  <header>
+    <h1>HIVE RESONANCE</h1>
+    <p>蜂の巣と周波数 — 音が砂紋を編む</p>
+  </header>
+  <div id="hint">
+    <span class="pointer-only">クリック / ドラッグ — 巣板に触れる<br>
+    数字キー 1–9 — 周波数を変える</span><span class="touch-only">なぞる — 巣板に触れる<br>
+    下の周波数をタップ — 周波数を変える</span>
+  </div>
+  <div id="freqnow"><span id="fval">230</span> <small>Hz</small></div>
+  <div id="freqbar"></div>
+</div>
+
+<div id="start">
+  <div class="ring">◈</div>
+  <p>触れて、共鳴をはじめる</p>
+</div>
+
+<script>
+"use strict";
+/* ================================================================
+   HIVE RESONANCE — 蜂の巣と周波数
+   Chladni standing-wave particle field over a honeycomb lattice,
+   driven by real audible frequencies (Web Audio API).
+   ================================================================ */
+
+const canvas = document.getElementById("gl");
+const gl = canvas.getContext("webgl", { antialias: false, alpha: false, powerPreference: "high-performance" });
+
+const DPR = Math.min(window.devicePixelRatio || 1, 2);
+let W = 0, H = 0, ASPECT = 1;
+
+/* ---------------- frequency modes ---------------- */
+const MODES = [
+  { f: 174, mn: [1, 2], jp: "解放" },
+  { f: 230, mn: [2, 3], jp: "蜂の羽音", bee: true },
+  { f: 285, mn: [1, 4], jp: "促進" },
+  { f: 396, mn: [3, 4], jp: "浄化" },
+  { f: 417, mn: [2, 5], jp: "変容" },
+  { f: 528, mn: [1, 5], jp: "奇跡" },
+  { f: 639, mn: [4, 5], jp: "調和" },
+  { f: 741, mn: [2, 7], jp: "覚醒" },
+  { f: 852, mn: [5, 6], jp: "直感" },
+];
+let modeIdx = 1;
+const mn = { x: 2, y: 3, tx: 2, ty: 3 };   // current & target Chladni mode numbers
+
+/* ---------------- shaders ---------------- */
+const QUAD_VS = `
+attribute vec2 a;
+void main(){ gl_Position = vec4(a, 0.0, 1.0); }`;
+
+const BG_FS = `
+precision highp float;
+uniform vec2  u_res;
+uniform float u_time;
+uniform vec2  u_mn;
+uniform float u_level;
+uniform vec2  u_mouse;
+uniform float u_click;
+const float PI = 3.14159265359;
+
+float hexDist(vec2 p){
+  p = abs(p);
+  return max(dot(p, vec2(0.8660254, 0.5)), p.y);
+}
+vec4 getHex(vec2 p){
+  const vec2 s = vec2(1.0, 1.7320508);
+  vec4 hC = floor(vec4(p, p - vec2(0.5, 1.0)) / s.xyxy) + 0.5;
+  vec4 h  = vec4(p - hC.xy * s, p - (hC.zw + 0.5) * s);
+  return dot(h.xy, h.xy) < dot(h.zw, h.zw)
+       ? vec4(h.xy, hC.xy)
+       : vec4(h.zw, hC.zw + 0.5);
+}
+float chladni(vec2 q, vec2 mn){
+  return cos(mn.x * PI * q.x) * cos(mn.y * PI * q.y)
+       - cos(mn.y * PI * q.x) * cos(mn.x * PI * q.y);
+}
+float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+
+void main(){
+  vec2 frag = gl_FragCoord.xy;
+  vec2 uv = (frag - 0.5 * u_res) / min(u_res.x, u_res.y);   // y in [-0.5, 0.5]
+  vec2 q  = uv * 2.0;                                        // plate coords, y in [-1, 1]
+
+  /* mouse ripple perturbs the plate */
+  vec2 mq = u_mouse;
+  float md = length(q - mq);
+  float ripple = sin(md * 26.0 - u_time * 5.0) * exp(-md * 3.2) * u_click * 0.9;
+
+  /* Chladni field, slight RGB offset for chromatic shimmer */
+  float ca = 0.006;
+  float Fr = chladni(q + vec2( ca, 0.0), u_mn) + ripple;
+  float Fg = chladni(q,                  u_mn) + ripple;
+  float Fb = chladni(q - vec2( ca, 0.0), u_mn) + ripple;
+
+  float lvl = 0.65 + 0.85 * u_level;
+
+  /* nodal lines — where the sand gathers */
+  vec3 line = vec3(
+    exp(-abs(Fr) * 9.0),
+    exp(-abs(Fg) * 9.0),
+    exp(-abs(Fb) * 9.0)
+  );
+  vec3 halo = vec3(
+    exp(-abs(Fr) * 2.6),
+    exp(-abs(Fg) * 2.6),
+    exp(-abs(Fb) * 2.6)
+  );
+
+  /* honeycomb lattice */
+  float hexScale = 7.0;
+  vec4 hx = getHex(uv * hexScale * 2.0);
+  float d = hexDist(hx.xy);
+  vec2 cellCenter = (uv * hexScale * 2.0 - hx.xy) / (hexScale * 2.0) * 2.0;
+  float cellF = chladni(cellCenter, u_mn);
+
+  /* wax walls glow faintly, brighter where the wave is strong */
+  float wall = smoothstep(0.5, 0.44, d) - smoothstep(0.44, 0.30, d);
+  wall = clamp(wall, 0.0, 1.0);
+  float cellPulse = 0.5 + 0.5 * sin(u_time * 0.7 + cellF * 3.0 + hash(hx.zw) * 6.2831);
+  float cellAmp = abs(cellF) * 0.5;
+
+  /* palette */
+  vec3 bgDeep   = vec3(0.030, 0.016, 0.008);
+  vec3 honeyDim = vec3(0.16, 0.075, 0.020);
+  vec3 amber    = vec3(0.95, 0.55, 0.12);
+  vec3 gold     = vec3(1.00, 0.84, 0.42);
+
+  vec3 col = bgDeep;
+
+  /* cell interiors: dim honey, breathing with the standing wave */
+  col += honeyDim * (0.22 + 0.55 * cellAmp) * (0.55 + 0.45 * cellPulse) * smoothstep(0.47, 0.30, d);
+
+  /* wax walls */
+  col += amber * wall * (0.10 + 0.22 * cellAmp * lvl);
+
+  /* the resonance itself */
+  col += amber * halo * 0.16 * lvl;
+  col += gold  * line * 0.42 * lvl;
+  col += vec3(1.0, 0.95, 0.75) * line * line * 0.30 * lvl;
+
+  /* mouse touch glow */
+  col += amber * exp(-md * 4.5) * u_click * 0.25;
+
+  /* vignette + grain */
+  float vig = 1.0 - 0.55 * dot(uv * 1.35, uv * 1.35);
+  col *= max(vig, 0.0);
+  col += (hash(frag + fract(u_time)) - 0.5) * 0.028;
+
+  /* gentle filmic curve */
+  col = col / (1.0 + col * 0.6);
+  col = pow(max(col, 0.0), vec3(0.92));
+
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+const PT_VS = `
+attribute vec2 aPos;
+attribute float aSeed;
+uniform vec2  u_res;
+uniform float u_dpr;
+uniform float u_big;
+varying float vSeed;
+void main(){
+  float aspect = u_res.x / u_res.y;
+  gl_Position = vec4(aPos.x / aspect, aPos.y, 0.0, 1.0);
+  float base = mix(1.3, 2.6, fract(aSeed * 7.13));
+  gl_PointSize = (base + u_big * 6.0) * u_dpr;
+  vSeed = aSeed;
+}`;
+
+const PT_FS = `
+precision highp float;
+uniform float u_big;
+uniform float u_time;
+varying float vSeed;
+void main(){
+  vec2 d = gl_PointCoord - 0.5;
+  float r = length(d);
+  float fall = smoothstep(0.5, 0.02, r);
+  fall *= fall;
+  vec3 gold  = vec3(1.00, 0.82, 0.38);
+  vec3 white = vec3(1.00, 0.96, 0.82);
+  float tw = 0.75 + 0.25 * sin(u_time * (2.0 + fract(vSeed) * 3.0) + vSeed);
+  vec3 col = mix(gold, white, fract(vSeed * 3.7) * 0.4 + u_big * 0.4);
+  float a = fall * (0.32 + 0.55 * u_big) * tw;
+  gl_FragColor = vec4(col * a, a);
+}`;
+
+/* ---------------- GL helpers ---------------- */
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+    throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+function program(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS))
+    throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+
+const bgProg = program(QUAD_VS, BG_FS);
+const ptProg = program(PT_VS, PT_FS);
+
+const quadBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+
+const U = {
+  bg: {
+    res:   gl.getUniformLocation(bgProg, "u_res"),
+    time:  gl.getUniformLocation(bgProg, "u_time"),
+    mn:    gl.getUniformLocation(bgProg, "u_mn"),
+    level: gl.getUniformLocation(bgProg, "u_level"),
+    mouse: gl.getUniformLocation(bgProg, "u_mouse"),
+    click: gl.getUniformLocation(bgProg, "u_click"),
+  },
+  pt: {
+    res:  gl.getUniformLocation(ptProg, "u_res"),
+    dpr:  gl.getUniformLocation(ptProg, "u_dpr"),
+    big:  gl.getUniformLocation(ptProg, "u_big"),
+    time: gl.getUniformLocation(ptProg, "u_time"),
+  },
+};
+const A = {
+  bg: gl.getAttribLocation(bgProg, "a"),
+  pos: gl.getAttribLocation(ptProg, "aPos"),
+  seed: gl.getAttribLocation(ptProg, "aSeed"),
+};
+
+/* ---------------- particles: singing sand ---------------- */
+const N = 15000;
+const pos = new Float32Array(N * 2);
+const vel = new Float32Array(N * 2);
+const seed = new Float32Array(N);
+for (let i = 0; i < N; i++) {
+  pos[i * 2]     = (Math.random() * 2 - 1) * 1.9;
+  pos[i * 2 + 1] = (Math.random() * 2 - 1) * 1.05;
+  seed[i] = Math.random() * 100;
+}
+const posBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+gl.bufferData(gl.ARRAY_BUFFER, pos, gl.DYNAMIC_DRAW);
+const seedBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, seedBuf);
+gl.bufferData(gl.ARRAY_BUFFER, seed, gl.STATIC_DRAW);
+
+/* fireflies — a few worker bees drifting over the comb */
+const NB = 14;
+const bpos = new Float32Array(NB * 2);
+const bang = new Float32Array(NB);
+const bseed = new Float32Array(NB);
+for (let i = 0; i < NB; i++) {
+  bpos[i * 2] = (Math.random() * 2 - 1) * 1.4;
+  bpos[i * 2 + 1] = (Math.random() * 2 - 1) * 0.8;
+  bang[i] = Math.random() * Math.PI * 2;
+  bseed[i] = Math.random() * 100;
+}
+const bposBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, bposBuf);
+gl.bufferData(gl.ARRAY_BUFFER, bpos, gl.DYNAMIC_DRAW);
+const bseedBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, bseedBuf);
+gl.bufferData(gl.ARRAY_BUFFER, bseed, gl.STATIC_DRAW);
+
+const PI = Math.PI;
+function updateParticles(dt, level) {
+  const m = mn.x, n = mn.y;
+  const drive = 0.55 + level * 1.3;         // audio agitates the sand
+  const K = 0.055 * drive;
+  const mx = mouse.x, my = mouse.y;
+  const push = mouse.down ? 0.35 : 0.0;
+  const bound = ASPECT + 0.12;
+
+  for (let i = 0; i < N; i++) {
+    const ix = i * 2, iy = ix + 1;
+    let x = pos[ix], y = pos[iy];
+
+    const cmx = Math.cos(m * PI * x), smx = Math.sin(m * PI * x);
+    const cnx = Math.cos(n * PI * x), snx = Math.sin(n * PI * x);
+    const cmy = Math.cos(m * PI * y), smy = Math.sin(m * PI * y);
+    const cny = Math.cos(n * PI * y), sny = Math.sin(n * PI * y);
+
+    const f  = cmx * cny - cnx * cmy;
+    const fx = (-m * smx * cny + n * snx * cmy) * PI;
+    const fy = (-n * cmx * sny + m * cnx * smy) * PI;
+
+    /* seek nodal lines: descend |f|^2, shake where vibration is strong */
+    let vx = vel[ix] * 0.86 - f * fx * K;
+    let vy = vel[iy] * 0.86 - f * fy * K;
+    const shake = Math.abs(f) * 0.045 * drive;
+    vx += (Math.random() - 0.5) * shake;
+    vy += (Math.random() - 0.5) * shake;
+
+    /* touching the comb scatters the sand */
+    if (push > 0) {
+      const dx = x - mx, dy = y - my;
+      const d2 = dx * dx + dy * dy + 0.002;
+      if (d2 < 0.12) {
+        const inv = push / d2 * 0.016;
+        vx += dx * inv; vy += dy * inv;
+      }
+    }
+
+    const sp = vx * vx + vy * vy;
+    if (sp > 0.01) { const s = 0.1 / Math.sqrt(sp); vx *= s; vy *= s; }
+
+    x += vx * dt * 60;
+    y += vy * dt * 60;
+    if (x >  bound) x = -bound; else if (x < -bound) x = bound;
+    if (y >  1.12)  y = -1.12;  else if (y < -1.12)  y = 1.12;
+
+    pos[ix] = x; pos[iy] = y;
+    vel[ix] = vx; vel[iy] = vy;
+  }
+}
+
+function updateBees(t, dt) {
+  for (let i = 0; i < NB; i++) {
+    const ix = i * 2, iy = ix + 1;
+    bang[i] += (Math.sin(t * 0.9 + bseed[i] * 3.1) + Math.sin(t * 1.7 + bseed[i])) * 1.4 * dt;
+    let x = bpos[ix] + Math.cos(bang[i]) * 0.11 * dt;
+    let y = bpos[iy] + Math.sin(bang[i]) * 0.11 * dt;
+    /* steer back toward the comb */
+    if (Math.abs(x) > ASPECT * 0.92 || Math.abs(y) > 0.88) {
+      bang[i] = Math.atan2(-y, -x) + (Math.random() - 0.5) * 0.6;
+    }
+    bpos[ix] = x; bpos[iy] = y;
+  }
+}
+
+/* ---------------- audio ---------------- */
+let AC = null, master = null, analyser = null, tdata = null;
+let osc1, osc2, sub, buzz, buzzGain, buzzLFO, buzzDepth;
+let muted = false, level = 0;
+
+function initAudio() {
+  AC = new (window.AudioContext || window.webkitAudioContext)();
+  master = AC.createGain();
+  master.gain.value = 0;
+  const comp = AC.createDynamicsCompressor();
+  comp.threshold.value = -20; comp.ratio.value = 6;
+  analyser = AC.createAnalyser();
+  analyser.fftSize = 2048;
+  tdata = new Uint8Array(analyser.fftSize);
+  master.connect(comp); comp.connect(analyser); analyser.connect(AC.destination);
+
+  const f = MODES[modeIdx].f;
+
+  osc1 = AC.createOscillator(); osc1.type = "sine"; osc1.frequency.value = f;
+  osc2 = AC.createOscillator(); osc2.type = "sine"; osc2.frequency.value = f * 1.004;
+  sub  = AC.createOscillator(); sub.type = "sine";  sub.frequency.value = f / 2;
+
+  const g1 = AC.createGain(); g1.gain.value = 0.42;
+  const g2 = AC.createGain(); g2.gain.value = 0.30;
+  const g3 = AC.createGain(); g3.gain.value = 0.14;
+  osc1.connect(g1); osc2.connect(g2); sub.connect(g3);
+
+  const lp = AC.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 2400;
+  g1.connect(lp); g2.connect(lp); g3.connect(lp);
+  lp.connect(master);
+
+  /* bee wing hum: sawtooth through a resonant bandpass, fluttered ~26 Hz */
+  buzz = AC.createOscillator(); buzz.type = "sawtooth"; buzz.frequency.value = f;
+  const bp = AC.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = f * 2; bp.Q.value = 4;
+  buzzGain = AC.createGain(); buzzGain.gain.value = MODES[modeIdx].bee ? 0.10 : 0;
+  buzzLFO = AC.createOscillator(); buzzLFO.frequency.value = 26;
+  buzzDepth = AC.createGain(); buzzDepth.gain.value = 0.045;
+  buzzLFO.connect(buzzDepth); buzzDepth.connect(buzzGain.gain);
+  buzz.connect(bp); bp.connect(buzzGain); buzzGain.connect(master);
+
+  osc1.start(); osc2.start(); sub.start(); buzz.start(); buzzLFO.start();
+  master.gain.setTargetAtTime(0.20, AC.currentTime, 1.2);
+}
+
+function setMode(i) {
+  modeIdx = i;
+  const md = MODES[i];
+  mn.tx = md.mn[0]; mn.ty = md.mn[1];
+  document.getElementById("fval").textContent = md.f;
+  document.querySelectorAll(".pill").forEach((b, j) => b.classList.toggle("on", j === i));
+  if (AC) {
+    const t = AC.currentTime;
+    osc1.frequency.exponentialRampToValueAtTime(md.f, t + 1.4);
+    osc2.frequency.exponentialRampToValueAtTime(md.f * 1.004, t + 1.4);
+    sub.frequency.exponentialRampToValueAtTime(md.f / 2, t + 1.4);
+    buzz.frequency.exponentialRampToValueAtTime(md.f, t + 1.4);
+    buzzGain.gain.setTargetAtTime(md.bee ? 0.10 : 0, t, 0.6);
+  }
+}
+
+function readLevel() {
+  if (!analyser) return;
+  analyser.getByteTimeDomainData(tdata);
+  let sum = 0;
+  for (let i = 0; i < tdata.length; i += 4) {
+    const v = (tdata[i] - 128) / 128;
+    sum += v * v;
+  }
+  const rms = Math.sqrt(sum / (tdata.length / 4));
+  level += (Math.min(rms * 4, 1) - level) * 0.06;
+}
+
+/* ---------------- UI ---------------- */
+const bar = document.getElementById("freqbar");
+MODES.forEach((m, i) => {
+  const b = document.createElement("button");
+  b.className = "pill" + (i === modeIdx ? " on" : "");
+  b.innerHTML = `${m.bee ? "🐝 " : ""}${m.f}<small>${m.jp}</small>`;
+  b.addEventListener("click", (e) => { e.stopPropagation(); setMode(i); });
+  bar.appendChild(b);
+});
+const muteBtn = document.createElement("button");
+muteBtn.id = "mute";
+muteBtn.textContent = "♪";
+muteBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  muted = !muted;
+  muteBtn.textContent = muted ? "∅" : "♪";
+  if (AC) master.gain.setTargetAtTime(muted ? 0 : 0.20, AC.currentTime, 0.4);
+});
+bar.appendChild(muteBtn);
+
+window.addEventListener("keydown", (e) => {
+  const k = parseInt(e.key, 10);
+  if (k >= 1 && k <= MODES.length) setMode(k - 1);
+});
+
+const startEl = document.getElementById("start");
+let started = false;
+function begin() {
+  if (started) return;
+  started = true;
+  initAudio();
+  startEl.classList.add("gone");
+}
+startEl.addEventListener("click", begin);
+
+/* mouse in plate coords */
+const mouse = { x: 10, y: 10, down: false, click: 0 };
+function toPlate(cx, cy) {
+  const r = canvas.getBoundingClientRect();
+  const u = (cx - r.left) / r.width - 0.5;
+  const v = 0.5 - (cy - r.top) / r.height;
+  const s = Math.min(r.width, r.height);
+  mouse.x = u * r.width / s * 2;
+  mouse.y = v * r.height / s * 2;
+}
+window.addEventListener("pointermove", (e) => toPlate(e.clientX, e.clientY));
+window.addEventListener("pointerdown", (e) => {
+  begin();
+  toPlate(e.clientX, e.clientY);
+  mouse.down = true;
+  mouse.click = 1;
+});
+window.addEventListener("pointerup", () => { mouse.down = false; });
+
+/* ---------------- resize & loop ---------------- */
+function resize() {
+  W = Math.floor(innerWidth * DPR);
+  H = Math.floor(innerHeight * DPR);
+  canvas.width = W; canvas.height = H;
+  ASPECT = W / H;
+  gl.viewport(0, 0, W, H);
+}
+window.addEventListener("resize", resize);
+resize();
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 0.05);
+  last = now;
+  const t = now / 1000;
+
+  /* morph Chladni mode numbers toward target */
+  mn.x += (mn.tx - mn.x) * (1 - Math.exp(-dt * 1.6));
+  mn.y += (mn.ty - mn.y) * (1 - Math.exp(-dt * 1.6));
+
+  readLevel();
+  mouse.click *= Math.exp(-dt * 1.8);
+  if (mouse.down) mouse.click = Math.min(mouse.click + dt * 3, 1);
+
+  updateParticles(dt, started && !muted ? level : 0.25);
+  updateBees(t, dt);
+
+  /* background */
+  gl.disable(gl.BLEND);
+  gl.useProgram(bgProg);
+  gl.uniform2f(U.bg.res, W, H);
+  gl.uniform1f(U.bg.time, t);
+  gl.uniform2f(U.bg.mn, mn.x, mn.y);
+  gl.uniform1f(U.bg.level, started && !muted ? level : 0.3);
+  gl.uniform2f(U.bg.mouse, mouse.x, mouse.y);
+  gl.uniform1f(U.bg.click, mouse.click);
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.enableVertexAttribArray(A.bg);
+  gl.vertexAttribPointer(A.bg, 2, gl.FLOAT, false, 0, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  /* sand */
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.useProgram(ptProg);
+  gl.uniform2f(U.pt.res, W, H);
+  gl.uniform1f(U.pt.dpr, DPR);
+  gl.uniform1f(U.pt.time, t);
+  gl.uniform1f(U.pt.big, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, pos);
+  gl.enableVertexAttribArray(A.pos);
+  gl.vertexAttribPointer(A.pos, 2, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, seedBuf);
+  gl.enableVertexAttribArray(A.seed);
+  gl.vertexAttribPointer(A.seed, 1, gl.FLOAT, false, 0, 0);
+  gl.drawArrays(gl.POINTS, 0, N);
+
+  /* bees */
+  gl.uniform1f(U.pt.big, 1);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bposBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, bpos);
+  gl.vertexAttribPointer(A.pos, 2, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bseedBuf);
+  gl.vertexAttribPointer(A.seed, 1, gl.FLOAT, false, 0, 0);
+  gl.drawArrays(gl.POINTS, 0, NB);
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

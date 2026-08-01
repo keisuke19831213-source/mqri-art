@@ -1,0 +1,10 @@
+{
+  "name": "環",
+  "short_name": "環",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#101322",
+  "theme_color": "#101322",
+  "start_url": ".",
+  "icons": []
+}
