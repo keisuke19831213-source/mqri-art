@@ -31,6 +31,36 @@
       "source": "/hopf-loom/:path+",
       "destination": "/works/hopf-loom/:path+",
       "permanent": true
+    },
+    {
+      "source": "/works/nijushisekki-ring/",
+      "destination": "/works/sekki-circle/",
+      "permanent": true
+    },
+    {
+      "source": "/works/nijushisekki-ring",
+      "destination": "/works/sekki-circle/",
+      "permanent": true
+    },
+    {
+      "source": "/works/nijushisekki-ring/:path+",
+      "destination": "/works/sekki-circle/",
+      "permanent": true
+    },
+    {
+      "source": "/works/healing-tones/",
+      "destination": "/tools/healing-tones/",
+      "permanent": true
+    },
+    {
+      "source": "/works/healing-tones",
+      "destination": "/tools/healing-tones/",
+      "permanent": true
+    },
+    {
+      "source": "/works/healing-tones/:path+",
+      "destination": "/tools/healing-tones/:path+",
+      "permanent": true
     }
   ]
 }
