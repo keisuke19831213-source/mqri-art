@@ -47,6 +47,10 @@
   .shelf-h{margin:0 0 22px;font:400 15px/1.6 "Hiragino Mincho ProN","Yu Mincho",serif;
     color:var(--gold-dim);letter-spacing:.36em}
   .shelf-h .en{display:block;margin-top:7px;font-size:9.5px;color:rgba(207,214,228,.32);letter-spacing:.24em}
+  /* 見出しごとリンクにする。inline のままだと中の .en が display:block なので当たり判定が
+     「道具」の2文字ぶんに縮む。block にして見出しの幅いっぱいを指で押せるようにする */
+  .shelf-h a{display:block;color:inherit;text-decoration:none;transition:color .25s ease}
+  .shelf-h a:hover,.shelf-h a:focus-visible{color:var(--gold)}
   footer{margin-top:14vh;font-size:10px;color:rgba(207,214,228,.32);letter-spacing:.2em;line-height:2}
   footer a{color:rgba(207,214,228,.45);text-decoration:none}
   @media (max-width:600px){
@@ -207,7 +211,7 @@
   <hr class="rule shelf-rule">
 
   <div class="shelf">
-    <h2 class="shelf-h">道具<span class="en">TOOLS — MADE TO BE USED, NOT WATCHED</span></h2>
+    <h2 class="shelf-h"><a href="/tools/">道具<span class="en">TOOLS — MADE TO BE USED, NOT WATCHED</span></a></h2>
     <div class="works">
     <a class="work" href="/tools/healing-tones/">
       <h2>Healing&nbsp;Tones</h2>
