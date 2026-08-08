@@ -1,0 +1,10 @@
+{
+  "name": "朔望 — SOL TERRA LVNA",
+  "short_name": "朔望",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#05070d",
+  "theme_color": "#05070d",
+  "start_url": ".",
+  "icons": []
+}

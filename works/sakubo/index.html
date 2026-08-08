@@ -1,0 +1,714 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="太陽・地球・月の三体の運行。月の満ち欠け・月齢と和名・大潮小潮・日食月食を、実際の暦のとおりに体験するインタラクティブアート。">
+<meta name="theme-color" content="#05070d">
+<meta property="og:title" content="朔望 ─ SOL TERRA LVNA">
+<meta property="og:description" content="月は地球をめぐり、めぐりながら共に太陽をめぐる。三つがひとすじに並ぶ日、潮は満ち、光は欠ける。">
+<meta property="og:type" content="website">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="朔望">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2305070d'/%3E%3Ccircle cx='16' cy='16' r='9' fill='%23161c2b'/%3E%3Cpath d='M16 7a9 9 0 0 0 0 18 7 9 0 0 1 0-18z' fill='%23e9eef6'/%3E%3C/svg%3E">
+<title>朔望 ─ SOL TERRA LVNA</title>
+<style>
+  :root{
+    --ink:#05070d;
+    --moon:#e9eef6;
+    --haze:#8b95ad;
+    --haze-dim:rgba(139,149,173,.55);
+    --silver:#b9c8de;
+    --silver-dim:rgba(185,200,222,.45);
+    --line:rgba(185,200,222,.2);
+    --sun:#ffd98a;
+    --serif:"Hiragino Mincho ProN","Hiragino Serif","Yu Mincho","Noto Serif JP","Times New Roman",serif;
+  }
+  html,body{margin:0;padding:0;background:var(--ink);overscroll-behavior:none;}
+  #stage{position:fixed;inset:0;overflow:hidden;background:var(--ink);
+    font-family:var(--serif);color:var(--haze);user-select:none;-webkit-user-select:none;}
+  canvas{position:absolute;inset:0;display:block;}
+  #sky{touch-action:none;cursor:grab;}
+  #sky.dragging{cursor:grabbing;}
+  #vignette{position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(ellipse at 44% 46%,transparent 55%,rgba(2,4,9,.55) 100%);}
+
+  /* ── 題字 ── */
+  #titleBlock{position:absolute;top:28px;right:26px;display:flex;flex-direction:row-reverse;
+    gap:14px;pointer-events:none;z-index:3;}
+  #titleBlock h1{writing-mode:vertical-rl;margin:0;font-size:clamp(26px,4.2vh,38px);
+    font-weight:500;letter-spacing:.5em;color:var(--moon);text-shadow:0 0 18px rgba(185,200,222,.3);}
+  #titleBlock .latin{writing-mode:vertical-rl;font-size:9px;letter-spacing:.5em;
+    color:var(--silver-dim);align-self:flex-start;padding-top:6px;}
+
+  /* ── 月の窓 ── */
+  #moonPanel{position:absolute;right:5vw;top:50%;transform:translateY(-46%);
+    display:flex;flex-direction:column;align-items:center;gap:10px;pointer-events:none;z-index:2;}
+  #phase{position:static;width:min(26vmin,220px);height:min(26vmin,220px);}
+  #moonName{font-size:clamp(15px,2.2vmin,20px);letter-spacing:.3em;color:var(--moon);
+    text-indent:.3em;white-space:nowrap;}
+  #moonAge{font-size:10.5px;letter-spacing:.24em;color:var(--haze-dim);
+    font-variant-numeric:tabular-nums;white-space:nowrap;}
+  #moonNote{font-size:8.5px;letter-spacing:.2em;color:var(--haze-dim);opacity:.6;white-space:nowrap;}
+
+  /* ── 読み出し ── */
+  #readout{position:absolute;left:26px;bottom:140px;pointer-events:none;max-width:56vw;z-index:2;}
+  #poem{margin:0 0 10px;font-size:12.5px;letter-spacing:.14em;line-height:2;color:var(--haze);opacity:.85;}
+  #date{margin:0;font-size:21px;letter-spacing:.14em;color:var(--moon);
+    font-variant-numeric:tabular-nums;}
+  #sub{margin:5px 0 0;font-size:10.5px;letter-spacing:.2em;color:var(--silver-dim);
+    font-variant-numeric:tabular-nums;min-height:16px;}
+  #sub .ev{color:var(--sun);}
+  #sub .tide{color:var(--silver);}
+
+  /* ── 操作 ── */
+  #controls{position:absolute;left:24px;right:24px;bottom:24px;display:flex;align-items:center;
+    gap:12px;flex-wrap:wrap;z-index:3;}
+  #controls button{background:rgba(10,14,26,.55);border:1px solid var(--line);
+    color:var(--haze);font-family:var(--serif);font-size:11.5px;letter-spacing:.2em;
+    padding:7px 13px;cursor:pointer;transition:color .25s,border-color .25s;border-radius:2px;}
+  #controls button:hover{color:var(--moon);border-color:var(--silver-dim);}
+  #controls button:focus-visible{outline:1px dashed var(--silver);outline-offset:3px;}
+  #pauseBtn{min-width:92px;}
+  #speed{-webkit-appearance:none;appearance:none;flex:1;min-width:120px;max-width:280px;
+    height:18px;background:none;cursor:pointer;}
+  #speed::-webkit-slider-runnable-track{height:1px;background:var(--line);}
+  #speed::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;
+    background:#cfd8ea;margin-top:-5px;box-shadow:0 0 8px rgba(207,216,234,.6);}
+  #speed::-moz-range-track{height:1px;background:var(--line);}
+  #speed::-moz-range-thumb{width:11px;height:11px;border:none;border-radius:50%;background:#cfd8ea;}
+
+  /* ── ヒント・ツールチップ ── */
+  #hint{position:absolute;left:50%;top:34px;transform:translateX(-50%);
+    font-size:11px;letter-spacing:.28em;color:var(--haze-dim);pointer-events:none;
+    transition:opacity 2.2s;white-space:nowrap;max-width:52vw;overflow:hidden;text-overflow:ellipsis;z-index:3;}
+  #hint.gone{opacity:0;}
+  #tip{position:absolute;pointer-events:none;font-size:11px;letter-spacing:.16em;
+    color:var(--moon);text-shadow:0 1px 6px #000;opacity:0;transition:opacity .2s;white-space:nowrap;z-index:3;}
+  #tip small{display:block;color:var(--silver-dim);font-size:9.5px;margin-top:2px;letter-spacing:.12em;}
+
+  /* 狭い画面 */
+  @media (max-width:640px){
+    #titleBlock{top:18px;right:14px;}
+    #titleBlock h1{font-size:clamp(22px,3.4vh,30px);letter-spacing:.4em;}
+    #moonPanel{right:14px;top:88px;transform:none;gap:6px;}
+    #phase{width:24vw;height:24vw;}
+    #moonName{font-size:12px;}
+    #moonAge{font-size:9px;}
+    #readout{top:auto;bottom:184px;left:16px;max-width:74vw;}
+    #date{font-size:17px;}
+    #poem{font-size:11px;}
+    #controls{left:14px;right:14px;bottom:16px;gap:8px;}
+    #controls button{padding:6px 10px;letter-spacing:.12em;}
+    #speed{min-width:100%;max-width:none;margin-top:2px;}
+    #hint{top:auto;bottom:150px;left:16px;transform:none;
+      font-size:10px;letter-spacing:.14em;max-width:calc(100vw - 32px);}
+  }
+  /* 低い画面 */
+  @media (max-height:560px){
+    #poem{display:none;}
+    #date{font-size:15px;}
+    #readout{bottom:auto;top:24px;left:24px;max-width:none;}
+    #moonPanel{right:4vw;top:50%;transform:translateY(-50%);}
+    #phase{width:20vmin;height:20vmin;}
+    #hint{display:none;}
+  }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <canvas id="trails"></canvas>
+  <canvas id="sky"></canvas>
+  <div id="vignette"></div>
+
+  <header id="titleBlock" aria-hidden="true">
+    <h1>朔望</h1><span class="latin">SOL&nbsp;·&nbsp;TERRA&nbsp;·&nbsp;LVNA</span>
+  </header>
+
+  <aside id="moonPanel" aria-label="今夜の月">
+    <canvas id="phase"></canvas>
+    <div id="moonName"></div>
+    <div id="moonAge"></div>
+    <div id="moonNote">めぐりの絵の、月の輪は四十倍</div>
+  </aside>
+
+  <div id="readout">
+    <p id="poem">月は地球をめぐり、めぐりながら共に太陽をめぐる。<br>三つがひとすじに並ぶ日、潮は満ち、光は欠ける。</p>
+    <p id="date"></p>
+    <p id="sub"></p>
+  </div>
+
+  <div id="controls">
+    <button id="pauseBtn">とめる</button>
+    <button id="todayBtn">今日へ</button>
+    <button id="newBtn">次の朔</button>
+    <button id="fullBtn">次の望</button>
+    <button id="eclBtn">次の食</button>
+    <button id="wipeBtn">軌跡を拭う</button>
+    <input id="speed" type="range" min="-1.3" max="2.2" step="0.01" value="0.48"
+      aria-label="時の速さ">
+  </div>
+
+  <div id="hint">よこにドラッグ ─ 時がながれる &emsp; ホイール ─ 遠近 &emsp; 星にふれる ─ 名がともる</div>
+  <div id="tip"></div>
+</div>
+
+<script>
+'use strict';
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const J2000_MS = 946728000000;
+const AU_KM = 149597870.7;
+const SYNODIC = 29.530588, SYN_RATE = 360 / SYNODIC; // °/day
+const EXAG = 40; // 月の軌道の誇張倍率
+
+/* ── 地球 (J2000 平均要素・ケプラー) ── */
+const EARTH = {a:1.00000, e:0.01671, L0:100.4645, vp:102.9377, dL:35999.3725};
+function earthPos(t){
+  const cy = t / 36525;
+  const L = EARTH.L0 + EARTH.dL * cy;
+  const M = ((L - EARTH.vp) % 360) * D2R;
+  let E = M + EARTH.e * Math.sin(M);
+  for(let i = 0; i < 5; i++) E -= (E - EARTH.e * Math.sin(E) - M) / (1 - EARTH.e * Math.cos(E));
+  const xv = EARTH.a * (Math.cos(E) - EARTH.e);
+  const yv = EARTH.a * Math.sqrt(1 - EARTH.e * EARTH.e) * Math.sin(E);
+  const w = EARTH.vp * D2R, cw = Math.cos(w), sw = Math.sin(w);
+  return {x: cw * xv - sw * yv, y: sw * xv + cw * yv};
+}
+
+/* ── 月 (主要摂動項つき略算 — 黄経 ~0.2°・黄緯 ~0.1° 程度) ── */
+function moonGeo(t){
+  const Ls = 280.459 + 0.98564736 * t;          // 太陽平均黄経
+  const Ms = (357.529 + 0.98560028 * t) * D2R;  // 太陽平均近点角
+  const Lm = 218.316 + 13.176396 * t;           // 月平均黄経
+  const M  = (134.963 + 13.064993 * t) * D2R;   // 月平均近点角
+  const F  = (93.272 + 13.229350 * t) * D2R;    // 昇交点からの引数
+  const D  = (Lm - Ls) * D2R;                   // 平均離角
+  const lon = Lm
+    + 6.289 * Math.sin(M)
+    - 1.274 * Math.sin(M - 2 * D)      // 出差
+    + 0.658 * Math.sin(2 * D)          // 二均差
+    + 0.214 * Math.sin(2 * M)
+    - 0.186 * Math.sin(Ms)             // 年差
+    - 0.114 * Math.sin(2 * F)
+    - 0.059 * Math.sin(2 * M - 2 * D)
+    - 0.057 * Math.sin(M - 2 * D + Ms)
+    + 0.053 * Math.sin(M + 2 * D)
+    + 0.046 * Math.sin(2 * D - Ms)
+    + 0.041 * Math.sin(M - Ms)
+    - 0.035 * Math.sin(D)              // 月角差
+    - 0.031 * Math.sin(M + Ms)
+    - 0.015 * Math.sin(2 * F - 2 * D)
+    + 0.011 * Math.sin(M - 4 * D);
+  const lat = 5.128 * Math.sin(F)
+    + 0.281 * Math.sin(M + F)
+    + 0.278 * Math.sin(M - F)
+    - 0.173 * Math.sin(F - 2 * D)
+    - 0.055 * Math.sin(M - F - 2 * D)
+    - 0.046 * Math.sin(M + F - 2 * D)
+    + 0.033 * Math.sin(F + 2 * D)
+    + 0.017 * Math.sin(2 * M + F);
+  const dist = 385001
+    - 20905 * Math.cos(M)
+    - 3699 * Math.cos(2 * D - M)
+    - 2956 * Math.cos(2 * D)
+    - 570 * Math.cos(2 * M); // km
+  return {lon: ((lon % 360) + 360) % 360, lat, dist};
+}
+const norm360 = a => ((a % 360) + 360) % 360;
+function sunLonAt(t){ const e = earthPos(t); return norm360(Math.atan2(-e.y, -e.x) / D2R); }
+function elong(t){ return norm360(moonGeo(t).lon - sunLonAt(t)); } // 離角 D
+function moonWorld(t, ep){
+  const g = moonGeo(t);
+  const r = g.dist / AU_KM * EXAG;
+  return {x: ep.x + r * Math.cos(g.lon * D2R), y: ep.y + r * Math.sin(g.lon * D2R)};
+}
+
+/* ── 月齢と和名 ── */
+function moonAge(t){ return elong(t) / 360 * SYNODIC; }
+function moonName(age){
+  if(age < 0.75) return '朔 ── 新月';
+  if(age < 2.5)  return '繊月';
+  if(age < 3.7)  return '三日月';
+  if(age < 6.2)  return '夕月';
+  if(age < 8.2)  return '上弦の月';
+  if(age < 9.7)  return '九夜月';
+  if(age < 11.5) return '十日夜の月';
+  if(age < 13.2) return '十三夜の月';
+  if(age < 14.2) return '小望月';
+  if(age < 15.8) return '望 ── 満月';
+  if(age < 16.8) return '十六夜';
+  if(age < 17.8) return '立待月';
+  if(age < 18.8) return '居待月';
+  if(age < 19.8) return '寝待月';
+  if(age < 20.8) return '更待月';
+  if(age < 22.6) return '下つ弓張';
+  if(age < 23.8) return '下弦の月';
+  if(age < 26.5) return '有明の月';
+  if(age < 28.8) return '暁月';
+  return '晦 ── つごもり';
+}
+
+/* ── 朔望・食の探索 ── */
+const angDiff = (a, b) => ((a - b + 540) % 360) - 180; // 符号つき差 [-180,180)
+function nextSyzygy(t, target){
+  let dt = norm360(target - elong(t)) / SYN_RATE;
+  if(dt < 0.05) dt += SYNODIC;
+  let tt = t + dt;
+  for(let i = 0; i < 6; i++) tt -= angDiff(elong(tt), target) / SYN_RATE;
+  return tt;
+}
+function isEclipseAt(t, target){
+  const b = Math.abs(moonGeo(t).lat);
+  return target === 0 ? b < 1.35 : b < 0.95; // 日食 / 本影月食のおおよその黄緯限界
+}
+function nextEclipse(t0){
+  let t = t0 + 0.5;
+  for(let i = 0; i < 200; i++){
+    const tn = nextSyzygy(t, 0), tf = nextSyzygy(t, 180);
+    const list = tn < tf ? [[tn, 0], [tf, 180]] : [[tf, 180], [tn, 0]];
+    for(const [tc, tg] of list) if(isEclipseAt(tc, tg)) return tc;
+    t = Math.max(tn, tf) + 1;
+  }
+  return t0;
+}
+function eclipseNow(t){
+  const D = elong(t), b = Math.abs(moonGeo(t).lat);
+  if((D < 1.9 || D > 358.1) && b < 1.35) return 'solar';
+  if(Math.abs(D - 180) < 1.7 && b < 0.95) return 'lunar';
+  return null;
+}
+
+/* ── 画布 ── */
+const sky = document.getElementById('sky'), trailC = document.getElementById('trails');
+const sctx = sky.getContext('2d'), tctx = trailC.getContext('2d');
+const phaseC = document.getElementById('phase'), pctx = phaseC.getContext('2d');
+const tmp = document.createElement('canvas'), tmpx = tmp.getContext('2d');
+let W = 0, H = 0, DPR = 1, CX = 0, CY = 0, PR = 0; // PR = 月の窓の半径(css px)
+let fitScale = 1, zoomFactor = 1;
+let stars = [];
+
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  CX = W > 760 ? W * 0.42 : W * 0.5;
+  CY = H * 0.5;
+  for(const c of [sky, trailC]){ c.width = W * DPR; c.height = H * DPR; c.style.width = W + 'px'; c.style.height = H + 'px'; }
+  sctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  tctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const pcss = phaseC.getBoundingClientRect().width;
+  PR = pcss / 2;
+  phaseC.width = pcss * DPR; phaseC.height = pcss * DPR;
+  pctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  fitScale = Math.min(W, H) * 0.36 / 1.05;
+  makeStars();
+}
+const scaleOf = () => fitScale * zoomFactor;
+const SX = x => CX + x * scaleOf(), SY = y => CY - y * scaleOf();
+
+function makeStars(){
+  stars = [];
+  const R = Math.hypot(W, H) / 2 + 60;
+  const n = Math.min(1000, Math.round(W * H / 1900));
+  for(let i = 0; i < n; i++){
+    stars.push({ r: Math.sqrt(Math.random()) * R, th: Math.random() * TAU,
+      s: Math.random() < 0.85 ? 0.5 + Math.random() * 0.7 : 1.1 + Math.random() * 0.7,
+      a: 0.12 + Math.random() * 0.5, ph: Math.random() * TAU, f: 0.3 + Math.random() * 1.3,
+      c: Math.random() < 0.1 ? '#9fc0e8' : '#eef1f8' });
+  }
+  const band = -0.45;
+  for(let i = 0; i < n * 0.5; i++){
+    const along = (Math.random() - 0.5) * R * 2.2;
+    const off = (Math.random() + Math.random() + Math.random() - 1.5) * 85;
+    const x = Math.cos(band) * along - Math.sin(band) * off;
+    const y = Math.sin(band) * along + Math.cos(band) * off;
+    stars.push({ r: Math.hypot(x, y), th: Math.atan2(y, x), s: 0.4 + Math.random() * 0.5,
+      a: 0.04 + Math.random() * 0.16, ph: Math.random() * TAU, f: 0.2 + Math.random(), c: '#dbe2f0' });
+  }
+}
+
+/* ── 状態 ── */
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let simT = (Date.now() - J2000_MS) / 864e5;
+let playing = !reduced;
+let dragDays = 0;
+const bodiesOnScreen = [];
+
+const $ = id => document.getElementById(id);
+const speedEl = $('speed'), dateEl = $('date'), subEl = $('sub'),
+      nameEl = $('moonName'), ageEl = $('moonAge'), tipEl = $('tip'), pauseBtn = $('pauseBtn');
+const daysPerSec = () => Math.pow(10, parseFloat(speedEl.value));
+
+/* ── 軌跡 ── */
+function clearTrails(){
+  tctx.save(); tctx.setTransform(1, 0, 0, 1, 0, 0);
+  tctx.clearRect(0, 0, trailC.width, trailC.height); tctx.restore();
+}
+function fadeTrails(){
+  tctx.save(); tctx.globalCompositeOperation = 'destination-out';
+  tctx.fillStyle = 'rgba(0,0,0,0.012)';
+  tctx.fillRect(0, 0, W, H); tctx.restore();
+}
+function rescaleTrails(k){
+  tmp.width = trailC.width; tmp.height = trailC.height;
+  tmpx.clearRect(0, 0, tmp.width, tmp.height);
+  tmpx.drawImage(trailC, 0, 0);
+  tctx.save(); tctx.setTransform(1, 0, 0, 1, 0, 0);
+  tctx.clearRect(0, 0, trailC.width, trailC.height);
+  const dcx = CX * DPR, dcy = CY * DPR;
+  tctx.translate(dcx, dcy); tctx.scale(k, k); tctx.translate(-dcx, -dcy);
+  tctx.drawImage(tmp, 0, 0);
+  tctx.restore();
+}
+function drawTrailSegments(t0, t1){
+  const dt = t1 - t0;
+  if(dt === 0) return;
+  tctx.lineCap = 'round';
+  // 地球
+  {
+    const steps = Math.min(120, Math.max(1, Math.ceil(Math.abs(dt) / 1.5)));
+    tctx.strokeStyle = '#7fb4d9'; tctx.globalAlpha = 0.45; tctx.lineWidth = 1.1;
+    tctx.beginPath();
+    for(let k = 0; k <= steps; k++){
+      const e = earthPos(t0 + dt * k / steps);
+      k === 0 ? tctx.moveTo(SX(e.x), SY(e.y)) : tctx.lineTo(SX(e.x), SY(e.y));
+    }
+    tctx.stroke();
+  }
+  // 月 — 三つ編みの銀の道
+  {
+    const steps = Math.min(120, Math.max(1, Math.ceil(Math.abs(dt) / 0.35)));
+    tctx.strokeStyle = '#cfd8ea'; tctx.globalAlpha = 0.5; tctx.lineWidth = 1;
+    tctx.beginPath();
+    for(let k = 0; k <= steps; k++){
+      const t = t0 + dt * k / steps;
+      const m = moonWorld(t, earthPos(t));
+      k === 0 ? tctx.moveTo(SX(m.x), SY(m.y)) : tctx.lineTo(SX(m.x), SY(m.y));
+    }
+    tctx.stroke();
+  }
+  tctx.globalAlpha = 1;
+}
+
+/* ── 空 ── */
+function drawStars(now){
+  const rot = simT / 365250 * TAU;
+  for(const st of stars){
+    const a = st.th + rot;
+    sctx.globalAlpha = st.a * (0.72 + 0.28 * Math.sin(now * 0.001 * st.f + st.ph));
+    sctx.fillStyle = st.c;
+    sctx.beginPath();
+    sctx.arc(CX + st.r * Math.cos(a), CY + st.r * Math.sin(a), st.s, 0, TAU);
+    sctx.fill();
+  }
+  sctx.globalAlpha = 1;
+}
+function glow(x, y, r, mid, core){
+  const g = sctx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, core); g.addColorStop(0.35, mid); g.addColorStop(1, 'rgba(0,0,0,0)');
+  sctx.fillStyle = g;
+  sctx.beginPath(); sctx.arc(x, y, r, 0, TAU); sctx.fill();
+}
+function labelAt(x, y, text){
+  sctx.globalAlpha = 0.55;
+  sctx.fillStyle = '#aeb6cb';
+  sctx.font = '11px ' + getComputedStyle(document.body).getPropertyValue('--serif');
+  sctx.fillText(text, x + 8, y - 8);
+  sctx.globalAlpha = 1;
+}
+
+function drawScene(now){
+  sctx.clearRect(0, 0, W, H);
+  drawStars(now);
+  bodiesOnScreen.length = 0;
+  const s = scaleOf();
+  const ep = earthPos(simT);
+  const mg = moonGeo(simT);
+  const mw = moonWorld(simT, ep);
+  const ex = SX(ep.x), ey = SY(ep.y);
+  const mx = SX(mw.x), my = SY(mw.y);
+  const ecl = eclipseNow(simT);
+  const D = elong(simT);
+
+  // 地球の軌道
+  sctx.strokeStyle = 'rgba(139,149,173,.14)'; sctx.lineWidth = 0.7;
+  sctx.beginPath();
+  for(let i = 0; i <= 180; i++){
+    const e = earthPos(simT - 365.25 * i / 180); // 一年ぶんの実軌道
+    i === 0 ? sctx.moveTo(SX(e.x), SY(e.y)) : sctx.lineTo(SX(e.x), SY(e.y));
+  }
+  sctx.stroke();
+  // 月の軌道 (今の一周)
+  sctx.strokeStyle = 'rgba(207,216,234,.12)';
+  sctx.beginPath();
+  sctx.arc(ex, ey, mg.dist / AU_KM * EXAG * s, 0, TAU);
+  sctx.stroke();
+
+  // 食のとき ─ 三つをひとすじに結ぶ
+  if(ecl){
+    sctx.strokeStyle = ecl === 'solar' ? 'rgba(255,217,138,.4)' : 'rgba(222,140,100,.4)';
+    sctx.lineWidth = 1;
+    sctx.setLineDash([2, 5]);
+    sctx.beginPath();
+    sctx.moveTo(SX(0), SY(0));
+    sctx.lineTo(CX + (ex - CX) * 1.25, CY + (ey - CY) * 1.25);
+    sctx.stroke();
+    sctx.setLineDash([]);
+  }
+
+  // 太陽
+  glow(SX(0), SY(0), 40, 'rgba(255,217,138,.35)', 'rgba(255,243,208,.95)');
+  sctx.fillStyle = '#fff3d0';
+  sctx.beginPath(); sctx.arc(SX(0), SY(0), 6, 0, TAU); sctx.fill();
+  labelAt(SX(0), SY(0), '太陽');
+  bodiesOnScreen.push({x: SX(0), y: SY(0), name: '太陽', sub: '地球まで 1 天文単位'});
+
+  // 地球
+  glow(ex, ey, 16, 'rgba(127,180,217,.3)', 'rgba(159,208,232,.8)');
+  sctx.fillStyle = '#7fb4d9';
+  sctx.beginPath(); sctx.arc(ex, ey, 4, 0, TAU); sctx.fill();
+  labelAt(ex, ey, '地球');
+  bodiesOnScreen.push({x: ex, y: ey, name: '地球', sub: '太陽まで ' + Math.hypot(ep.x, ep.y).toFixed(3) + ' 天文単位'});
+
+  // 潮のふくらみ ─ 月へ向く楕円
+  {
+    const bulge = Math.abs(Math.cos(D * D2R)); // 朔望で大潮
+    const ang = Math.atan2(my - ey, mx - ex);
+    sctx.strokeStyle = 'rgba(127,180,217,.28)'; sctx.lineWidth = 0.8;
+    sctx.beginPath();
+    sctx.ellipse(ex, ey, 8 + 5 * bulge, 8 - 2.5 * bulge, ang, 0, TAU);
+    sctx.stroke();
+  }
+
+  // 月
+  const litAng = Math.atan2(SY(0) - my, SX(0) - mx); // 画面上で太陽のある向き
+  const gm = sctx.createLinearGradient(mx + Math.cos(litAng) * 3, my + Math.sin(litAng) * 3,
+                                       mx - Math.cos(litAng) * 3, my - Math.sin(litAng) * 3);
+  gm.addColorStop(0, '#eef1f8'); gm.addColorStop(0.55, '#c6cfdf'); gm.addColorStop(1, '#3a4356');
+  glow(mx, my, 10, 'rgba(207,216,234,.25)', 'rgba(233,238,246,.6)');
+  sctx.fillStyle = ecl === 'lunar' ? '#c46a44' : gm;
+  sctx.beginPath(); sctx.arc(mx, my, 2.6, 0, TAU); sctx.fill();
+  sctx.globalAlpha = 0.55;
+  sctx.fillStyle = '#aeb6cb';
+  sctx.font = '11px ' + getComputedStyle(document.body).getPropertyValue('--serif');
+  sctx.fillText('月', mx + 7, my + 14);
+  sctx.globalAlpha = 1;
+  bodiesOnScreen.push({x: mx, y: my, name: '月', sub: '地球まで ' + (mg.dist / 10000).toFixed(1) + ' 万km'});
+}
+
+/* ── 月の窓 ─ 磨いた銀の円 ── */
+function drawPhase(){
+  const c = PR, R = PR * 0.7;
+  const D = elong(simT);
+  const waxing = D <= 180;
+  const cosD = Math.cos(D * D2R);
+  const illum = (1 - cosD) / 2;
+  const ecl = eclipseNow(simT);
+  pctx.clearRect(0, 0, PR * 2, PR * 2);
+
+  // 月暈 ─ 満ちるほど大きく灯る
+  const haloA = ecl === 'lunar' ? 0.05 : 0.04 + 0.14 * illum;
+  let g = pctx.createRadialGradient(c, c, R * 0.55, c, c, PR);
+  g.addColorStop(0, 'rgba(233,238,246,' + haloA.toFixed(3) + ')');
+  g.addColorStop(1, 'rgba(233,238,246,0)');
+  pctx.fillStyle = g;
+  pctx.fillRect(0, 0, PR * 2, PR * 2);
+
+  // 影の側 ─ ほのかな地球照
+  g = pctx.createRadialGradient(c, c, R * 0.2, c, c, R);
+  g.addColorStop(0, '#171c2a');
+  g.addColorStop(1, '#0c101a');
+  pctx.fillStyle = g;
+  pctx.beginPath(); pctx.arc(c, c, R, 0, TAU); pctx.fill();
+
+  // 光の側
+  pctx.save();
+  pctx.save();
+  pctx.translate(c, c);
+  if(!waxing) pctx.scale(-1, 1);
+  pctx.beginPath();
+  pctx.arc(0, 0, R, -Math.PI / 2, Math.PI / 2, false);
+  pctx.ellipse(0, 0, R * Math.abs(cosD), R, 0, Math.PI / 2, -Math.PI / 2, cosD > 0);
+  pctx.restore();
+  pctx.clip();
+  if(ecl === 'lunar'){ // 赤銅の望
+    g = pctx.createRadialGradient(c, c, R * 0.15, c, c, R);
+    g.addColorStop(0, '#d0714a');
+    g.addColorStop(0.7, '#a34a2c');
+    g.addColorStop(1, '#5e2a1a');
+  } else {
+    const ox = (waxing ? 1 : -1) * R * 0.3;
+    g = pctx.createRadialGradient(c + ox, c - R * 0.12, R * 0.1, c, c, R * 1.02);
+    g.addColorStop(0, '#fbfcfe');
+    g.addColorStop(0.55, '#e9eef6');
+    g.addColorStop(1, '#c4cfdf');
+  }
+  pctx.fillStyle = g;
+  pctx.fillRect(0, 0, PR * 2, PR * 2);
+  pctx.restore();
+
+  // 極細の縁
+  pctx.strokeStyle = 'rgba(233,238,246,.12)'; pctx.lineWidth = 1;
+  pctx.beginPath(); pctx.arc(c, c, R, 0, TAU); pctx.stroke();
+
+  // 日食 ─ 金の光冠
+  if(ecl === 'solar'){
+    g = pctx.createRadialGradient(c, c, R, c, c, R * 1.35);
+    g.addColorStop(0, 'rgba(255,217,138,.5)');
+    g.addColorStop(1, 'rgba(255,217,138,0)');
+    pctx.fillStyle = g;
+    pctx.beginPath(); pctx.arc(c, c, R * 1.35, 0, TAU); pctx.fill();
+    pctx.strokeStyle = 'rgba(255,231,180,.8)'; pctx.lineWidth = 1.5;
+    pctx.beginPath(); pctx.arc(c, c, R + 1.5, 0, TAU); pctx.stroke();
+  }
+}
+
+/* ── 読み出し ── */
+function fmtDate(){
+  const d = new Date(J2000_MS + simT * 864e5);
+  const y = d.getFullYear();
+  const era = y <= 0 ? '紀元前' + (1 - y) + '年' : y + '年';
+  return era + (d.getMonth() + 1) + '月' + d.getDate() + '日';
+}
+function fmtSpeed(){
+  const v = daysPerSec();
+  if(v >= 365.25) return '一秒に ' + (v / 365.25).toFixed(1) + ' 年';
+  if(v >= 1) return '一秒に ' + (v < 10 ? v.toFixed(1) : Math.round(v)) + ' 日';
+  return '一秒に ' + (v * 24).toFixed(1) + ' 時間';
+}
+let lastReadout = 0;
+function updateReadout(now){
+  if(now - lastReadout < 120) return;
+  lastReadout = now;
+  dateEl.textContent = fmtDate();
+  const age = moonAge(simT);
+  nameEl.textContent = moonName(age);
+  const illum = Math.round((1 - Math.cos(elong(simT) * D2R)) / 2 * 100);
+  ageEl.textContent = '月齢 ' + age.toFixed(1) + ' ─ 輝面比 ' + illum + '%';
+  const ecl = eclipseNow(simT);
+  const D = elong(simT);
+  const cosAbs = Math.abs(Math.cos(D * D2R));
+  let sub = '時の速さ ─ ' + fmtSpeed();
+  if(ecl) sub += '　<span class="ev">' + (ecl === 'solar' ? '日食のころ' : '月食のころ') + '</span>';
+  else if(cosAbs > 0.92) sub += '　<span class="tide">大潮のころ</span>';
+  else if(cosAbs < 0.38) sub += '　<span class="tide">小潮のころ</span>';
+  subEl.innerHTML = sub;
+}
+
+/* ── 主ループ ── */
+let prevNow = performance.now();
+function frame(now){
+  const dtReal = Math.min(0.1, (now - prevNow) / 1000);
+  prevNow = now;
+  let t1 = simT;
+  if(playing) t1 += daysPerSec() * dtReal;
+  if(dragDays !== 0){ t1 += dragDays; dragDays = 0; }
+  if(t1 !== simT){
+    drawTrailSegments(simT, t1);
+    simT = t1;
+  }
+  fadeTrails();
+  drawScene(now);
+  drawPhase();
+  updateReadout(now);
+  requestAnimationFrame(frame);
+}
+
+/* ── 操作 ── */
+const pointers = new Map();
+let pinchDist = 0;
+sky.addEventListener('pointerdown', e => {
+  sky.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, {x: e.clientX, y: e.clientY});
+  if(pointers.size === 2){
+    const [a, b] = [...pointers.values()];
+    pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+  }
+  sky.classList.add('dragging');
+});
+sky.addEventListener('pointermove', e => {
+  if(pointers.has(e.pointerId)){
+    const prev = pointers.get(e.pointerId);
+    if(pointers.size === 1){
+      const dpp = Math.min(8, Math.max(0.02, daysPerSec() / 60));
+      dragDays += (e.clientX - prev.x) * dpp;
+    }
+    pointers.set(e.pointerId, {x: e.clientX, y: e.clientY});
+    if(pointers.size === 2){
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if(pinchDist > 0) applyZoom(d / pinchDist);
+      pinchDist = d;
+    }
+  } else {
+    let best = null, bd = 18;
+    for(const bo of bodiesOnScreen){
+      const d = Math.hypot(e.clientX - bo.x, e.clientY - bo.y);
+      if(d < bd){ bd = d; best = bo; }
+    }
+    if(best){
+      tipEl.innerHTML = best.name + '<small>' + best.sub + '</small>';
+      tipEl.style.left = (best.x + 14) + 'px';
+      tipEl.style.top = (best.y + 6) + 'px';
+      tipEl.style.opacity = 1;
+    } else tipEl.style.opacity = 0;
+  }
+});
+function endPointer(e){
+  pointers.delete(e.pointerId);
+  pinchDist = 0;
+  if(pointers.size === 0) sky.classList.remove('dragging');
+}
+sky.addEventListener('pointerup', endPointer);
+sky.addEventListener('pointercancel', endPointer);
+
+function applyZoom(k){
+  const z2 = Math.min(7, Math.max(0.45, zoomFactor * k));
+  const real = z2 / zoomFactor;
+  if(real === 1) return;
+  rescaleTrails(real);
+  zoomFactor = z2;
+}
+sky.addEventListener('wheel', e => {
+  e.preventDefault();
+  applyZoom(Math.exp(-e.deltaY * 0.0012));
+}, {passive: false});
+
+function setPlaying(v){
+  playing = v;
+  pauseBtn.textContent = playing ? 'とめる' : 'めぐらす';
+}
+pauseBtn.addEventListener('click', () => setPlaying(!playing));
+function jumpTo(tt){
+  if(Math.abs(tt - simT) > 60) clearTrails();
+  else drawTrailSegments(simT, tt);
+  simT = tt;
+  setPlaying(false); // その瞬間を眺める
+}
+$('todayBtn').addEventListener('click', () => { jumpTo((Date.now() - J2000_MS) / 864e5); });
+$('newBtn').addEventListener('click', () => jumpTo(nextSyzygy(simT, 0)));
+$('fullBtn').addEventListener('click', () => jumpTo(nextSyzygy(simT, 180)));
+$('eclBtn').addEventListener('click', () => jumpTo(nextEclipse(simT)));
+$('wipeBtn').addEventListener('click', clearTrails);
+document.addEventListener('keydown', e => {
+  if(e.code === 'Space' && !e.repeat && e.target.tagName !== 'BUTTON'){
+    e.preventDefault(); setPlaying(!playing);
+  }
+});
+
+setTimeout(() => $('hint').classList.add('gone'), 8000);
+if(reduced){
+  setPlaying(false);
+  $('hint').textContent = '「めぐらす」で時がながれる ─ ドラッグでも送れます';
+}
+setPlaying(playing);
+window.addEventListener('resize', () => { resize(); clearTrails(); });
+resize();
+requestAnimationFrame(frame);
+</script>
+
+</body>
+</html>
