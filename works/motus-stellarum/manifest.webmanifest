@@ -1,0 +1,10 @@
+{
+  "name": "星の運行 — MOTVS STELLARVM",
+  "short_name": "星の運行",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#04060f",
+  "theme_color": "#04060f",
+  "start_url": ".",
+  "icons": []
+}
