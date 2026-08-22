@@ -10,6 +10,7 @@
 
 | URL | 作品 | 概要 |
 |---|---|---|
+| [/works/twelve/](https://art.mqri.or.jp/works/twelve/) | 12 — 円環の連作（全12作） | 人類が12でつくってきた環を訪ねる十二作。**この作品だけ「棟」構造**＝入口の `works/twelve/`（第十二作「結」＝連作の玄関・「栞」にコンセプト文と全作解説）から、`works/twelve/<slug>/` に十一作がぶら下がる。連作は一つの鑑賞体験なので玄関のカードも一枚（URL規約のフラット原則に対する唯一の例外・[BOOK MAPの棟と同じ考え方]） |
 | [/works/taiji-spin/](https://art.mqri.or.jp/works/taiji-spin/) | 太極回転 TAIJI SPIN | 太極図の回転速度とディスプレイの更新間隔が噛み合うと現れるストロボ錯視。Canvas 2D・鑑賞モード(`A`)あり |
 | [/works/tomoe-spin/](https://art.mqri.or.jp/works/tomoe-spin/) | 巴回転 TOMOE SPIN | 勾玉ひとつを回すと巴紋が結晶する。速度を360で割った既約分数の分母が紋の枚数。太極回転の姉妹作 |
 | [/works/quintessence/](https://art.mqri.or.jp/works/quintessence/) | QUINTESSENCE 内接するプラトン立体 | 一つの立方体に五つの正多面体が内接。体対角線に整列すると13点のメタトロンキューブが結晶。純WebGL2 |
@@ -32,6 +33,18 @@
 | [/works/flower-differential-growth/](https://art.mqri.or.jp/works/flower-differential-growth/) | 生命の花と、分化成長 | フラワーオブライフの格子の上を差分成長する曲線が埋めていく。p5.jsローカル同梱・移設時にタッチ操作を実装（[経緯](works/flower-differential-growth/README.md)） |
 | [/works/quantum-mandala/](https://art.mqri.or.jp/works/quantum-mandala/) | 量子曼荼羅 Quantum Mandala | シュレーディンガー方程式の実時間GPU解法 × 神聖幾何学。iPad展示用にタッチ最適化済み(詳細は各フォルダのREADME) |
 | [/works/hopf-loom/](https://art.mqri.or.jp/works/hopf-loom/) | HOPF LOOM — S³の織物 | 四次元球面のHopfファイブレーション × 四次元正多胞体。マルチタッチ(1本指=視点/2本指=ズーム・4次元回転)でiPad展示用に最適化済み |
+
+### 棟（連作）について
+
+`works/twelve/` は**連作をひとつの作品として扱う唯一の棟**。入口 `index.html` が第十二作「結」で、そこから
+`juuniritsu` `juunikyuu` `juunishi` `juunigatsu` `juunikei` `juunien` `juunishou` `juuniiro` `juunigessei`
+`juuniyasha` `juunikan` の十一作へリンクする（結だけは棟の index を兼ねるので専用フォルダを持たない）。
+
+> ⚠ 結の作品内リンクは**同階層の相対パス**（`juuniritsu/` 形式）。棟ごと移動すると全リンクが壊れるので、
+> URLは動かさない。作品を足すときは①棟にフォルダ ②結の `WORKS` 配列 ③結の「栞」の解説 の三箇所を直す。
+> 引用画像（`*/img/`）はすべてパブリックドメイン——旧浄瑠璃寺伝来の十二神将像（東博ほか）／メトロポリタン
+> 美術館バークコレクション／Urania's Mirror（1825）／歌川国芳・十二支（国立国会図書館）。出典は各作品の
+> 画面内に常時表示している。
 
 ## 道具（works ではない棚）
 

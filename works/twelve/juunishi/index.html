@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>十二支 | 「12」第三作</title>
+<style>
+  :root{ --ink:#ece5d8; --ink-dim:rgba(236,229,216,.55); }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ width:100%; height:100%; overflow:hidden; background:#12100e; }
+  body{
+    font-family:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho","YuMincho",serif;
+    color:var(--ink);
+    -webkit-user-select:none; user-select:none;
+    touch-action:none;
+  }
+  canvas{ position:fixed; inset:0; width:100vw; height:100vh; display:block; }
+  #gl{ z-index:0; } #ring{ z-index:1; cursor:grab; }
+  #ring.dragging{ cursor:grabbing; }
+  #title{
+    position:fixed; top:28px; left:30px; z-index:2;
+    writing-mode:vertical-rl; letter-spacing:.55em;
+    font-size:clamp(14px,1.6vmin,19px); font-weight:500;
+    color:var(--ink-dim); text-shadow:0 0 18px rgba(0,0,0,.5); pointer-events:none;
+  }
+  #title b{ font-weight:600; color:var(--ink); font-size:1.35em; letter-spacing:.4em; }
+  #series{
+    position:fixed; bottom:24px; left:30px; z-index:2;
+    writing-mode:vertical-rl; letter-spacing:.4em;
+    font-size:11px; color:rgba(236,229,216,.30); pointer-events:none;
+  }
+  #ctrl{ position:fixed; top:26px; right:30px; z-index:2;
+    display:flex; flex-direction:column; gap:10px; align-items:flex-end; }
+  .btn{
+    font-family:inherit; font-size:12px; letter-spacing:.3em; text-indent:.3em;
+    color:var(--ink-dim); background:transparent;
+    border:1px solid rgba(236,229,216,.26); border-radius:999px;
+    padding:8px 16px 7px 16px; cursor:pointer;
+    transition:color .4s, border-color .4s, background .4s; white-space:nowrap;
+  }
+  .btn:hover{ color:var(--ink); border-color:rgba(236,229,216,.6); background:rgba(236,229,216,.06); }
+  .btn.on{ color:var(--ink); border-color:rgba(236,229,216,.7); background:rgba(236,229,216,.08); }
+  .seg{ display:flex; gap:8px; }
+  .btn.small{ padding:7px 13px 6px 13px; font-size:11px; letter-spacing:.22em; text-indent:.22em; }
+  #hint{
+    position:fixed; bottom:22px; left:50%; transform:translateX(-50%); z-index:2;
+    font-size:11px; letter-spacing:.3em; color:rgba(236,229,216,.34);
+    white-space:nowrap; pointer-events:none; transition:opacity 1.2s;
+  }
+  #hint.hide{ opacity:0; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="ring"></canvas>
+<div id="title"><b>十二支</b>　六十年でひとめぐり</div>
+<div id="series">「12」— 円環の連作　第三</div>
+<div id="ctrl">
+  <div class="seg" id="flowSeg">
+    <button class="btn small" data-f="0">止</button>
+    <button class="btn small on" data-f="1">ゆるり</button>
+    <button class="btn small" data-f="2">疾く</button>
+  </div>
+  <button class="btn" id="nowBtn">今年へ</button>
+  <button class="btn" id="varBtn">見た目　漆金</button>
+</div>
+<div id="hint">まわして年をめぐる — 支をタップ＝国芳の錦絵と民俗 / 針は今日の刻 / 盤のなかに歳星</div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   十二支データ — 支 × 動物 × 語源（植物の一生） × 刻 × 方位
+============================================================ */
+const SHI=[
+ {k:"子", kun:"ね",    an:"鼠", anK:"ねずみ",  ety:"滋　—　種子のうちに陽気きざす", t:"子の刻　二三時〜一時", tsuki:"十一月",
+  lore:"大黒天の使い。ふえる力の象徴で「ねずみ算」の言葉を生んだ。夜半の闇でも道を知る。"},
+ {k:"丑", kun:"うし",  an:"牛", anK:"うし",    ety:"紐　—　芽が絡まり伸びはじめる", t:"丑の刻　一時〜三時", tsuki:"十二月",
+  lore:"天神さまの使い。境内の「撫で牛」は、なでた場所の病を引き受けてくれる。※ベトナムでは水牛。"},
+ {k:"寅", kun:"とら",  an:"虎", anK:"とら",    ety:"演　—　土を押しのけて発芽する", t:"寅の刻　三時〜五時", tsuki:"正月",
+  lore:"毘沙門天の使い。「虎は千里往って千里還る」——どこまで行っても、必ず帰ってくる勇気の獣。"},
+ {k:"卯", kun:"う",    an:"兎", anK:"うさぎ",  ety:"茂　—　枝葉がしげる",           t:"卯の刻　五時〜七時", tsuki:"二月",
+  lore:"因幡の白兎、月で餅をつく兎。跳ねる姿から「飛躍」の年といわれる。※ベトナムでは兎でなく猫。"},
+ {k:"辰", kun:"たつ",  an:"龍", anK:"りゅう",  ety:"伸　—　勢いよく伸び盛る",       t:"辰の刻　七時〜九時", tsuki:"三月",
+  lore:"十二支でただひとつ、この世にいない獣。水を司る龍神として、雨乞いの主役だった。"},
+ {k:"巳", kun:"み",    an:"蛇", anK:"へび",    ety:"已　—　成長きわまり成熟する",   t:"巳の刻　九時〜一一時", tsuki:"四月",
+  lore:"弁財天の使い。脱皮をくりかえす姿が「再生」と金運の象徴になった。"},
+ {k:"午", kun:"うま",  an:"馬", anK:"うま",    ety:"忤　—　陽から陰への転換点",     t:"午の刻　一一時〜一三時", tsuki:"五月",
+  lore:"神さまの乗り物。生きた馬を奉げた名残が、絵に描いた馬——「絵馬」になった。"},
+ {k:"未", kun:"ひつじ",an:"羊", anK:"ひつじ",  ety:"味　—　果実が滋味をもつ",       t:"未の刻　一三時〜一五時", tsuki:"六月",
+  lore:"群れで暮らす平和の獣。「羊」の字は「美」「善」「義」のなかに住んでいる。※ベトナムでは山羊。"},
+ {k:"申", kun:"さる",  an:"猿", anK:"さる",    ety:"呻　—　実がひきしまり固まる",   t:"申の刻　一五時〜一七時", tsuki:"七月",
+  lore:"山王さまの使い。「見ざる聞かざる言わざる」の三猿は、庚申の夜の信仰から。"},
+ {k:"酉", kun:"とり",  an:"鶏", anK:"にわとり",ety:"老　—　完熟し、酒に発酵する",   t:"酉の刻　一七時〜一九時", tsuki:"八月",
+  lore:"天岩戸のまえで夜明けを告げた長鳴鳥。神域の入り口の「鳥居」に名をのこす（一説）。"},
+ {k:"戌", kun:"いぬ",  an:"犬", anK:"いぬ",    ety:"脱　—　枯れて土に帰る",         t:"戌の刻　一九時〜二一時", tsuki:"九月",
+  lore:"安産と忠義の獣。戌の日の帯祝いは、お産の軽い犬にあやかるならわし。"},
+ {k:"亥", kun:"い",    an:"猪", anK:"いのしし",ety:"核　—　種のうちに眠り、待つ",   t:"亥の刻　二一時〜二三時", tsuki:"十月",
+  lore:"摩利支天の使い。猪突猛進——炎のなかさえ、まっすぐに駆ける。※ベトナムでは豚。"},
+];
+const DIR12=["北","北北東","東北東","東","東南東","南南東","南","南南西","西南西","西","西北西","北北西"];
+/* 国芳の十二支 — img/01_ne.jpg 等（差し替えは同名上書き） */
+const ROMS=["ne","ushi","tora","u","tatsu","mi","uma","hitsuji","saru","tori","inu","i"];
+const IMGS=ROMS.map((r,i)=>{
+  const im=new Image();
+  im.src=`img/${String(i+1).padStart(2,"0")}_${r}.jpg`;
+  im.onload=()=>{ im.ok=true; };
+  return im;
+});
+const CRED="歌川国芳・十二支の揃物／国立国会図書館デジタルコレクション（パブリックドメイン）";
+/* 十干 — 五行×陰陽 */
+const KAN=[
+ {k:"甲", yomi:"きのえ",  e:0, y:0},{k:"乙", yomi:"きのと",  e:0, y:1},
+ {k:"丙", yomi:"ひのえ",  e:1, y:0},{k:"丁", yomi:"ひのと",  e:1, y:1},
+ {k:"戊", yomi:"つちのえ",e:2, y:0},{k:"己", yomi:"つちのと",e:2, y:1},
+ {k:"庚", yomi:"かのえ",  e:3, y:0},{k:"辛", yomi:"かのと",  e:3, y:1},
+ {k:"壬", yomi:"みずのえ",e:4, y:0},{k:"癸", yomi:"みずのと",e:4, y:1},
+];
+const GOGYO=[
+ {n:"木", col:[0.40,0.62,0.45]},
+ {n:"火", col:[0.83,0.38,0.27]},
+ {n:"土", col:[0.79,0.64,0.31]},
+ {n:"金", col:[0.85,0.83,0.76]},
+ {n:"水", col:[0.36,0.48,0.62]},
+];
+/* 三合 — 4つの局（正三角形） first支index と 五行 */
+const SANGO=[
+ {name:"水局", shi:[8,0,4],  e:4},   // 申子辰
+ {name:"火局", shi:[2,6,10], e:1},   // 寅午戌
+ {name:"金局", shi:[5,9,1],  e:3},   // 巳酉丑
+ {name:"木局", shi:[11,3,7], e:0},   // 亥卯未
+];
+const TAU=Math.PI*2;
+
+/* 干支の算出 — 1984年＝甲子 */
+const BASE=1984;
+function kanOf(y){ return ((Math.floor(y)-BASE)%10+10)%10; }
+function shiOf(y){ return ((Math.floor(y)-BASE)%12+12)%12; }
+function cyclePos(y){ return ((Math.floor(y)-BASE)%60+60)%60; }   // 甲子=0
+
+/* 歳星（木星）の超辰 — 実周期11.862年 vs 理想の12年 */
+const JUP=11.862;
+function jupAngle(y){ return (y-BASE)/JUP*360; }     // 子起点・度
+function taisaiAngle(y){ return (y-BASE)/12*360; }
+
+/* ============================================================
+   見た目3案
+============================================================ */
+const VORDER=["A","B","C"];
+const VARIANTS={
+  A:{ name:"漆金", bg:["#12100e","#2a2118"], accent:"#d9b56a", sub:"#8f7b52",
+      inkOn:1, elemSat:.55 },
+  B:{ name:"朱華", bg:["#160b09","#3a1410"], accent:"#e06a45", sub:"#a04a32",
+      inkOn:1, elemSat:.85 },
+  C:{ name:"藍白", bg:["#0d1420","#1c2c44"], accent:"#cfd8e4", sub:"#7a8ba4",
+      inkOn:1, elemSat:.45 },
+};
+const q0=new URLSearchParams(location.search);
+let vKey=VARIANTS[(q0.get("v")||"A").toUpperCase()]?(q0.get("v")||"A").toUpperCase():"A";
+let V=VARIANTS[vKey];
+function hex2rgb(h){ return [parseInt(h.slice(1,3),16)/255,parseInt(h.slice(3,5),16)/255,parseInt(h.slice(5,7),16)/255]; }
+function rgbCss(c,a=1){ return `rgba(${Math.round(c[0]*255)},${Math.round(c[1]*255)},${Math.round(c[2]*255)},${a})`; }
+function mix3(a,b,t){ return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t]; }
+function smooth(t){ return t*t*(3-2*t); }
+function elemCol(e){ const g=[.6,.58,.53]; return mix3(g,GOGYO[e].col,Math.min(1,.3+V.elemSat*.7)); }
+
+/* ============================================================
+   WebGL2 — 夜気（五行の色がにじむ）
+============================================================ */
+const glCanvas=document.getElementById("gl");
+const gl=glCanvas.getContext("webgl2",{antialias:false,alpha:false});
+const VERT=`#version 300 es
+layout(location=0) in vec2 aPos;
+void main(){ gl_Position=vec4(aPos,0.,1.); }`;
+const FRAG=`#version 300 es
+precision highp float;
+uniform vec2 uRes; uniform float uTime;
+uniform vec3 uBgA,uBgB,uElem;
+uniform float uGear;      // 十干輪の回転（ラジアン）
+out vec4 fragColor;
+float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
+float vnoise(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.-2.*f);
+  float a=hash21(i),b=hash21(i+vec2(1,0)),c=hash21(i+vec2(0,1)),d=hash21(i+vec2(1,1));
+  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y); }
+mat2 rot(float a){ float c=cos(a),s=sin(a); return mat2(c,-s,s,c); }
+float fbm(vec2 p){ float v=0.,a=.5; mat2 m=rot(.5);
+  for(int i=0;i<5;i++){ v+=a*vnoise(p); p=m*p*2.02+11.3; a*=.5; } return v; }
+void main(){
+  vec2 frag=gl_FragCoord.xy;
+  vec2 uv=(frag-.5*uRes)/uRes.y;
+  float t=uTime;
+  float rr=length(uv), th=atan(uv.y,uv.x);
+  vec2 p=uv*2.0;
+  vec2 q=vec2(fbm(p+t*.010), fbm(p+vec2(5.2,1.3)-t*.008));
+  float f=fbm(p+2.3*q);
+  vec3 col=mix(uBgA,uBgB,clamp(f*f*2.2,0.,1.));
+  col=mix(col,uElem*.5,clamp(length(q)*.7,0.,1.)*.24);
+  /* 見えない歯車 — 12歯と10歯の定在波が薄くめぐる */
+  float g12=sin(th*12.)*.5+.5;
+  float g10=sin(th*10.+uGear)*.5+.5;
+  col+=uElem*g12*exp(-abs(rr-.40)*11.)*.055;
+  col+=uElem*g10*exp(-abs(rr-.24)*11.)*.055;
+  col*=1.-.44*pow(rr*1.24,2.2);
+  col+=(hash21(frag+fract(t)*61.7)-.5)*.03;
+  col=col/(1.+col*.12);
+  col=pow(max(col,0.),vec3(.96));
+  fragColor=vec4(col,1.);
+}`;
+function compile(ty,src){ const s=gl.createShader(ty); gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+const prog=gl.createProgram();
+gl.attachShader(prog,compile(gl.VERTEX_SHADER,VERT));
+gl.attachShader(prog,compile(gl.FRAGMENT_SHADER,FRAG));
+gl.linkProgram(prog);
+if(!gl.getProgramParameter(prog,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+const vao=gl.createVertexArray(); gl.bindVertexArray(vao);
+const vbo=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+const U={}; ["uRes","uTime","uBgA","uBgB","uElem","uGear"].forEach(n=>U[n]=gl.getUniformLocation(prog,n));
+let BGA=hex2rgb(V.bg[0]), BGB=hex2rgb(V.bg[1]);
+
+/* ============================================================
+   リングキャンバス
+============================================================ */
+const ringCanvas=document.getElementById("ring");
+const ctx=ringCanvas.getContext("2d");
+let W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2);
+  W=window.innerWidth||1280; H=window.innerHeight||800;
+  glCanvas.width=Math.max(2,W*DPR); glCanvas.height=Math.max(2,H*DPR);
+  ringCanvas.width=Math.max(2,W*DPR); ringCanvas.height=Math.max(2,H*DPR);
+  gl.viewport(0,0,glCanvas.width,glCanvas.height);
+}
+window.addEventListener("resize",resize); resize();
+
+/* ============================================================
+   状態 — 主変数は「年」（連続値）
+============================================================ */
+let year=parseFloat(q0.get("year")||"2026");
+let targetYear=null;
+let flowIdx=1;
+const FLOWS=[{n:"止",v:0},{n:"ゆるり",v:.3},{n:"疾く",v:2}];   // 年/秒
+let gazeShi=-1, gazeT=-1e9;
+let nekoT=-1e9;          // 卯→猫（ベトナムの猫）
+let panelIdx=-1, panelA=0;   // 解説の間
+let lastInteract=-1e9;
+
+function cx(){ return W/2; } function cy(){ return H/2; }
+function ringR(){ return Math.min(W*.315, H*.36); }
+/* 支kの画面角度 — 子＝真北（真上）固定・時計回り */
+function shiAngle(k){ return (-90+k*30)*Math.PI/180; }
+
+/* ============================================================
+   入力
+============================================================ */
+function angleOf(e){
+  const x=(e.clientX??e.touches?.[0]?.clientX)-cx();
+  const y=(e.clientY??e.touches?.[0]?.clientY)-cy();
+  return Math.atan2(y,x);
+}
+let dragging=false,dragA=0,dragMoved=0;
+ringCanvas.addEventListener("pointerdown",e=>{
+  dragging=true; dragMoved=0; dragA=angleOf(e); targetYear=null;
+  lastInteract=performance.now(); ringCanvas.classList.add("dragging");
+  ringCanvas.setPointerCapture(e.pointerId);
+});
+ringCanvas.addEventListener("pointermove",e=>{
+  if(!dragging) return;
+  const a=angleOf(e);
+  let da=a-dragA;
+  if(da>Math.PI)da-=TAU; if(da<-Math.PI)da+=TAU;
+  dragA=a; dragMoved+=Math.abs(da);
+  year += da/TAU*12;                       // 一周＝十二年
+  lastInteract=performance.now();
+});
+ringCanvas.addEventListener("pointerup",e=>{
+  dragging=false; ringCanvas.classList.remove("dragging");
+  lastInteract=performance.now();
+  if(dragMoved<.02){
+    if(panelIdx>=0){ panelIdx=-1; hideHint(); return; }   // 解説の間をとじる
+    const x=e.clientX-cx(), y=e.clientY-cy();
+    const rr=Math.hypot(x,y), R=ringR();
+    if(rr>R*.55&&rr<R*1.5){
+      const a=Math.atan2(y,x);
+      const k=((Math.round((a*180/Math.PI+90)/30))%12+12)%12;
+      const now=performance.now()/1000;
+      gazeShi=k; gazeT=now;
+      if(k===3) nekoT=now;                 // 卯をタップ→猫がのぞく
+      panelIdx=k;                          // 解説の間をひらく
+    }
+  }
+  hideHint();
+});
+window.addEventListener("wheel",e=>{
+  year+=e.deltaY*7e-3; targetYear=null;
+  lastInteract=performance.now(); hideHint();
+},{passive:true});
+const segBtns=[...document.querySelectorAll("#flowSeg .btn")];
+function setFlow(i){
+  flowIdx=i;
+  segBtns.forEach((b,j)=>b.classList.toggle("on",j===i));
+}
+segBtns.forEach((b,i)=>b.addEventListener("click",()=>{ setFlow(i); hideHint(); }));
+window.addEventListener("keydown",e=>{
+  if(e.key===" "){ setFlow(flowIdx===0?1:0); e.preventDefault(); }
+  hideHint();
+});
+document.getElementById("nowBtn").addEventListener("click",()=>{
+  targetYear=2026; lastInteract=performance.now(); hideHint();
+});
+const varBtn=document.getElementById("varBtn");
+varBtn.textContent="見た目　"+V.name;
+varBtn.addEventListener("click",()=>{
+  vKey=VORDER[(VORDER.indexOf(vKey)+1)%VORDER.length];
+  V=VARIANTS[vKey];
+  BGA=hex2rgb(V.bg[0]); BGB=hex2rgb(V.bg[1]);
+  document.body.style.background=V.bg[0];
+  varBtn.textContent="見た目　"+V.name;
+});
+document.body.style.background=V.bg[0];
+let hintHidden=false;
+function hideHint(){ if(hintHidden)return; hintHidden=true;
+  setTimeout(()=>document.getElementById("hint").classList.add("hide"),2500); }
+setTimeout(hideHint,16000);
+
+/* ============================================================
+   リング描画
+============================================================ */
+function drawRing(now){
+  const nowSec=now/1000;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.clearRect(0,0,W,H);
+  const R=ringR();
+  const ink=(a)=>`rgba(236,229,216,${a})`;
+
+  const yInt=Math.floor(year);
+  const zi=shiOf(year), ki=kanOf(year);
+  const kan=KAN[ki], shi=SHI[zi];
+  const ec=elemCol(kan.e);
+  const yFrac=year-yInt;
+
+  /* 十干輪の回転 — 現在の干が現在の支の角度に来るオフセット。年6°の遅い滑り */
+  const kanOffDeg = (zi*30+yFrac*30) - (ki*36+yFrac*36);
+
+  ctx.save();
+  ctx.translate(cx(),cy());
+
+  /* --- 支冲（6本の対極） --- */
+  ctx.strokeStyle=ink(.08); ctx.lineWidth=.8;
+  for(let k=0;k<6;k++){
+    const a=shiAngle(k);
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a)*R*.97,Math.sin(a)*R*.97);
+    ctx.lineTo(-Math.cos(a)*R*.97,-Math.sin(a)*R*.97);
+    ctx.stroke();
+  }
+  /* --- 鬼門の軸（丑寅45°↔未申225°）— 例外の一本 --- */
+  {
+    const a=(-90+45)*Math.PI/180;
+    const breath=.10+.05*Math.sin(nowSec*.4);
+    ctx.strokeStyle=`rgba(150,60,50,${breath+.08})`;
+    ctx.lineWidth=1.4;
+    ctx.setLineDash([3,7]);
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a)*R*1.02,Math.sin(a)*R*1.02);
+    ctx.lineTo(-Math.cos(a)*R*1.02,-Math.sin(a)*R*1.02);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.font=`400 ${Math.max(9,R*.036)}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillStyle=`rgba(160,70,58,${breath+.18})`;
+    ctx.fillText("鬼門", Math.cos(a)*R*1.10, Math.sin(a)*R*1.10);
+    ctx.fillText("裏鬼門", -Math.cos(a)*R*1.10, -Math.sin(a)*R*1.10);
+  }
+
+  /* --- 三合の局（正三角形×4・法則3） --- */
+  for(const g of SANGO){
+    const cur=g.shi.includes(zi);
+    const col=elemCol(g.e);
+    ctx.strokeStyle=rgbCss(col,cur?.35:.09);
+    ctx.lineWidth=cur?1.2:.7;
+    ctx.beginPath();
+    for(let m=0;m<=3;m++){
+      const a=shiAngle(g.shi[m%3]);
+      const x=Math.cos(a)*R*.80, y=Math.sin(a)*R*.80;
+      if(m===0)ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+  }
+
+  /* --- 外環：十二支盤（固定・方位盤） --- */
+  ctx.strokeStyle=ink(.42); ctx.lineWidth=1;
+  ctx.beginPath(); ctx.arc(0,0,R,0,TAU); ctx.stroke();
+  ctx.strokeStyle=ink(.15);
+  ctx.beginPath(); ctx.arc(0,0,R*.985,0,TAU); ctx.stroke();
+  /* 60刻み — 干支六十年 */
+  for(let i=0;i<60;i++){
+    const a=(-90+i*6)*Math.PI/180;
+    const major=(i%5===0);
+    ctx.strokeStyle=ink(major?.5:.2);
+    ctx.lineWidth=major?1.2:.6;
+    const r1=major?R*.945:R*.962;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a)*r1,Math.sin(a)*r1);
+    ctx.lineTo(Math.cos(a)*R*.985,Math.sin(a)*R*.985);
+    ctx.stroke();
+  }
+  /* 方位 */
+  const DIRS=[["北",0],["東",90],["南",180],["西",270]];
+  ctx.font=`400 ${Math.max(9,R*.038)}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+  for(const [nm,deg] of DIRS){
+    const a=(-90+deg)*Math.PI/180;
+    ctx.fillStyle=ink(deg===0?.6:.3);
+    ctx.fillText(nm, Math.cos(a)*R*1.30, Math.sin(a)*R*1.30);
+  }
+
+  /* 支の文字（放射方向・外周から内へ）＋動物 */
+  const nameSize=Math.max(14,R*.085);
+  for(let k=0;k<12;k++){
+    const a=shiAngle(k);
+    const isCur=(k===zi);
+    const isGaze=(k===gazeShi && nowSec-gazeT<10);
+    ctx.save(); ctx.rotate(a);
+    ctx.fillStyle=isCur?V.accent:(isGaze?ink(.95):ink(.62));
+    if(isCur){ ctx.shadowColor=V.accent; ctx.shadowBlur=12; }
+    ctx.font=`${isCur?600:400} ${nameSize*(isCur?1.15:1)}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+    ctx.save(); ctx.translate(R*1.10+nameSize*.5,0); ctx.rotate(Math.PI/2);
+    ctx.fillText(SHI[k].k,0,0);
+    ctx.restore();
+    /* 動物（小さく・さらに外） — 卯はタップで猫に */
+    let anim=SHI[k].an;
+    if(k===3 && nowSec-nekoT<8) anim="猫";
+    ctx.fillStyle=isCur?rgbCss(hex2rgb(V.accent),.75):ink(.30);
+    ctx.font=`400 ${nameSize*.52}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+    ctx.save(); ctx.translate(R*1.10+nameSize*1.55,0); ctx.rotate(Math.PI/2);
+    ctx.fillText(anim,0,0);
+    ctx.restore();
+    ctx.restore();
+  }
+
+  /* --- 内環：十干の輪（年6°の滑り・60年で一周） --- */
+  const Rk=R*.565;
+  ctx.strokeStyle=ink(.30); ctx.lineWidth=1;
+  ctx.beginPath(); ctx.arc(0,0,Rk,0,TAU); ctx.stroke();
+  for(let d=0;d<10;d++){
+    const aDeg=-90 + d*36 + kanOffDeg;
+    const a=aDeg*Math.PI/180;
+    const isCur=(d===ki);
+    const col=elemCol(KAN[d].e);
+    /* 歯（刻み） */
+    ctx.strokeStyle=ink(isCur?.6:.25); ctx.lineWidth=isCur?1.4:.8;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a)*Rk*.94,Math.sin(a)*Rk*.94);
+    ctx.lineTo(Math.cos(a)*Rk*1.06,Math.sin(a)*Rk*1.06);
+    ctx.stroke();
+    /* 干の字（正立） */
+    ctx.fillStyle=isCur?rgbCss(col,1):rgbCss(col,.5);
+    if(isCur){ ctx.shadowColor=rgbCss(col,.9); ctx.shadowBlur=10; }
+    ctx.font=`${isCur?600:400} ${nameSize*(isCur?.9:.72)}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+    ctx.fillText(KAN[d].k, Math.cos(a)*Rk*.80, Math.sin(a)*Rk*.80);
+    ctx.shadowBlur=0;
+  }
+
+  /* --- 年の針 — 現在の支（と、その下に滑りこんだ干）を貫く --- */
+  {
+    const aDeg=-90+(zi+yFrac)*30;
+    const a=aDeg*Math.PI/180;
+    const col=hex2rgb(V.accent);
+    ctx.strokeStyle=rgbCss(col,.85);
+    ctx.lineWidth=2;
+    ctx.shadowColor=rgbCss(col,.8); ctx.shadowBlur=8;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a)*R*.16,Math.sin(a)*R*.16);
+    ctx.lineTo(Math.cos(a)*R*.965,Math.sin(a)*R*.965);
+    ctx.stroke();
+    ctx.shadowBlur=0;
+    ctx.fillStyle=rgbCss(col,1);
+    ctx.beginPath(); ctx.arc(Math.cos(a)*R*.965,Math.sin(a)*R*.965,3.2,0,TAU); ctx.fill();
+  }
+
+  /* --- 刻の針 — 今日のほんとうの時刻（和時計） --- */
+  {
+    const d=new Date();
+    const p=(((d.getHours()+1)%24)+d.getMinutes()/60+d.getSeconds()/3600)/2;  // 0..12
+    const a=(-90+(p*30-15))*Math.PI/180;
+    ctx.strokeStyle=ink(.55); ctx.lineWidth=1;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a)*R*.10,Math.sin(a)*R*.10);
+    ctx.lineTo(Math.cos(a)*R*.50,Math.sin(a)*R*.50);
+    ctx.stroke();
+    ctx.fillStyle=ink(.55);
+    ctx.beginPath(); ctx.arc(Math.cos(a)*R*.50,Math.sin(a)*R*.50,2,0,TAU); ctx.fill();
+  }
+
+  /* --- 歳星と太歳 — 閉じない円（超辰） --- */
+  {
+    const Rj=R*.33;
+    const aT=(-90+taisaiAngle(year))*Math.PI/180;
+    const aJ=(-90+jupAngle(year))*Math.PI/180;
+    ctx.strokeStyle=ink(.10); ctx.lineWidth=.6;
+    ctx.beginPath(); ctx.arc(0,0,Rj,0,TAU); ctx.stroke();
+    /* 太歳（理想の影の星・金） */
+    ctx.fillStyle=rgbCss(hex2rgb(V.accent),.9);
+    ctx.beginPath(); ctx.arc(Math.cos(aT)*Rj,Math.sin(aT)*Rj,2.6,0,TAU); ctx.fill();
+    /* 歳星（ほんものの木星・蒼白） */
+    ctx.fillStyle="rgba(190,205,225,.95)";
+    ctx.shadowColor="rgba(190,205,225,.9)"; ctx.shadowBlur=8;
+    ctx.beginPath(); ctx.arc(Math.cos(aJ)*Rj,Math.sin(aJ)*Rj,3.4,0,TAU); ctx.fill();
+    ctx.shadowBlur=0;
+  }
+
+  /* --- 中央 --- */
+  const gz=(gazeShi>=0 && nowSec-gazeT<10);
+  ctx.textAlign="center"; ctx.textBaseline="middle";
+  if(gz){
+    const s=SHI[gazeShi];
+    const isNeko=(gazeShi===3 && nowSec-nekoT<8);
+    const big=R*.30;
+    ctx.fillStyle=ink(.96);
+    ctx.shadowColor="rgba(0,0,0,.55)"; ctx.shadowBlur=24;
+    ctx.font=`500 ${big}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+    ctx.fillText(s.k,0,-R*.10);
+    ctx.shadowBlur=0;
+    ctx.font=`400 ${R*.05}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+    ctx.fillStyle=ink(.6);
+    ctx.fillText(`${s.kun}　${isNeko?"猫（ベトナムでは兎でなく猫）":s.an+"（"+s.anK+"）"}`,0,R*.06);
+    ctx.font=`400 ${R*.043}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+    ctx.fillStyle=ink(.44);
+    ctx.fillText(s.ety,0,R*.145);
+    ctx.fillStyle=ink(.36);
+    ctx.fillText(s.t,0,R*.215);
+  }else{
+    const big=R*.27;
+    ctx.fillStyle=ink(.96);
+    ctx.shadowColor="rgba(0,0,0,.55)"; ctx.shadowBlur=24;
+    ctx.font=`500 ${big}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+    ctx.fillText(kan.k+shi.k,0,-R*.12);
+    ctx.shadowBlur=0;
+    ctx.font=`400 ${R*.048}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+    ctx.fillStyle=ink(.58);
+    ctx.fillText(`${kan.yomi}${shi.kun}`,0,R*.03);
+    ctx.font=`400 ${R*.045}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+    ctx.fillStyle=rgbCss(ec,.92);
+    ctx.fillText(`${GOGYO[kan.e].n}の${kan.y===0?"陽":"陰"}　×　${shi.an}`,0,R*.115);
+    ctx.font=`500 ${R*.052}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+    ctx.fillStyle=ink(.80);
+    const yI=Math.floor(year);
+    ctx.fillText(yI>=1?`西暦 ${yI} 年`:`紀元前 ${1-yI} 年`,0,R*.215);
+    /* 甲子からの歩みと還暦 */
+    const cp=cyclePos(year);
+    ctx.font=`400 ${R*.036}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+    ctx.fillStyle=ink(.36);
+    ctx.fillText(`甲子から${cp+1}年目　環がとじるまであと${60-cp}年`,0,R*.285);
+    /* 超辰 — 歳星のずれ */
+    const drift=jupAngle(year)-taisaiAngle(year);
+    const dSigned=((drift%360)+360)%360;
+    const dShow=dSigned>180?dSigned-360:dSigned;
+    ctx.fillStyle=ink(.30);
+    ctx.fillText(`歳星は暦より ${dShow>=0?"+":""}${dShow.toFixed(1)}° 先をゆく（約86年で一支ぶん）`,0,R*.345);
+  }
+
+  ctx.restore();
+
+  /* --- 解説の間 --- */
+  if(panelA>.01) drawPanel(R);
+  return kanOffDeg;
+}
+
+/* ============================================================
+   解説の間 — 国芳の十二支と民俗（img/01_ne.jpg 等で差し替え可）
+============================================================ */
+function wrapJP(text,maxW){
+  const out=[]; let line="";
+  for(const ch of text){
+    if(ctx.measureText(line+ch).width>maxW){ out.push(line); line=ch; }
+    else line+=ch;
+  }
+  if(line) out.push(line);
+  return out;
+}
+function drawPanel(R){
+  const k=panelIdx<0?0:panelIdx;
+  const s=SHI[k];
+  const acc=hex2rgb(V.accent);
+  const ink=(a)=>`rgba(236,229,216,${a})`;
+  const FT=(sz)=>`${sz}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+  const ease=panelA*panelA*(3-2*panelA);
+  const im=IMGS[k];
+  const landscape=(W>=560 && W>H*.9);
+  const pw=landscape?Math.min(W*.92,860):Math.min(W*.94,520);
+  const ph=landscape?Math.min(H*.90,560):Math.min(H*.92,780);
+  const pad=14;
+  ctx.save();
+  ctx.translate(cx(),cy());
+  ctx.globalAlpha=ease;
+  ctx.fillStyle="rgba(3,4,9,.78)";
+  ctx.fillRect(-W/2,-H/2,W,H);
+  const px=-pw/2, py=-ph/2;
+  ctx.fillStyle="rgba(13,12,18,.97)";
+  ctx.strokeStyle=rgbCss(acc,.5);
+  ctx.lineWidth=1;
+  ctx.beginPath(); ctx.roundRect(px,py,pw,ph,10); ctx.fill(); ctx.stroke();
+  /* 錦絵のまど — まるごと（contain） */
+  const iw=landscape?pw*.44:pw-2*pad;
+  const ih=landscape?ph-2*pad:ph*.48;
+  const ix=px+pad, iy=py+pad;
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(ix,iy,iw,ih,7); ctx.clip();
+  ctx.fillStyle="rgba(7,6,10,.95)";
+  ctx.fillRect(ix,iy,iw,ih);
+  if(im && im.ok){
+    const bgc=ctx.createRadialGradient(ix+iw/2,iy+ih/2,0,ix+iw/2,iy+ih/2,Math.max(iw,ih)*.7);
+    bgc.addColorStop(0,rgbCss(acc,.08));
+    bgc.addColorStop(1,"rgba(0,0,0,0)");
+    ctx.fillStyle=bgc;
+    ctx.fillRect(ix,iy,iw,ih);
+    const sc=Math.min((iw-12)/im.width,(ih-36)/im.height);
+    const dw=im.width*sc, dh=im.height*sc;
+    ctx.drawImage(im, ix+(iw-dw)/2, iy+(ih-28-dh)/2+4, dw, dh);
+    const sg=ctx.createLinearGradient(0,iy+ih-30,0,iy+ih);
+    sg.addColorStop(0,"rgba(0,0,0,0)");
+    sg.addColorStop(1,"rgba(0,0,0,.8)");
+    ctx.fillStyle=sg;
+    ctx.fillRect(ix,iy+ih-30,iw,30);
+    ctx.fillStyle=ink(.52);
+    ctx.font=`400 ${FT(Math.max(8,Math.min(11,iw*.028)))}`;
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText(CRED,ix+iw/2,iy+ih-10,iw-12);
+  }else{
+    ctx.fillStyle=ink(.08);
+    ctx.font=`500 ${FT(ih*.6)}`;
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText(s.an,ix+iw/2,iy+ih/2);
+  }
+  ctx.restore();
+  /* ことば */
+  ctx.textAlign="center"; ctx.textBaseline="middle";
+  const tx=landscape?(ix+iw+(px+pw-(ix+iw))/2):0;
+  const tw=landscape?(px+pw-(ix+iw)-pad*2):(pw-2*pad);
+  const avail=landscape?(ph-2*pad):(ph-ih-2*pad);
+  const base=Math.min(landscape?ph:pw, avail*1.35, tw*2.4);
+  let ty=landscape?py+ph*.13:iy+ih+avail*.13;
+  const isNeko=(k===3 && performance.now()/1000-nekoT<8);
+  ctx.fillStyle=ink(.96);
+  ctx.font=`500 ${FT(base*.105)}`;
+  ctx.fillText(s.k,tx,ty);
+  ty+=base*.088;
+  ctx.fillStyle=rgbCss(acc,.85);
+  ctx.font=`400 ${FT(base*.040)}`;
+  ctx.fillText(`${s.kun}　—　${isNeko?"猫（ベトナムの十二支）":s.an+"（"+s.anK+"）"}`,tx,ty,tw);
+  ty+=base*.066;
+  ctx.fillStyle=ink(.60);
+  ctx.font=`400 ${FT(base*.036)}`;
+  ctx.fillText(`${s.t}　｜　方位 ${DIR12[k]}　｜　旧暦${s.tsuki}`,tx,ty,tw);
+  ty+=base*.056;
+  const g=SANGO.find(g=>g.shi.includes(k));
+  ctx.fillText(`三合 ${g.shi.map(i=>SHI[i].k).join("")}（${g.name}）　｜　冲 ${SHI[(k+6)%12].k}`,tx,ty,tw);
+  ty+=base*.056;
+  ctx.fillStyle=ink(.50);
+  ctx.fillText(s.ety,tx,ty,tw);
+  ty+=base*.080;
+  ctx.fillStyle=ink(.80);
+  ctx.font=`400 ${FT(base*.041)}`;
+  const lines=wrapJP(s.lore,tw*.96);
+  for(const ln of lines){ ctx.fillText(ln,tx,ty); ty+=base*.062; }
+  ctx.fillStyle=ink(.26);
+  ctx.font=`400 ${FT(Math.max(9,base*.027))}`;
+  ctx.fillText("どこかにふれると、とじる",tx,py+ph-base*.042);
+  ctx.restore();
+}
+
+/* ============================================================
+   メインループ
+============================================================ */
+window.__eto={
+  setYear(y){ year=y; targetYear=null; },
+  get(){ return {year, kan:KAN[kanOf(year)].k, shi:SHI[shiOf(year)].k, cycle:cyclePos(year)}; },
+};
+
+let prevT=performance.now();
+function frame(now){
+  const dt=Math.min(.05,(now-prevT)/1000); prevT=now;
+  const t=now/1000;
+
+  if(!dragging && targetYear===null && now-lastInteract>3000){
+    year+=FLOWS[flowIdx].v*dt;
+  }
+  if(targetYear!==null){
+    year+=(targetYear-year)*Math.min(1,dt*3.5);
+    if(Math.abs(targetYear-year)<.01){ year=targetYear; targetYear=null; }
+  }
+  panelA+=((panelIdx>=0?1:0)-panelA)*Math.min(1,dt*9);
+
+  const ec=elemCol(KAN[kanOf(year)].e);
+  gl.uniform2f(U.uRes,glCanvas.width,glCanvas.height);
+  gl.uniform1f(U.uTime,t);
+  gl.uniform3f(U.uBgA,BGA[0],BGA[1],BGA[2]);
+  gl.uniform3f(U.uBgB,BGB[0],BGB[1],BGB[2]);
+  gl.uniform3f(U.uElem,ec[0],ec[1],ec[2]);
+  const zi=shiOf(year), ki=kanOf(year), yf=year-Math.floor(year);
+  gl.uniform1f(U.uGear, ((zi*30+yf*30)-(ki*36+yf*36))*Math.PI/180);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+
+  drawRing(now);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

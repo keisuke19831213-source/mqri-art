@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>十二律 | 「12」第一作</title>
+<style>
+  :root{
+    --ink: #ece5d8;
+    --ink-dim: rgba(236,229,216,.55);
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ width:100%; height:100%; overflow:hidden; background:#0d1020; }
+  body{
+    font-family:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho","YuMincho",serif;
+    color:var(--ink);
+    -webkit-user-select:none; user-select:none;
+    touch-action:none;
+  }
+  canvas{ position:fixed; inset:0; width:100vw; height:100vh; display:block; }
+  #gl{ z-index:0; }
+  #ring{ z-index:1; cursor:grab; }
+  #ring.dragging{ cursor:grabbing; }
+
+  #title{
+    position:fixed; top:28px; left:30px; z-index:2;
+    writing-mode:vertical-rl; letter-spacing:.55em;
+    font-size:clamp(14px,1.6vmin,19px); font-weight:500;
+    color:var(--ink-dim);
+    text-shadow:0 0 18px rgba(0,0,0,.5);
+    pointer-events:none;
+  }
+  #title b{ font-weight:600; color:var(--ink); font-size:1.35em; letter-spacing:.4em; }
+  #series{
+    position:fixed; bottom:24px; left:30px; z-index:2;
+    writing-mode:vertical-rl; letter-spacing:.4em;
+    font-size:11px; color:rgba(236,229,216,.30);
+    pointer-events:none;
+  }
+
+  #ctrl{
+    position:fixed; top:26px; right:30px; z-index:2;
+    display:flex; flex-direction:column; gap:10px; align-items:flex-end;
+  }
+  .btn{
+    font-family:inherit; font-size:12px; letter-spacing:.3em; text-indent:.3em;
+    color:var(--ink-dim); background:transparent;
+    border:1px solid rgba(236,229,216,.26); border-radius:999px;
+    padding:8px 16px 7px 16px; cursor:pointer;
+    transition:color .4s, border-color .4s, background .4s;
+    white-space:nowrap;
+  }
+  .btn:hover{ color:var(--ink); border-color:rgba(236,229,216,.6); background:rgba(236,229,216,.06); }
+  .btn.on{ color:var(--ink); border-color:rgba(236,229,216,.65); }
+
+  #hint{
+    position:fixed; bottom:22px; left:50%; transform:translateX(-50%); z-index:2;
+    font-size:11px; letter-spacing:.3em; color:rgba(236,229,216,.34);
+    white-space:nowrap; pointer-events:none;
+    transition:opacity 1.2s;
+  }
+  #hint.hide{ opacity:0; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="ring"></canvas>
+<div id="title"><b>十二律</b>　音の円環は閉じない</div>
+<div id="series">「12」— 円環の連作　第一</div>
+<div id="ctrl">
+  <button class="btn" id="soundBtn">音を灯す</button>
+  <button class="btn" id="layoutBtn">並び　半音</button>
+  <button class="btn" id="genBtn">歩み　五度</button>
+  <button class="btn" id="tuneBtn">調律　純正</button>
+  <button class="btn" id="varBtn">見た目　夜奏</button>
+</div>
+<div id="hint">まわして音をめぐる — ドラッグ / クリックで奏でる / 空白で停止</div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   十二律データ — 日本十二律の律名 × 洋名 × 宇宙操作の動詞
+   （動詞・象徴は 260105「12音の循環で神秘作品」より）
+   fifthsPos: 五度圏上の位置 (7*i mod 12)
+============================================================ */
+const NOTES = [
+ {w:"C",  jp:"神仙", kana:"しんせん",   verb:"在る",   sym:"円・胎内・光以前"},
+ {w:"C♯", jp:"上無", kana:"かみむ",     verb:"歪む",   sym:"亀裂・鏡・歪み"},
+ {w:"D",  jp:"壱越", kana:"いちこつ",   verb:"動く",   sym:"道・靴・風"},
+ {w:"D♯", jp:"断金", kana:"たんぎん",   verb:"感じる", sym:"血・夕暮れ"},
+ {w:"E",  jp:"平調", kana:"ひょうじょう",verb:"観る",  sym:"顔・声・焚き火"},
+ {w:"F",  jp:"勝絶", kana:"しょうぜつ", verb:"止まる", sym:"扉・橋"},
+ {w:"F♯", jp:"下無", kana:"しもむ",     verb:"浮く",   sym:"星・結晶"},
+ {w:"G",  jp:"双調", kana:"そうじょう", verb:"意志",   sym:"剣・炎"},
+ {w:"G♯", jp:"鳧鐘", kana:"ふしょう",   verb:"溶ける", sym:"蜜・月"},
+ {w:"A",  jp:"黄鐘", kana:"おうしき",   verb:"沈む",   sym:"影・夕焼け"},
+ {w:"A♯", jp:"鸞鏡", kana:"らんけい",   verb:"拡がる", sym:"地平線・土"},
+ {w:"B",  jp:"盤渉", kana:"ばんしき",   verb:"欲する", sym:"卵・胎動"},
+];
+const N=12, TAU=Math.PI*2;
+const fifthsPos = i => (7*i)%12;           // 五度圏上の席
+const GENS = [ {g:7,label:"五度"}, {g:5,label:"四度"}, {g:1,label:"半音"}, {g:11,label:"逆行"} ];
+
+/* 純正音程（セント）— 歩み1歩ぶん */
+const PURE_CENTS = {7:701.955, 5:498.045, 1:100, 11:1100};   // 半音系は平均に同じ
+const EQ_CENTS   = {7:700,     5:500,     1:100, 11:1100};
+const COMMA = 23.46;   // ピタゴラスのコンマ
+
+/* ============================================================
+   見た目の案 — ?v=A|B|C
+   A 夜奏(よるかなで): 藍の夜に金の星鎖（推し）
+   B 分光(ぶんこう):   漆黒に十二色相そのまま
+   C 墨明(ぼくめい):   墨の間に朱と金だけ
+============================================================ */
+const VORDER=["A","B","C"];
+const VQ=(new URLSearchParams(location.search).get("v")||"A").toUpperCase();
+const VARIANTS={
+  A:{ bg:["#0d1020","#1a2340"], sat:.42, satCur:.72, li:[.40,.80],
+      star:"#d9b56a", starAlpha:.5, hueShift:35, name:"夜奏" },
+  B:{ bg:["#08080d","#141420"], sat:.78, satCur:.95, li:[.42,.72],
+      star:"#ffffff", starAlpha:.30, hueShift:0,  name:"分光" },
+  C:{ bg:["#151011","#2a1c16"], sat:.55, satCur:.85, li:[.44,.72],
+      star:"#c8a25c", starAlpha:.5, hueShift:0,  name:"墨明", hueLock:[8,46] },
+};
+let vKey=VARIANTS[VQ]?VQ:"A";
+let V=VARIANTS[vKey];
+
+/* HSL→RGB */
+function hsl2rgb(h,s,l){
+  h=((h%360)+360)%360;
+  const c=(1-Math.abs(2*l-1))*s, x=c*(1-Math.abs((h/60)%2-1)), m=l-c/2;
+  let r,g,b;
+  if(h<60){r=c;g=x;b=0}else if(h<120){r=x;g=c;b=0}else if(h<180){r=0;g=c;b=x}
+  else if(h<240){r=0;g=x;b=c}else if(h<300){r=x;g=0;b=c}else{r=c;g=0;b=x}
+  return [r+m,g+m,b+m];
+}
+/* 各音の色：色相=半音位置 / 明度=五度圏の調号勾配（♯側ほど明るい） */
+function noteColor(i,cur){
+  let hue;
+  if(V.hueLock){ // 墨明：朱〜金の帯に折りたたむ
+    hue = V.hueLock[0] + (V.hueLock[1]-V.hueLock[0])*(i/11);
+  }else{
+    hue = (i*30 + V.hueShift)%360;
+  }
+  const d = Math.min(fifthsPos(i), 12-fifthsPos(i));      // 0(C)..6(F♯)
+  const li = V.li[1] - (V.li[1]-V.li[0])*(d/6);
+  return hsl2rgb(hue, cur?V.satCur:V.sat, cur?Math.min(.85,li+.10):li);
+}
+function rgbCss(c,a=1){ return `rgba(${Math.round(c[0]*255)},${Math.round(c[1]*255)},${Math.round(c[2]*255)},${a})`; }
+function smooth(t){ return t*t*(3-2*t); }
+function lerp(a,b,t){ return a+(b-a)*t; }
+
+/* ============================================================
+   WebGL2 — 夜気と波紋
+============================================================ */
+const glCanvas=document.getElementById("gl");
+const gl=glCanvas.getContext("webgl2",{antialias:false,alpha:false});
+const VERT=`#version 300 es
+layout(location=0) in vec2 aPos;
+void main(){ gl_Position=vec4(aPos,0.,1.); }`;
+const FRAG=`#version 300 es
+precision highp float;
+uniform vec2  uRes;
+uniform float uTime;
+uniform vec3  uBgA,uBgB,uCur;      // 背景2色 + 現在音の色
+uniform vec4  uPulse[5];           // x:発火時刻 y:色相rad z:強さ w:未使用
+uniform vec3  uPulseCol[5];
+uniform float uDrift;              // コンマ累積(回転位相)
+out vec4 fragColor;
+
+float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
+float vnoise(vec2 p){
+  vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f);
+  float a=hash21(i),b=hash21(i+vec2(1,0)),c=hash21(i+vec2(0,1)),d=hash21(i+vec2(1,1));
+  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);
+}
+mat2 rot(float a){ float c=cos(a),s=sin(a); return mat2(c,-s,s,c); }
+float fbm(vec2 p){
+  float v=0.,a=.5; mat2 m=rot(.5);
+  for(int i=0;i<5;i++){ v+=a*vnoise(p); p=m*p*2.02+11.3; a*=.5; }
+  return v;
+}
+void main(){
+  vec2 frag=gl_FragCoord.xy;
+  vec2 uv=(frag-.5*uRes)/uRes.y;
+  float t=uTime;
+  float rr=length(uv), th=atan(uv.y,uv.x);
+
+  /* 夜気 */
+  vec2 p=uv*2.0;
+  vec2 q=vec2(fbm(p+t*.014), fbm(p+vec2(5.2,1.3)-t*.011));
+  float f=fbm(p+2.4*q);
+  vec3 col=mix(uBgA,uBgB,clamp(f*f*2.2,0.,1.));
+  col=mix(col,uCur*.55,clamp(length(q)*.7,0.,1.)*.28);
+
+  /* 十二の気配 — 円周の定在波（コンマぶんだけ位相が流れる） */
+  float stnd=sin(th*12.+uDrift)*.5+.5;
+  col+=uCur*stnd*exp(-abs(rr-.36)*9.)*.10;
+
+  /* 音の波紋 */
+  for(int k=0;k<5;k++){
+    float age=t-uPulse[k].x;
+    if(age<0.||age>6.||uPulse[k].z<.01) continue;
+    float rad=age*.16;
+    float w=exp(-abs(rr-rad)*26.)*exp(-age*.9);
+    col+=uPulseCol[k]*w*uPulse[k].z*.55;
+  }
+
+  /* 仕上げ */
+  col*=1.-.44*pow(rr*1.25,2.2);
+  col+=(hash21(frag+fract(t)*61.7)-.5)*.03;
+  col=col/(1.+col*.12);
+  col=pow(max(col,0.),vec3(.96));
+  fragColor=vec4(col,1.);
+}`;
+function compile(type,src){
+  const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+const prog=gl.createProgram();
+gl.attachShader(prog,compile(gl.VERTEX_SHADER,VERT));
+gl.attachShader(prog,compile(gl.FRAGMENT_SHADER,FRAG));
+gl.linkProgram(prog);
+if(!gl.getProgramParameter(prog,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+const vao=gl.createVertexArray(); gl.bindVertexArray(vao);
+const vbo=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+const U={};
+["uRes","uTime","uBgA","uBgB","uCur","uDrift"].forEach(n=>U[n]=gl.getUniformLocation(prog,n));
+U.uPulse=gl.getUniformLocation(prog,"uPulse[0]");
+U.uPulseCol=gl.getUniformLocation(prog,"uPulseCol[0]");
+
+function hex2rgb(h){ return [parseInt(h.slice(1,3),16)/255,parseInt(h.slice(3,5),16)/255,parseInt(h.slice(5,7),16)/255]; }
+let BGA=hex2rgb(V.bg[0]), BGB=hex2rgb(V.bg[1]);
+function applyVariant(key){
+  vKey=key; V=VARIANTS[key];
+  BGA=hex2rgb(V.bg[0]); BGB=hex2rgb(V.bg[1]);
+  document.body.style.background=V.bg[0];
+  for(const tr of trail) tr.col=noteColor(tr.i1,true);   // 足跡も新しい衣に
+}
+document.body.style.background=V.bg[0];
+
+/* ============================================================
+   リングキャンバス
+============================================================ */
+const ringCanvas=document.getElementById("ring");
+const ctx=ringCanvas.getContext("2d");
+let W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2);
+  W=window.innerWidth||1280; H=window.innerHeight||800;
+  glCanvas.width=Math.max(2,W*DPR); glCanvas.height=Math.max(2,H*DPR);
+  ringCanvas.width=Math.max(2,W*DPR); ringCanvas.height=Math.max(2,H*DPR);
+  gl.viewport(0,0,glCanvas.width,glCanvas.height);
+}
+window.addEventListener("resize",resize); resize();
+
+/* ============================================================
+   状態
+============================================================ */
+let rotOff=0;                 // ドラッグ回転（表示のみ）
+let layoutMix=0;              // 0=半音環 1=五度環
+let layoutTarget=0;
+let genIdx=0;                 // GENS index（初期=五度）
+let tunePure=true;            // 純正/平均
+let autoplay=true;
+let lastInteract=-1e9;
+const BEAT=1.35;              // 歩みの間隔(秒)
+let nextStepT=2.2;            // 最初の一歩
+
+/* 歩み手（親指ポインタ） */
+let steps=0;                  // 累計歩数
+let centsTotal=0;             // 純正累積セント（C=0起点）
+let curNote=0;                // いまの音（pitch class）
+let prevNote=0;
+let stepAnimT=-1e9;           // 直前の一歩の時刻(秒)
+
+/* 足跡 — 弦の重なりが星をつくる */
+const trail=[];               // {i0,i1, lap0,lap1, t, col}
+const MAXTRAIL=96;
+
+/* 波紋 */
+const pulses=[]; // {t, col, str}
+function firePulse(t,col,str){ pulses.push({t,col,str}); if(pulses.length>5) pulses.shift(); }
+
+/* ============================================================
+   音 — WebAudio（タップで解錠）
+============================================================ */
+let AC=null, master=null, soundOn=false;
+function initAudio(){
+  if(AC) return;
+  AC=new (window.AudioContext||window.webkitAudioContext)();
+  master=AC.createGain(); master.gain.value=.22;
+  const comp=AC.createDynamicsCompressor();
+  master.connect(comp); comp.connect(AC.destination);
+}
+function playNote(cents){
+  if(!soundOn||!AC) return;
+  const t=AC.currentTime;
+  /* C4を0セントとし、聴きやすい1オクターブに折りたたむ */
+  const folded=((cents%1200)+1200)%1200;
+  const f=261.63*Math.pow(2,folded/1200);
+  const o1=AC.createOscillator(), o2=AC.createOscillator(), g=AC.createGain(), fl=AC.createBiquadFilter();
+  o1.type="triangle"; o1.frequency.value=f;
+  o2.type="sine";     o2.frequency.value=f*2; // 弱い倍音
+  const g2=AC.createGain(); g2.gain.value=.18;
+  fl.type="lowpass"; fl.frequency.value=2600; fl.Q.value=.6;
+  o1.connect(g); o2.connect(g2); g2.connect(g);
+  g.connect(fl); fl.connect(master);
+  g.gain.setValueAtTime(0,t);
+  g.gain.linearRampToValueAtTime(.9,t+.018);
+  g.gain.exponentialRampToValueAtTime(.0008,t+2.1);
+  o1.start(t); o2.start(t); o1.stop(t+2.2); o2.stop(t+2.2);
+}
+
+/* ============================================================
+   歩み — 一歩すすむ
+============================================================ */
+function stepOnce(nowSec){
+  const g=GENS[genIdx].g;
+  prevNote=curNote;
+  const lap0=Math.floor(steps/12);   // 12歩＝全音めぐり1周
+  steps++;
+  curNote=(curNote+g)%12;
+  const lap1=Math.floor(steps/12);
+  const per=tunePure?PURE_CENTS[g]:EQ_CENTS[g];
+  centsTotal+=per;
+  stepAnimT=nowSec;
+  const col=noteColor(curNote,true);
+  trail.push({i0:prevNote,i1:curNote,lap0,lap1,t:nowSec,col});
+  if(trail.length>MAXTRAIL) trail.shift();
+  firePulse(nowSec,col,.9);
+  playNote(centsTotal);
+}
+
+/* ============================================================
+   入力
+============================================================ */
+function cx(){ return W/2; } function cy(){ return H/2; }
+function angleOf(e){
+  const x=(e.clientX??e.touches?.[0]?.clientX)-cx();
+  const y=(e.clientY??e.touches?.[0]?.clientY)-cy();
+  return Math.atan2(y,x);
+}
+let dragging=false,dragA=0,dragMoved=0;
+ringCanvas.addEventListener("pointerdown",e=>{
+  dragging=true; dragMoved=0; dragA=angleOf(e);
+  lastInteract=performance.now(); ringCanvas.classList.add("dragging");
+  ringCanvas.setPointerCapture(e.pointerId);
+  initAudio(); if(AC&&AC.state==="suspended") AC.resume();
+});
+ringCanvas.addEventListener("pointermove",e=>{
+  if(!dragging) return;
+  const a=angleOf(e);
+  let da=a-dragA;
+  if(da>Math.PI)da-=TAU; if(da<-Math.PI)da+=TAU;
+  dragA=a; dragMoved+=Math.abs(da);
+  rotOff+=da;
+  lastInteract=performance.now();
+});
+ringCanvas.addEventListener("pointerup",e=>{
+  dragging=false; ringCanvas.classList.remove("dragging");
+  lastInteract=performance.now();
+  if(dragMoved<.02){
+    /* クリック：その音へ跳んで奏でる */
+    const x=e.clientX-cx(), y=e.clientY-cy();
+    const rr=Math.hypot(x,y), R=Math.min(W,H)*.40;
+    if(rr>R*.55&&rr<R*1.22){
+      const a=Math.atan2(y,x);
+      let best=0,bd=9;
+      for(let i=0;i<12;i++){
+        const na=nodeAngle(i);
+        let d=Math.abs(((a-na)%TAU+TAU)%TAU); d=Math.min(d,TAU-d);
+        if(d<bd){bd=d;best=i;}
+      }
+      const now=performance.now()/1000;
+      prevNote=curNote; curNote=best;
+      /* 跳んだ分のセントは平均律で合わせる（旅の割り込み） */
+      const foldedNow=((centsTotal%1200)+1200)%1200;
+      centsTotal+= (best*100-foldedNow);
+      stepAnimT=now;
+      const col=noteColor(best,true);
+      firePulse(now,col,1);
+      playNote(centsTotal);
+      nextStepT=now+BEAT*1.6;
+    }
+  }
+  hideHint();
+});
+window.addEventListener("wheel",e=>{
+  rotOff+=e.deltaY*9e-4;
+  lastInteract=performance.now(); hideHint();
+},{passive:true});
+window.addEventListener("keydown",e=>{
+  if(e.key===" "){ autoplay=!autoplay; e.preventDefault(); }
+  hideHint();
+});
+
+const soundBtn=document.getElementById("soundBtn");
+soundBtn.addEventListener("click",()=>{
+  initAudio(); if(AC&&AC.state==="suspended") AC.resume();
+  soundOn=!soundOn;
+  soundBtn.textContent=soundOn?"音を消す":"音を灯す";
+  soundBtn.classList.toggle("on",soundOn);
+});
+const layoutBtn=document.getElementById("layoutBtn");
+let layoutModeIdx=0;   // 0=半音 1=五度 2=五度圏（十二平均律の盤）
+layoutBtn.addEventListener("click",()=>{
+  layoutModeIdx=(layoutModeIdx+1)%3;
+  layoutTarget=(layoutModeIdx>=1)?1:0;
+  chartTarget=(layoutModeIdx===2)?1:0;
+  layoutBtn.textContent="並び　"+["半音","五度","五度圏"][layoutModeIdx];
+});
+const genBtn=document.getElementById("genBtn");
+genBtn.addEventListener("click",()=>{
+  genIdx=(genIdx+1)%GENS.length;
+  genBtn.textContent="歩み　"+GENS[genIdx].label;
+});
+const tuneBtn=document.getElementById("tuneBtn");
+tuneBtn.addEventListener("click",()=>{
+  tunePure=!tunePure;
+  tuneBtn.textContent="調律　"+(tunePure?"純正":"平均");
+});
+const varBtn=document.getElementById("varBtn");
+varBtn.textContent="見た目　"+V.name;
+varBtn.addEventListener("click",()=>{
+  const next=VORDER[(VORDER.indexOf(vKey)+1)%VORDER.length];
+  applyVariant(next);
+  varBtn.textContent="見た目　"+V.name;
+});
+
+let hintHidden=false;
+function hideHint(){
+  if(hintHidden)return; hintHidden=true;
+  setTimeout(()=>document.getElementById("hint").classList.add("hide"),2500);
+}
+setTimeout(hideHint,14000);
+
+/* ============================================================
+   五度圏（サークル・オブ・フィフス）— 十二平均律の盤
+   ピッチクラスごとの長調・調号・平行短調
+============================================================ */
+const KEYS=[
+ {maj:"C",     jpk:"ハ長調",   sig:"♮",  min:"Am"},
+ {maj:"D♭",   jpk:"変ニ長調", sig:"♭5", min:"B♭m"},
+ {maj:"D",     jpk:"ニ長調",   sig:"♯2", min:"Bm"},
+ {maj:"E♭",   jpk:"変ホ長調", sig:"♭3", min:"Cm"},
+ {maj:"E",     jpk:"ホ長調",   sig:"♯4", min:"C♯m"},
+ {maj:"F",     jpk:"ヘ長調",   sig:"♭1", min:"Dm"},
+ {maj:"F♯=G♭",jpk:"嬰ヘ＝変ト長調", sig:"♯6=♭6", min:"D♯m", seam:true},
+ {maj:"G",     jpk:"ト長調",   sig:"♯1", min:"Em"},
+ {maj:"A♭",   jpk:"変イ長調", sig:"♭4", min:"Fm"},
+ {maj:"A",     jpk:"イ長調",   sig:"♯3", min:"F♯m"},
+ {maj:"B♭",   jpk:"変ロ長調", sig:"♭2", min:"Gm"},
+ {maj:"B",     jpk:"ロ長調",   sig:"♯5", min:"G♯m"},
+];
+let chartTarget=0, chartMix=0;   // 五度圏モード（十二平均律の盤）
+
+/* ============================================================
+   幾何 — 音iの画面角度（並びのモーフ込み）
+============================================================ */
+function nodeAngle(i){
+  const aChr=i/12*TAU;
+  const aFif=fifthsPos(i)/12*TAU;
+  let d=aFif-aChr;
+  if(d>Math.PI)d-=TAU; if(d<-Math.PI)d+=TAU;
+  return -Math.PI/2 + aChr + d*smooth(layoutMix) + rotOff;
+}
+/* コンマ螺旋 — 純正の旅路がずれてゆく分を半径に写す */
+function commaR(lap){ return 1 + lap*0.016; }
+
+/* ============================================================
+   リング描画
+============================================================ */
+function drawRing(now){
+  const nowSec=now/1000;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.clearRect(0,0,W,H);
+  const R=Math.min(W,H)*.36;
+  const ink=(a)=>`rgba(236,229,216,${a})`;
+  ctx.save();
+  ctx.translate(cx(),cy());
+
+  const curLap=Math.floor(steps/12);
+
+  /* --- 基準の環（平均律の円＝閉じた理想） --- */
+  ctx.lineWidth=1;
+  ctx.strokeStyle=ink(.42);
+  ctx.beginPath(); ctx.arc(0,0,R,0,TAU); ctx.stroke();
+  ctx.strokeStyle=ink(.16);
+  ctx.beginPath(); ctx.arc(0,0,R*.985,0,TAU); ctx.stroke();
+
+  /* 60刻み（12×5 — 手と手の掛け算） */
+  for(let i=0;i<60;i++){
+    const a=-Math.PI/2 + i/60*TAU + rotOff;
+    const major=(i%5===0);
+    ctx.strokeStyle=ink(major?.5:.20);
+    ctx.lineWidth=major?1.2:.6;
+    const r1=major?R*.945:R*.962;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a)*r1,Math.sin(a)*r1);
+    ctx.lineTo(Math.cos(a)*R*.985,Math.sin(a)*R*.985);
+    ctx.stroke();
+  }
+
+  /* --- 足跡の弦 — 歩みが星形を彫る（コンマで螺旋化） --- */
+  for(const tr of trail){
+    const age=nowSec-tr.t;
+    const fade=Math.max(0,1-age/38);
+    if(fade<=0) continue;
+    const a0=nodeAngle(tr.i0), a1=nodeAngle(tr.i1);
+    const r0=R*commaR(tunePure?tr.lap0:0)*.965;
+    const r1=R*commaR(tunePure?tr.lap1:0)*.965;
+    ctx.strokeStyle=rgbCss(tr.col, .12+.5*fade);
+    ctx.lineWidth=1+1.6*fade;
+    ctx.shadowColor=rgbCss(tr.col,.8); ctx.shadowBlur=8*fade;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a0)*r0,Math.sin(a0)*r0);
+    ctx.lineTo(Math.cos(a1)*r1,Math.sin(a1)*r1);
+    ctx.stroke();
+    ctx.shadowBlur=0;
+  }
+
+  /* --- 隣接の鎖（薄く）— いまの並びの十二角形 --- */
+  ctx.strokeStyle=ink(.14); ctx.lineWidth=.8;
+  ctx.beginPath();
+  for(let k=0;k<=12;k++){
+    const ord=layoutTarget? (7*k)%12 : k%12;   // 表示順に一周
+    const a=nodeAngle(ord%12);
+    const x=Math.cos(a)*R*.965, y=Math.sin(a)*R*.965;
+    if(k===0)ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+
+  /* --- 12の音 --- */
+  const nameSize=Math.max(13,R*.085);
+  ctx.textAlign="center"; ctx.textBaseline="middle";
+  for(let i=0;i<12;i++){
+    const a=nodeAngle(i);
+    const cur=(i===curNote);
+    const col=noteColor(i,cur);
+    const nx=Math.cos(a)*R*.965, ny=Math.sin(a)*R*.965;
+
+    /* 珠 */
+    const pulse=cur? .5+.5*Math.min(1,Math.max(0,1-(nowSec-stepAnimT)/1.2)) : 0;
+    ctx.fillStyle=rgbCss(col, cur? .95 : .78);
+    ctx.shadowColor=rgbCss(col,.9); ctx.shadowBlur=cur?18+14*pulse:6;
+    ctx.beginPath(); ctx.arc(nx,ny, cur?5.2+2.4*pulse:3.4, 0,TAU); ctx.fill();
+    ctx.shadowBlur=0;
+
+    /* 律名（放射方向の縦書き — 文字の天が外周） */
+    const chars=NOTES[i].jp.split("");
+    ctx.save();
+    ctx.rotate(a);
+    ctx.fillStyle=cur?rgbCss(col,1):ink(.68);
+    if(cur){ ctx.shadowColor=rgbCss(col,.9); ctx.shadowBlur=10; }
+    ctx.font=`${cur?600:400} ${nameSize*(cur?1.1:1)}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+    for(let c=0;c<chars.length;c++){
+      const rr=R*1.10+nameSize*(.5+ (chars.length-1-c)*1.16);
+      ctx.save(); ctx.translate(rr,0); ctx.rotate(Math.PI/2);
+      ctx.fillText(chars[c],0,0);
+      ctx.restore();
+    }
+    /* 洋名は小さく内側（五度圏モードでは調号に席をゆずる） */
+    ctx.fillStyle=cur?rgbCss(col,.85*(1-chartMix)+.85*0):ink(.34*(1-chartMix));
+    ctx.font=`400 ${nameSize*.52}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+    ctx.save(); ctx.translate(R*.885,0); ctx.rotate(Math.PI/2);
+    if(chartMix<.95) ctx.fillText(NOTES[i].w,0,0);
+    ctx.restore();
+    ctx.restore();
+  }
+
+  /* --- 五度圏の盤（十二平均律）— 長調・調号・平行短調 --- */
+  if(chartMix>.01){
+    const ca=smooth(chartMix);
+    /* 内側の案内円 */
+    ctx.strokeStyle=ink(.10*ca); ctx.lineWidth=.8;
+    ctx.beginPath(); ctx.arc(0,0,R*.735,0,TAU); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0,0,R*.575,0,TAU); ctx.stroke();
+    for(let i=0;i<12;i++){
+      const k=KEYS[i];
+      const a=nodeAngle(i);
+      const cur=(i===curNote);
+      const col=noteColor(i,cur);
+      const ux=Math.cos(a), uy=Math.sin(a);
+      /* 調号（洋名の席） */
+      ctx.fillStyle=cur?rgbCss(col,.9*ca):ink(.40*ca);
+      ctx.font=`400 ${Math.max(9,nameSize*.44)}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+      ctx.fillText(k.sig==="♮"?"♮":k.sig, ux*R*.885, uy*R*.885);
+      /* 長調（正立・おおきく） */
+      ctx.fillStyle=cur?rgbCss(col,1):ink(.72*ca);
+      if(cur){ ctx.shadowColor=rgbCss(col,.85); ctx.shadowBlur=8; }
+      ctx.font=`${cur?600:400} ${Math.max(11,nameSize*(k.seam?.52:.72))}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+      ctx.fillText(k.maj, ux*R*.795, uy*R*.795);
+      ctx.shadowBlur=0;
+      /* 平行短調（内輪） */
+      ctx.fillStyle=cur?rgbCss(col,.75*ca):ink(.38*ca);
+      ctx.font=`400 ${Math.max(9,nameSize*.46)}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+      ctx.fillText(k.min, ux*R*.645, uy*R*.645);
+      /* 異名同音の継ぎ目 — 平均律だけがとじられる */
+      if(k.seam){
+        const gold=[.85,.71,.42];
+        ctx.fillStyle=rgbCss(gold,(tunePure?.5:.9)*ca);
+        ctx.font=`400 ${Math.max(8,nameSize*.36)}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+        ctx.fillText(tunePure?"とじない":"とじた", ux*R*.52, uy*R*.52);
+      }
+    }
+  }
+
+  /* --- 歩み手（親指ポインタ）の現在位置 --- */
+  {
+    const t01=Math.min(1,(nowSec-stepAnimT)/(BEAT*.62));
+    const e=smooth(t01);
+    const a0=nodeAngle(prevNote), a1=nodeAngle(curNote);
+    const lapPrev=steps>0?Math.floor((steps-1)/12):0;
+    const r0=R*commaR(tunePure?lapPrev:0)*.965;
+    const r1=R*commaR(tunePure?curLap:0)*.965;
+    const x=lerp(Math.cos(a0)*r0,Math.cos(a1)*r1,e);
+    const y=lerp(Math.sin(a0)*r0,Math.sin(a1)*r1,e);
+    const col=noteColor(curNote,true);
+    ctx.fillStyle=rgbCss(col,1);
+    ctx.shadowColor=rgbCss(col,1); ctx.shadowBlur=22;
+    ctx.beginPath(); ctx.arc(x,y,4.4,0,TAU); ctx.fill();
+    ctx.shadowBlur=0;
+  }
+
+  /* --- 中央 --- */
+  const s=NOTES[curNote];
+  const col=noteColor(curNote,true);
+  const fade=Math.min(1,(nowSec-stepAnimT)/.45+.35);
+  ctx.globalAlpha=smooth(Math.min(1,fade));
+  const big=R*.34;
+  ctx.fillStyle=ink(.96);
+  ctx.shadowColor="rgba(0,0,0,.55)"; ctx.shadowBlur=24;
+  ctx.font=`500 ${big}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+  ctx.fillText(s.jp,0,-R*.10);
+  ctx.shadowBlur=0;
+  ctx.font=`400 ${R*.055}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+  ctx.fillStyle=ink(.58);
+  ctx.fillText(`${s.kana}　${s.w}`,0,R*.075);
+  ctx.font=`500 ${R*.062}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+  ctx.fillStyle=rgbCss(col,.92);
+  ctx.fillText(s.verb,0,R*.165);
+  ctx.font=`400 ${R*.040}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+  ctx.fillStyle=ink(.40);
+  ctx.fillText(s.sym,0,R*.245);
+
+  /* コンマ計 — 平均律の理想からのずれ */
+  const drift=centsTotal - (steps*GENS[genIdx].g)*100;
+  ctx.font=`400 ${R*.036}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+  ctx.fillStyle=ink(.34);
+  const lapStr=curLap>0?`${curLap}周目　`:"";
+  ctx.fillText(`${lapStr}ずれ ${drift>=0?"+":""}${drift.toFixed(1)}¢`,0,R*.315);
+
+  /* 五度圏モード — いまの調と、平均律のことわり */
+  if(chartMix>.01){
+    const k=KEYS[curNote];
+    ctx.font=`400 ${R*.040}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+    ctx.fillStyle=rgbCss(col,.85*chartMix);
+    ctx.fillText(`${k.jpk}（${k.maj}）　調号 ${k.sig==="♮"?"なし":k.sig}　平行短調 ${k.min}`,0,-R*.315);
+    ctx.font=`400 ${R*.033}px "Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif`;
+    ctx.fillStyle=ink(.36*chartMix);
+    ctx.fillText(tunePure
+      ?"純正の五度×12——環は 23.5¢ とじない（調律を平均にすると、とじる）"
+      :"十二平均律——半音はすべて 2^(1/12)＝100¢。誤差を十二等分して、環はとじた",0,R*.375);
+  }
+  ctx.globalAlpha=1;
+
+  ctx.restore();
+}
+
+/* ============================================================
+   メインループ
+============================================================ */
+window.__juuni={
+  set(n){ prevNote=curNote; curNote=((n%12)+12)%12; stepAnimT=performance.now()/1000; },
+  get(){ return {curNote,steps,centsTotal,layoutMix,genIdx,tunePure}; },
+  step(){ stepOnce(performance.now()/1000); },
+};
+/* ?warm=N — 非表示タブ検証用の同期ウォームアップ */
+{
+  const q=new URLSearchParams(location.search);
+  if(q.get("lay")==="5"){ layoutModeIdx=1; layoutTarget=1; layoutMix=1; layoutBtn.textContent="並び　五度"; }
+  if(q.get("lay")==="c"){ layoutModeIdx=2; layoutTarget=1; layoutMix=1; chartTarget=1; chartMix=1; layoutBtn.textContent="並び　五度圏"; }
+  const warm=parseFloat(q.get("warm")||"0");
+  if(warm>0){
+    /* 過去の時刻で歩ませる（未来に置くと脈動・フェードが壊れる） */
+    for(let s=0;s<warm/BEAT;s++){ stepOnce(s*BEAT-warm); }
+    nextStepT=BEAT*.5;
+  }
+}
+
+let prevT=performance.now();
+function frame(now){
+  const dt=Math.min(.05,(now-prevT)/1000); prevT=now;
+  const t=now/1000;
+
+  /* 並びのモーフ */
+  layoutMix+=(layoutTarget-layoutMix)*Math.min(1,dt*3.2);
+  chartMix+=(chartTarget-chartMix)*Math.min(1,dt*3.2);
+
+  /* 自動の歩み */
+  if(autoplay&&!dragging&&t>=nextStepT){
+    stepOnce(t); nextStepT=t+BEAT;
+  }
+
+  /* GL */
+  const cur=noteColor(curNote,true);
+  gl.uniform2f(U.uRes,glCanvas.width,glCanvas.height);
+  gl.uniform1f(U.uTime,t);
+  gl.uniform3f(U.uBgA,BGA[0],BGA[1],BGA[2]);
+  gl.uniform3f(U.uBgB,BGB[0],BGB[1],BGB[2]);
+  gl.uniform3f(U.uCur,cur[0],cur[1],cur[2]);
+  const drift=(centsTotal-(steps*GENS[genIdx].g)*100)/COMMA;  // コンマ単位
+  gl.uniform1f(U.uDrift, drift*.55);
+  const pu=new Float32Array(20), pc=new Float32Array(15);
+  for(let k=0;k<5;k++){
+    const p=pulses[k];
+    if(p){ pu[k*4]=p.t; pu[k*4+2]=p.str; pc[k*3]=p.col[0]; pc[k*3+1]=p.col[1]; pc[k*3+2]=p.col[2]; }
+    else { pu[k*4]=-99; }
+  }
+  gl.uniform4fv(U.uPulse,pu);
+  gl.uniform3fv(U.uPulseCol,pc);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+
+  drawRing(now);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
