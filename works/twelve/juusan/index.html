@@ -49,6 +49,14 @@
   }
   #hint.hide{ opacity:0; }
 
+  /* しずけさ — 操作盤が退く（放置）／すべて退いて絵だけになる（タップ） */
+  #title,#series,#ctrl,#hint{ transition:opacity 1.1s ease; }
+  body.dim #ctrl{ opacity:.16; }
+  body.dim #ctrl:hover{ opacity:1; }
+  body.quiet #title,body.quiet #series,body.quiet #ctrl,body.quiet #hint{
+    opacity:0; pointer-events:none;
+  }
+
   /* いわれ */
   #iware{
     position:fixed; inset:0; z-index:5;
@@ -124,12 +132,15 @@
     <button class="btn small on" data-f="1">ゆるり</button>
     <button class="btn small" data-f="2">疾く</button>
   </div>
-  <button class="btn" id="soundBtn">音を灯す</button>
+  <div class="seg">
+    <button class="btn small" id="soundBtn">音</button>
+    <button class="btn small on" id="goldBtn">金の印</button>
+  </div>
   <button class="btn" id="dayBtn">わたしの日</button>
   <button class="btn" id="iwBtn">いわれ</button>
   <button class="btn" id="varBtn">見た目　北辰</button>
 </div>
-<div id="hint">上下になでる＝円→螺旋→裏の眼→ぐるり一回転 / 左右＝まわす / 北辰にふれる＝中心の眼</div>
+<div id="hint">上下になでる＝円→螺旋→裏の眼→ぐるり一回転 / 左右＝まわす / 北辰にふれる＝中心の眼 / 何もない所をタップ＝絵だけになる</div>
 
 <div id="dayCard">
   <div class="dc-t">わたしの日</div>
@@ -292,8 +303,15 @@ soundBtn.addEventListener("click",()=>{
   if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
   audioCtx.resume();
   soundOn=!soundOn;
-  soundBtn.textContent=soundOn?"音を消す":"音を灯す";
   soundBtn.classList.toggle("on",soundOn);
+  hideHint();
+});
+/* 金の印——こよみでは閏の7つ、わたしの日ではあなたの日 */
+let showGold=true;
+const goldBtn=document.getElementById("goldBtn");
+goldBtn.addEventListener("click",()=>{
+  showGold=!showGold;
+  goldBtn.classList.toggle("on",showGold);
   hideHint();
 });
 function playShep(chroma,gold){
@@ -429,6 +447,9 @@ ringCanvas.addEventListener("pointerup",e=>{
     const sx=cx(), sy=s.y;
     if(Math.hypot(e.clientX-sx,e.clientY-sy)<38){
       document.getElementById("eyeCard").classList.add("open");
+      setQuiet(false);
+    }else{
+      setQuiet(!quiet);                                   // 何もない所＝絵だけになる／もどる
     }
   }
   hideHint();
@@ -474,6 +495,23 @@ let hintHidden=false;
 function hideHint(){ if(hintHidden)return; hintHidden=true;
   setTimeout(()=>document.getElementById("hint").classList.add("hide"),2500); }
 setTimeout(hideHint,18000);
+
+/* ============================================================
+   しずけさ — 二段。放置で操作盤が退き、タップで絵だけになる
+============================================================ */
+let chromeT=performance.now(), quiet=false, quietAmt=0, quietT=-1e9;
+function wakeChrome(){
+  chromeT=performance.now();
+  if(!quiet) document.body.classList.remove("dim");
+}
+function setQuiet(on){
+  if(quiet===on) return;
+  quiet=on; quietT=performance.now();
+  document.body.classList.toggle("quiet",quiet);
+  if(!quiet){ document.body.classList.remove("dim"); chromeT=performance.now(); }
+}
+window.addEventListener("pointermove",wakeChrome);
+window.addEventListener("pointerdown",wakeChrome);
 
 /* ============================================================
    描画
@@ -577,10 +615,11 @@ function draw(now){
     for(const {p,s} of list){
       const depth=s.d*.5+.5;                       // 0 奥 .. 1 手前
       const seen=walked(p.A);
-      let col=p.gold?goldC:pearlC;
+      const isGold=p.gold&&showGold;
+      let col=isGold?goldC:pearlC;
       let al=(seen?.42:.10)+.30*depth*(seen?1:.4);
-      let rr2=(p.gold?2.6:1.7)+(1.1*depth);
-      if(p.bday){ col=goldC; al=Math.min(1,al+.35); rr2+=1.2; }
+      let rr2=(isGold?2.6:1.7)+(1.1*depth);
+      if(p.bday&&showGold){ col=goldC; al=Math.min(1,al+.35); rr2+=1.2; }
       if(p.future){ al*=.35; }
       if(p.chroma===0 && !p.gold){ al=Math.min(1,al+.10); }   // ドの柱はわずかに明るい
       if(p.n===13){                                            // 最初の繰り上がりの席
@@ -588,14 +627,14 @@ function draw(now){
         ctx2.shadowColor=rgbCss(acc,.5*tw); ctx2.shadowBlur=7;
       }
       ctx2.fillStyle=rgbCss(col,al);
-      if(p.gold){ ctx2.shadowColor=rgbCss(goldC,.75); ctx2.shadowBlur=6+3*depth; }
+      if(isGold){ ctx2.shadowColor=rgbCss(goldC,.75); ctx2.shadowBlur=6+3*depth; }
       ctx2.beginPath(); ctx2.arc(s.x,s.y,rr2,0,TAU); ctx2.fill();
       ctx2.shadowBlur=0;
     }
   }
 
   /* --- わたしの日の糸（毎年おなじ日が、まっすぐ上へ） --- */
-  if(mode==="watashi" && bdayInfo && tilt>.05){
+  if(mode==="watashi" && bdayInfo && showGold && AST>.05){
     const bs=pearls.filter(p=>p.bday);
     if(bs.length>1){
       ctx2.strokeStyle=rgbCss(goldC,.35+.25*Math.sin(t*.9));
@@ -645,7 +684,9 @@ function draw(now){
   }
 
   /* --- ことば --- */
-  {
+  if(quietAmt<.995){
+    ctx2.save();
+    ctx2.globalAlpha=1-quietAmt;
     ctx2.textAlign="center"; ctx2.textBaseline="middle";
     const gyTop=cy()+R*.52;
     const gyTilt=Math.min(cy()+Math.max(R*1.28, H*.335), H*.82);
@@ -655,7 +696,7 @@ function draw(now){
     const lap=Math.floor(step/12);
     const r=step%12+1;
 
-    if(goldAmt>0 && goldPearl){
+    if(goldAmt>0 && goldPearl && showGold){
       ctx2.fillStyle=rgbCss(goldC,Math.min(1,goldAmt*1.4));
       ctx2.font=`500 ${Math.max(15,H*.026)}px ${FONT}`;
       ctx2.fillText(mode==="watashi"
@@ -700,11 +741,12 @@ function draw(now){
       ctx2.font=`400 ${Math.max(11,H*.017)}px ${FONT}`;
       if(mode==="koyomi"){
         const passed=pearls.filter(p=>p.A<=pos).length;
-        ctx2.fillText(`メトンの環 —— ${passed} ／ 235の月・19のとし`,cx(),gy+H*.075);
+        ctx2.fillText(`メトンの環 —— ${passed} ／ 235の月・19のとし${showGold?"（金の粒は、閏）":""}`,cx(),gy+H*.075);
       }else if(bdayInfo){
-        ctx2.fillText(`${bdayInfo.y0}年${bdayInfo.bm}月${bdayInfo.bd}日から —— むかえた日 ${bdayInfo.laps}・いま ${bdayInfo.yN-bdayInfo.y0+1} めぐりめ`,cx(),gy+H*.075);
+        ctx2.fillText(`${bdayInfo.y0}年${bdayInfo.bm}月${bdayInfo.bd}日から —— むかえた日 ${bdayInfo.laps}・いま ${bdayInfo.yN-bdayInfo.y0+1} めぐりめ${showGold?"（金の粒は、あなたの日）":""}`,cx(),gy+H*.075);
       }
     }
+    ctx2.restore();
   }
 }
 
@@ -715,8 +757,12 @@ window.__juusan={
   set(o){ if(o.tilt!=null){tiltTarget=o.tilt; tilt=tiltTarget;}
           if(o.p!=null)pos=Math.min(Amax,Math.max(0,o.p));
           if(o.spin!=null)spin=o.spin; },
-  get(){ return {pos,tilt,spin,mode,pearls:pearls.length,Amax}; },
+  get(){ return {pos,tilt,spin,mode,pearls:pearls.length,Amax,showGold,quiet,quietAmt:+quietAmt.toFixed(3),
+                 dim:document.body.classList.contains("dim")}; },
   day(d){ buildWatashi(d); pos=0; },
+  setGold(on){ showGold=!!on; goldBtn.classList.toggle("on",showGold); },
+  setQuiet(on){ setQuiet(!!on); },
+  idle(){ chromeT=performance.now()-99999; },
   pulse(){ crossT=performance.now(); },
   gold(){ goldT=performance.now(); goldPearl=pearls.find(p=>p.gold)||null; },
 };
@@ -728,6 +774,13 @@ function frame(now){
   const t=now/1000;
 
   tilt+=(tiltTarget-tilt)*Math.min(1,dt*4.2);
+  /* しずけさ——放置で操作盤が退き、絵だけのときはことばも退く */
+  if(!quiet && now-chromeT>7000) document.body.classList.add("dim");
+  {                                        // 時のうつろい——フレームが飛んでも同じ速さ
+    const qp=Math.min(1,Math.max(0,(now-quietT)/800));
+    const e=qp*qp*(3-2*qp);
+    quietAmt=quiet?e:1-e;
+  }
   /* まわしつづけても数が育たないよう、そろって一回転ぶんを畳む */
   while(tilt>4&&tiltTarget>4){ tilt-=4; tiltTarget-=4; }
   while(tilt<-4&&tiltTarget<-4){ tilt+=4; tiltTarget+=4; }
