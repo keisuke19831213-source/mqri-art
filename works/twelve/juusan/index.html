@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>拾参 | 「12」十三番目の扉</title>
+<style>
+  :root{ --ink:#ece5d8; --ink-dim:rgba(236,229,216,.55); }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ width:100%; height:100%; overflow:hidden; background:#0a0b14; }
+  body{
+    font-family:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho","YuMincho",serif;
+    color:var(--ink);
+    -webkit-user-select:none; user-select:none;
+    touch-action:none;
+  }
+  canvas{ position:fixed; inset:0; width:100vw; height:100vh; display:block; }
+  #gl{ z-index:0; } #ring{ z-index:1; cursor:grab; }
+  #ring.dragging{ cursor:grabbing; }
+  #title{
+    position:fixed; top:28px; left:30px; z-index:2;
+    writing-mode:vertical-rl; letter-spacing:.55em;
+    font-size:clamp(14px,1.6vmin,19px); font-weight:500;
+    color:var(--ink-dim); text-shadow:0 0 18px rgba(0,0,0,.5); pointer-events:none;
+  }
+  #title b{ font-weight:600; color:var(--ink); font-size:1.35em; letter-spacing:.4em; }
+  #series{
+    position:fixed; bottom:24px; left:30px; z-index:2;
+    writing-mode:vertical-rl; letter-spacing:.4em;
+    font-size:11px; color:rgba(236,229,216,.30); pointer-events:none;
+  }
+  #ctrl{ position:fixed; top:26px; right:30px; z-index:2;
+    display:flex; flex-direction:column; gap:10px; align-items:flex-end; }
+  .btn{
+    font-family:inherit; font-size:12px; letter-spacing:.3em; text-indent:.3em;
+    color:var(--ink-dim); background:transparent;
+    border:1px solid rgba(236,229,216,.26); border-radius:999px;
+    padding:8px 16px 7px 16px; cursor:pointer;
+    transition:color .4s, border-color .4s, background .4s; white-space:nowrap;
+  }
+  .btn:hover{ color:var(--ink); border-color:rgba(236,229,216,.6); background:rgba(236,229,216,.06); }
+  .btn.on{ color:var(--ink); border-color:rgba(236,229,216,.7); background:rgba(236,229,216,.08); }
+  .seg{ display:flex; gap:8px; }
+  .btn.small{ padding:7px 13px 6px 13px; font-size:11px; letter-spacing:.22em; text-indent:.22em; }
+  #hint{
+    position:fixed; bottom:22px; left:50%; transform:translateX(-50%); z-index:2;
+    font-size:11px; letter-spacing:.3em; color:rgba(236,229,216,.34);
+    white-space:nowrap; pointer-events:none; transition:opacity 1.2s;
+  }
+  #hint.hide{ opacity:0; }
+
+  /* いわれ */
+  #iware{
+    position:fixed; inset:0; z-index:5;
+    background:rgba(6,6,12,.92);
+    overflow-y:auto; -webkit-overflow-scrolling:touch;
+    touch-action:pan-y; user-select:text; -webkit-user-select:text;
+    display:none;
+  }
+  #iware.open{ display:block; }
+  .iw-in{
+    max-width:620px; margin:0 auto; padding:9vh 24px 14vh 24px;
+    line-height:2.05; font-size:14.5px; color:rgba(236,229,216,.82);
+  }
+  .iw-in h1{
+    font-size:26px; font-weight:500; letter-spacing:.45em; text-indent:.45em;
+    color:#ece5d8; text-align:center; margin-bottom:.6em;
+  }
+  .iw-in .sub{ text-align:center; letter-spacing:.3em; color:rgba(236,229,216,.42); font-size:12px; margin-bottom:4.5em; }
+  .iw-in h2{
+    font-size:15px; font-weight:600; letter-spacing:.35em;
+    color:#d9b56a; margin:4em 0 1.2em 0; text-align:center;
+  }
+  .iw-in p{ margin:0 0 1.6em 0; }
+  .iw-in .poem{ text-align:center; line-height:2.5; margin:2.2em 0; color:rgba(236,229,216,.9); }
+  .iw-in .colophon{ margin-top:5em; font-size:11.5px; color:rgba(236,229,216,.38); line-height:1.9; }
+  #iwClose{
+    position:sticky; top:18px; float:right; z-index:6;
+    font-family:inherit; font-size:12px; letter-spacing:.25em; text-indent:.25em;
+    color:rgba(236,229,216,.6); background:rgba(10,10,18,.8);
+    border:1px solid rgba(236,229,216,.3); border-radius:999px;
+    padding:8px 16px; cursor:pointer;
+  }
+
+  /* わたしの日 */
+  #dayCard{
+    position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); z-index:6;
+    background:rgba(10,10,18,.94); border:1px solid rgba(236,229,216,.28);
+    border-radius:14px; padding:30px 34px 26px 34px; display:none;
+    text-align:center; min-width:280px;
+  }
+  #dayCard.open{ display:block; }
+  #dayCard .dc-t{ letter-spacing:.35em; text-indent:.35em; font-size:14px; margin-bottom:6px; color:var(--ink); }
+  #dayCard .dc-s{ font-size:11.5px; color:rgba(236,229,216,.5); letter-spacing:.15em; margin-bottom:18px; line-height:1.9; }
+  #dayCard input[type=date]{
+    font-family:inherit; font-size:15px; color:var(--ink);
+    background:rgba(236,229,216,.06); border:1px solid rgba(236,229,216,.3);
+    border-radius:8px; padding:9px 12px; margin-bottom:18px;
+    color-scheme:dark; text-align:center;
+  }
+  #dayCard .dc-row{ display:flex; gap:10px; justify-content:center; }
+
+  /* 中心の眼 */
+  #eyeCard{
+    position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); z-index:6;
+    background:rgba(8,8,15,.95); border:1px solid rgba(217,181,106,.35);
+    border-radius:14px; padding:34px 36px 28px 36px; display:none;
+    text-align:center; max-width:420px; line-height:2.2;
+  }
+  #eyeCard.open{ display:block; }
+  #eyeCard .ec-t{ letter-spacing:.4em; text-indent:.4em; font-size:15px; color:#d9b56a; margin-bottom:16px; }
+  #eyeCard .ec-b{ font-size:13.5px; color:rgba(236,229,216,.82); margin-bottom:18px; }
+  #eyeCard .ec-n{ font-size:11px; color:rgba(236,229,216,.4); letter-spacing:.15em; margin-bottom:16px; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="ring"></canvas>
+<div id="title"><b>拾参</b>　一段うえの、一</div>
+<div id="series">「12」— 円環の連作　拾参・十三番目の扉</div>
+<div id="ctrl">
+  <div class="seg" id="flowSeg">
+    <button class="btn small" data-f="0">止</button>
+    <button class="btn small on" data-f="1">ゆるり</button>
+    <button class="btn small" data-f="2">疾く</button>
+  </div>
+  <button class="btn" id="soundBtn">音を灯す</button>
+  <button class="btn" id="dayBtn">わたしの日</button>
+  <button class="btn" id="iwBtn">いわれ</button>
+  <button class="btn" id="varBtn">見た目　北辰</button>
+</div>
+<div id="hint">上下になでる＝円→螺旋→裏の眼→ぐるり一回転 / 左右＝まわす / 北辰にふれる＝中心の眼</div>
+
+<div id="dayCard">
+  <div class="dc-t">わたしの日</div>
+  <div class="dc-s">誕生日をひとつ。毎年おなじ日が、<br>一段ずつうえに積まれてゆきます。</div>
+  <input type="date" id="dayInput" value="1983-12-13">
+  <div class="dc-row">
+    <button class="btn small" id="dayGo">この日で灯す</button>
+    <button class="btn small" id="dayKoyomi">こよみにもどる</button>
+    <button class="btn small" id="dayClose">とじる</button>
+  </div>
+</div>
+
+<div id="eyeCard">
+  <div class="ec-t">中心の眼</div>
+  <div class="ec-b">そとから見れば、12のむこうの13。<br>けれど球のくちづけの問いでは、逆になる——<br>まわりに12、中心に1、あわせて13。<br>13は外にはみ出た数ではなく、<br>12をひとつの全体にする、中心かもしれない。</div>
+  <div class="ec-n">この眼がひらくのは、つぎの作品「十二のくちづけ」で。</div>
+  <button class="btn small" id="eyeClose">とじる</button>
+</div>
+
+<div id="iware">
+  <div class="iw-in">
+    <button id="iwClose">とじる</button>
+    <h1>拾参</h1>
+    <div class="sub">「12」— 円環の連作　十三番目の扉</div>
+
+    <h2>円は、螺旋の影</h2>
+    <p>時計の文字盤で、12の次は1にもどる。今日の1時と明日の1時は、盤のうえではおなじ場所にある。でも、おなじ時間ではない。円だけでは「めぐってきた」ことが描けない——そこで、高さがいる。</p>
+    <p>この作品は、ひとつの螺旋である。真上から見おろしているあいだ、世界は完全な円で、1と13はおなじ点に重なっている。指でかたむけたとき、円がじつは螺旋を真上から見た影だったことがわかる。十三番目の真珠は、一番目のちょうど真上——一周ぶんの高さをもった、あたらしい1。そして、さらにまわしきると裏の眼——真下から見上げるおなじ螺旋は、さかさにめぐって見える。螺旋はひとつ、眼がふたつ。どちらの円も、おなじ真実の影である。まわしつづければ、眼は一回転して、はじめの空へ還ってくる——観る者の視点もまた、円環なのだ。</p>
+    <p class="poem">12は、世界をひと巡りに変える器。<br>13は、ひと巡りしたという記憶をもった、つぎの1。<br>ふたつをつなぐと、時間は円ではなく、螺旋になる。</p>
+
+    <h2>十三の四つの顔</h2>
+    <p><b>越境</b>——12の外へ出る。半音を12歩あるくと、十三番目で高いドにふれる。この作品の音は、その一歩を鳴らしつづける。</p>
+    <p><b>繰り上がり</b>——一周した、という情報を次の階へもってゆく。光がドの柱をまたぐたび、めぐりの数がひとつ増える。</p>
+    <p><b>補正</b>——螺旋には、金の真珠が7つ埋まっている。月は一年に12.368回みちるから、12か月の暦は毎年11日ずつ自然からずれる。そこで19年に7回、十三番目の月を足す。12×19＝228に、閏の7をたして235——19年でぴたりと環がとじる（メトンの環）。13はエラーではない。ずれを癒して、暦を自然へ帰す再同期である。</p>
+    <p><b>中心</b>——同じ大きさの球に、ふれられる球はちょうど12個。中心の1をあわせて13。この顔だけは、螺旋の頂の北辰にふれると、すこしだけ扉がひらく。つづきは、つぎの作品で。</p>
+
+    <h2>わたしの日</h2>
+    <p>誕生日をひとつ入れると、螺旋はその人のものになる。生まれた日から今日まで、毎年おなじ日が、一段ずつうえに積みあがってゆく。去年の誕生日と今年の誕生日は、盤のうえではおなじ場所、螺旋のうえでは一段ちがう。<b>おなじだが、おなじではない</b>——それがめぐるということ。</p>
+
+    <h2>音について</h2>
+    <p>音は「シェパード・トーン」——オクターブちがいの同じ音を何層もかさねた音色で、のぼりつづけているのに、いつのまにか元の高さへ還っている。音の心理学が実際にもつ、聴覚の螺旋である。疾くのときは、ドの柱だけが鳴る。いつまでも高くなりつづける、おなじ音。</p>
+
+    <div class="colophon">
+      「拾参」——「12」円環の連作・十三番目の扉／2026年8月23日。<br>
+      連作十二作が円で描いてきたものを、この一作は高さごと描く。全作にひそめてきた「閉じない円」の署名を、はじめて主役に立てた。<br>
+      単一HTML（WebGL2＋Canvas2D）・外部ライブラリなし。<br>
+      もとになった思索は制作者のノート「12と13」（2026年8月）——高度合成数と素数、mod 12、太陰太陽暦とメトン周期、ピッチ・ヘリックス、3次元の接吻数、十二部族と十二使徒を横断して残った構造：<b>12は秩序、13は再生。</b>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const TAU=Math.PI*2, RAD=Math.PI/180;
+
+/* ============================================================
+   見た目3案
+============================================================ */
+const VORDER=["A","B","C"];
+const VARIANTS={
+  A:{ name:"北辰", bg:["#0a0b14","#141b2e"], accent:"#dfe6ee", pearl:"#ece5d8" },
+  B:{ name:"熾",   bg:["#120b08","#28160e"], accent:"#e8b478", pearl:"#e8d8c0" },
+  C:{ name:"墨",   bg:["#0c0c0e","#1a1a1e"], accent:"#d8d4c8", pearl:"#c8c4ba" },
+};
+const GOLD="#d9b56a";
+const q0=new URLSearchParams(location.search);
+let vKey=VARIANTS[(q0.get("v")||"A").toUpperCase()]?(q0.get("v")||"A").toUpperCase():"A";
+let V=VARIANTS[vKey];
+function hex2rgb(h){ return [parseInt(h.slice(1,3),16)/255,parseInt(h.slice(3,5),16)/255,parseInt(h.slice(5,7),16)/255]; }
+function rgbCss(c,a=1){ return `rgba(${Math.round(c[0]*255)},${Math.round(c[1]*255)},${Math.round(c[2]*255)},${a})`; }
+function mix3(a,b,t){ return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t]; }
+
+/* ============================================================
+   WebGL2 — 北の夜
+============================================================ */
+const glCanvas=document.getElementById("gl");
+const gl=glCanvas.getContext("webgl2",{antialias:false,alpha:false});
+const VERT=`#version 300 es
+layout(location=0) in vec2 aPos;
+void main(){ gl_Position=vec4(aPos,0.,1.); }`;
+const FRAG=`#version 300 es
+precision highp float;
+uniform vec2 uRes; uniform float uTime;
+uniform vec3 uBgA,uBgB,uAcc;
+uniform float uTilt;       // 0=真上, 1=よこ
+uniform float uCross;      // 繰り上がりの閃き 0..1
+out vec4 fragColor;
+float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
+float vnoise(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.-2.*f);
+  float a=hash21(i),b=hash21(i+vec2(1,0)),c=hash21(i+vec2(0,1)),d=hash21(i+vec2(1,1));
+  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y); }
+mat2 rot(float a){ float c=cos(a),s=sin(a); return mat2(c,-s,s,c); }
+float fbm(vec2 p){ float v=0.,a=.5; mat2 m=rot(.5);
+  for(int i=0;i<5;i++){ v+=a*vnoise(p); p=m*p*2.02+11.3; a*=.5; } return v; }
+void main(){
+  vec2 frag=gl_FragCoord.xy;
+  vec2 uv=(frag-.5*uRes)/uRes.y;
+  float t=uTime;
+  float rr=length(uv);
+  vec2 p=uv*2.0;
+  vec2 q=vec2(fbm(p+t*.008), fbm(p+vec2(5.2,1.3)-t*.006));
+  float f=fbm(p+2.3*q);
+  vec3 col=mix(uBgA,uBgB,clamp(f*f*2.2,0.,1.));
+  /* かたむくほど、天の川のような縦の帯がたちのぼる */
+  col+=uAcc*exp(-abs(uv.x)*5.5)*(.04+.10*uTilt)*(.7+.3*fbm(vec2(uv.y*3.,t*.05)));
+  /* 真上の眼のときは、環のともしび */
+  col+=uAcc*exp(-abs(rr-.40)*9.)*.07*(1.-uTilt);
+  /* 繰り上がりの瞬間、そらがひらく */
+  col+=uAcc*exp(-rr*2.4)*.30*uCross;
+  /* 星 */
+  {
+    vec2 sp=uv*26.;
+    vec2 id=floor(sp), gv=fract(sp)-.5;
+    float n=hash21(id);
+    if(n<.13){
+      vec2 off=(vec2(hash21(id+3.1),hash21(id+7.7))-.5)*.8;
+      float d=length(gv-off);
+      col+=vec3(.9,.92,.95)*smoothstep(.05,.0,d)*(.5+.5*sin(t*(1.+n*3.)+n*40.))*.30;
+    }
+  }
+  col*=1.-.44*pow(rr*1.24,2.2);
+  col+=(hash21(frag+fract(t)*61.7)-.5)*.03;
+  col=col/(1.+col*.12);
+  col=pow(max(col,0.),vec3(.96));
+  fragColor=vec4(col,1.);
+}`;
+function compile(ty,src){ const s=gl.createShader(ty); gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+const prog=gl.createProgram();
+gl.attachShader(prog,compile(gl.VERTEX_SHADER,VERT));
+gl.attachShader(prog,compile(gl.FRAGMENT_SHADER,FRAG));
+gl.linkProgram(prog);
+if(!gl.getProgramParameter(prog,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+const vao=gl.createVertexArray(); gl.bindVertexArray(vao);
+const vbo=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+const U={}; ["uRes","uTime","uBgA","uBgB","uAcc","uTilt","uCross"].forEach(n=>U[n]=gl.getUniformLocation(prog,n));
+let BGA=hex2rgb(V.bg[0]), BGB=hex2rgb(V.bg[1]);
+
+const ringCanvas=document.getElementById("ring");
+const ctx2=ringCanvas.getContext("2d");
+let W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2);
+  W=window.innerWidth||1280; H=window.innerHeight||800;
+  glCanvas.width=Math.max(2,W*DPR); glCanvas.height=Math.max(2,H*DPR);
+  ringCanvas.width=Math.max(2,W*DPR); ringCanvas.height=Math.max(2,H*DPR);
+  gl.viewport(0,0,glCanvas.width,glCanvas.height);
+}
+window.addEventListener("resize",resize); resize();
+
+/* ============================================================
+   音 — シェパードの階段（のぼりつづけて、還ってくる）
+============================================================ */
+let audioCtx=null, soundOn=false;
+const soundBtn=document.getElementById("soundBtn");
+soundBtn.addEventListener("click",()=>{
+  if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  audioCtx.resume();
+  soundOn=!soundOn;
+  soundBtn.textContent=soundOn?"音を消す":"音を灯す";
+  soundBtn.classList.toggle("on",soundOn);
+  hideHint();
+});
+function playShep(chroma,gold){
+  if(!soundOn||!audioCtx) return;
+  const t0=audioCtx.currentTime;
+  const master=audioCtx.createGain();
+  master.gain.setValueAtTime(0,t0);
+  master.gain.linearRampToValueAtTime(gold?.14:.12,t0+.02);
+  master.gain.exponentialRampToValueAtTime(.0008,t0+(gold?2.6:1.5));
+  const flt=audioCtx.createBiquadFilter();
+  flt.type="lowpass"; flt.frequency.value=2600; flt.Q.value=.6;
+  master.connect(flt); flt.connect(audioCtx.destination);
+  const base=32.703;                       // C1
+  for(let o=0;o<7;o++){
+    const f=base*Math.pow(2,o+chroma/12);
+    const lg=Math.log2(f/261.63);          // C4を峰に釣鐘
+    const amp=Math.exp(-(lg*lg)/(2*1.35*1.35));
+    if(amp<.02) continue;
+    const osc=audioCtx.createOscillator();
+    osc.type="sine";
+    osc.frequency.value=gold?f*1.003:f;
+    const g=audioCtx.createGain(); g.gain.value=amp;
+    osc.connect(g); g.connect(master);
+    osc.start(t0); osc.stop(t0+(gold?2.7:1.6));
+  }
+}
+
+/* ============================================================
+   螺旋のデータ — こよみ（メトンの19年）と、わたし（誕生日）
+============================================================ */
+const LEAP_YEARS=new Set([3,6,8,11,14,17,19]);   // 章法の閏
+let mode="koyomi";
+let pearls=[], Amax=0, TURNS=19;
+let bdayInfo=null;
+
+function buildKoyomi(){
+  mode="koyomi"; pearls=[]; TURNS=19;
+  let grid=0;
+  for(let y=1;y<=19;y++){
+    for(let m=1;m<=12;m++){
+      pearls.push({A:grid*30, chroma:grid%12, n:grid+1, gold:false});
+      grid++;
+    }
+    if(LEAP_YEARS.has(y)){
+      pearls.push({A:grid*30-15, chroma:11.5, n:0, gold:true, y});
+    }
+  }
+  Amax=228*30;                                    // 19周
+  bdayInfo=null;
+}
+function buildWatashi(dateStr){
+  const d0=new Date(dateStr+"T00:00:00");
+  if(isNaN(d0)) { buildKoyomi(); return; }
+  mode="watashi"; pearls=[];
+  const now=new Date();
+  const y0=d0.getFullYear(), yN=now.getFullYear();
+  TURNS=yN-y0+1;
+  const bm=d0.getMonth(), bd=d0.getDate();
+  const bA=(bm+(bd-1)/31)*30;                    // 誕生日の環上の角度
+  const nowA=((yN-y0)*12+now.getMonth()+(now.getDate()-1)/31)*30;
+  for(let y=y0;y<=yN;y++){
+    for(let m=0;m<12;m++){
+      const A=((y-y0)*12+m)*30;
+      pearls.push({A, chroma:m, n:(y-y0)*12+m+1, gold:false, future:A>nowA});
+    }
+    const A=(y-y0)*12*30+bA;
+    if(A<=nowA) pearls.push({A, chroma:bA/30, n:0, gold:true, bday:true, year:y});
+  }
+  Amax=TURNS*12*30;
+  const laps=pearls.filter(p=>p.bday).length;    // むかえた誕生日の数
+  bdayInfo={y0, yN, bm:bm+1, bd, bA, nowA, laps};
+}
+buildKoyomi();
+
+/* ============================================================
+   状態
+============================================================ */
+let pos=(q0.get("p")?parseFloat(q0.get("p")):0);       // 連続角（度）
+let tilt=0, tiltTarget=(q0.get("tilt")?parseFloat(q0.get("tilt")):0);
+let spin=0;
+let flowIdx=1;
+const FLOWS=[0, 14, 220];                               // 度/秒
+let crossT=-1e9, crossLap=0, goldT=-1e9, goldPearl=null;
+let lastInteract=-1e9;
+
+function cx(){ return W/2; } function cy(){ return H/2; }
+function geom(){
+  /* tilt×90°=カメラの傾き。0=真上の眼, 1=真横, 2=裏の眼, 4=一回転して還る（無限にまわる） */
+  const st=Math.abs(Math.sin(tilt*90*RAD));
+  const R0=Math.min(W*.30,H*.36);
+  const R=R0*(1-.22*st);
+  const Ht=Math.min(H*.62, H*.70);                      // 高さの潰れは射影がやってくれる
+  return {R, Ht};
+}
+
+/* 3D→画面。A=連続角(度)、hFrac=高さ0..1 */
+let CT=1, ST=0;
+function proj(Adeg,hFrac,R,Ht){
+  const a=Adeg*RAD+spin-Math.PI/2;      // 1（ド）は真上から
+  const X=Math.cos(a)*R, Z=Math.sin(a)*R;
+  const Y=(hFrac-.5)*Ht;
+  return {
+    x:cx()+X,
+    y:cy()+Z*CT-Y*ST,
+    d:(Z*ST+Y*CT)/(R+Ht*.5+1)                            // -1..1 奥行き
+  };
+}
+
+/* ============================================================
+   入力
+============================================================ */
+let dragging=false,px=0,py=0,moved=0,downT=0;
+ringCanvas.addEventListener("pointerdown",e=>{
+  dragging=true; moved=0; px=e.clientX; py=e.clientY; downT=performance.now();
+  lastInteract=performance.now(); ringCanvas.classList.add("dragging");
+  ringCanvas.setPointerCapture(e.pointerId);
+});
+ringCanvas.addEventListener("pointermove",e=>{
+  if(!dragging) return;
+  const dx=e.clientX-px, dy=e.clientY-py;
+  px=e.clientX; py=e.clientY; moved+=Math.abs(dx)+Math.abs(dy);
+  tiltTarget-=dy*.0042;                                  // 果てなし——眼は一回転して還る
+  spin+=dx*.0052;
+  lastInteract=performance.now();
+});
+ringCanvas.addEventListener("pointerup",e=>{
+  dragging=false; ringCanvas.classList.remove("dragging");
+  lastInteract=performance.now();
+  if(moved<8){
+    /* 北辰＝中心の眼 */
+    const {R,Ht}=geom();
+    const s=proj(0,1.12,0,Ht);                            // 軸の頂（半径0）
+    const sx=cx(), sy=s.y;
+    if(Math.hypot(e.clientX-sx,e.clientY-sy)<38){
+      document.getElementById("eyeCard").classList.add("open");
+    }
+  }
+  hideHint();
+});
+window.addEventListener("wheel",e=>{
+  tiltTarget+=e.deltaY*11e-4;
+  lastInteract=performance.now(); hideHint();
+},{passive:true});
+const segBtns=[...document.querySelectorAll("#flowSeg .btn")];
+function setFlow(i){ flowIdx=i; segBtns.forEach((b,j)=>b.classList.toggle("on",j===i)); }
+segBtns.forEach((b,i)=>b.addEventListener("click",()=>{ setFlow(i); hideHint(); }));
+window.addEventListener("keydown",e=>{
+  if(e.key===" "){ setFlow(flowIdx===0?1:0); e.preventDefault(); }
+  hideHint();
+});
+
+/* いわれ */
+document.getElementById("iwBtn").addEventListener("click",()=>{ document.getElementById("iware").classList.add("open"); hideHint(); });
+document.getElementById("iwClose").addEventListener("click",()=>{ document.getElementById("iware").classList.remove("open"); });
+/* わたしの日 */
+const dayCard=document.getElementById("dayCard");
+document.getElementById("dayBtn").addEventListener("click",()=>{ dayCard.classList.add("open"); hideHint(); });
+document.getElementById("dayGo").addEventListener("click",()=>{
+  buildWatashi(document.getElementById("dayInput").value);
+  pos=0; crossLap=0; dayCard.classList.remove("open");
+  if(tiltTarget<.5) tiltTarget=.72;
+});
+document.getElementById("dayKoyomi").addEventListener("click",()=>{ buildKoyomi(); pos=0; crossLap=0; dayCard.classList.remove("open"); });
+document.getElementById("dayClose").addEventListener("click",()=>{ dayCard.classList.remove("open"); });
+document.getElementById("eyeClose").addEventListener("click",()=>{ document.getElementById("eyeCard").classList.remove("open"); });
+
+const varBtn=document.getElementById("varBtn");
+varBtn.textContent="見た目　"+V.name;
+varBtn.addEventListener("click",()=>{
+  vKey=VORDER[(VORDER.indexOf(vKey)+1)%VORDER.length];
+  V=VARIANTS[vKey];
+  BGA=hex2rgb(V.bg[0]); BGB=hex2rgb(V.bg[1]);
+  document.body.style.background=V.bg[0];
+  varBtn.textContent="見た目　"+V.name;
+});
+document.body.style.background=V.bg[0];
+let hintHidden=false;
+function hideHint(){ if(hintHidden)return; hintHidden=true;
+  setTimeout(()=>document.getElementById("hint").classList.add("hide"),2500); }
+setTimeout(hideHint,18000);
+
+/* ============================================================
+   描画
+============================================================ */
+const FONT='"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif';
+const KAN=["一","二","三","四","五","六","七","八","九","十","十一","十二"];
+
+function draw(now){
+  const t=now/1000;
+  ctx2.setTransform(DPR,0,0,DPR,0,0);
+  ctx2.clearRect(0,0,W,H);
+  const {R,Ht}=geom();
+  const tau=tilt*90*RAD; CT=Math.cos(tau); ST=Math.sin(tau);
+  const AST=Math.abs(ST);                       // 眼のひらき（表裏共通）
+  const tn=((tilt%4)+4)%4;                      // 一回転を4とする正規化かたむき
+  const ink=(a)=>`rgba(236,229,216,${a})`;
+  const acc=hex2rgb(V.accent);
+  const pearlC=hex2rgb(V.pearl);
+  const goldC=hex2rgb(GOLD);
+  const crossAmt=Math.max(0,1-(now-crossT)/2600);
+  const goldAmt=Math.max(0,1-(now-goldT)/3200);
+
+  /* --- 軸（動かないもの）と北辰 --- */
+  if(AST>.03){
+    const pb=proj(0,-.06,0,Ht), pt=proj(0,1.06,0,Ht);
+    ctx2.strokeStyle=ink(.10+.14*AST);
+    ctx2.lineWidth=1;
+    ctx2.beginPath(); ctx2.moveTo(pb.x,pb.y); ctx2.lineTo(pt.x,pt.y); ctx2.stroke();
+  }
+  {
+    const s=proj(0,1.12,0,Ht);                  // 表裏どの眼でも射影が正しい場所に置く
+    const tw=.6+.4*Math.sin(t*1.1);
+    ctx2.fillStyle=rgbCss(acc,.85);
+    ctx2.shadowColor=rgbCss(acc,.9); ctx2.shadowBlur=10+8*tw;
+    ctx2.beginPath(); ctx2.arc(s.x,s.y,2.6+.8*tw,0,TAU); ctx2.fill();
+    ctx2.shadowBlur=0;
+    /* 十字のまたたき */
+    ctx2.strokeStyle=rgbCss(acc,.35*tw);
+    ctx2.lineWidth=.8;
+    ctx2.beginPath();
+    ctx2.moveTo(s.x-9,s.y); ctx2.lineTo(s.x+9,s.y);
+    ctx2.moveTo(s.x,s.y-9); ctx2.lineTo(s.x,s.y+9);
+    ctx2.stroke();
+  }
+
+  /* --- 糸（螺旋そのもの） --- */
+  {
+    ctx2.lineWidth=1;
+    const STEP=6;
+    let prev=null;
+    for(let A=0;A<=Math.min(pos+0,Amax);A+=STEP){
+      const p=proj(A,A/Amax,R,Ht);
+      if(prev){
+        const al=.10+.13*(p.d*.5+.5);
+        ctx2.strokeStyle=ink(al);
+        ctx2.beginPath(); ctx2.moveTo(prev.x,prev.y); ctx2.lineTo(p.x,p.y); ctx2.stroke();
+      }
+      prev=p;
+    }
+    /* まだ歩いていないさきは、うすい予感 */
+    for(let A=Math.max(0,Math.floor(pos/STEP)*STEP);A<=Amax;A+=STEP){
+      const p=proj(A,A/Amax,R,Ht);
+      if(prev && A>pos){
+        ctx2.strokeStyle=ink(.045);
+        ctx2.beginPath(); ctx2.moveTo(prev.x,prev.y); ctx2.lineTo(p.x,p.y); ctx2.stroke();
+      }
+      prev=p;
+    }
+  }
+
+  /* --- 目盛と数字（真上・真下の眼で濃く、かたむくと退く。裏からは並びがさかさに見える） --- */
+  {
+    const la=Math.max(0,1-Math.min(tn%2,2-tn%2)*1.7);
+    if(la>.02){
+      ctx2.textAlign="center"; ctx2.textBaseline="middle";
+      for(let k=0;k<12;k++){
+        const a=k*30*RAD+spin-Math.PI/2;
+        const x=cx()+Math.cos(a)*R*1.13, y=cy()+Math.sin(a)*R*1.13*CT;
+        ctx2.fillStyle=ink(.42*la);
+        ctx2.font=`400 ${Math.max(11,R*.052)}px ${FONT}`;
+        ctx2.fillText(String(k+1),x,y);
+        if(k===0){
+          ctx2.fillStyle=ink(.20*la);
+          ctx2.font=`400 ${Math.max(10,R*.034)}px ${FONT}`;
+          ctx2.fillText("13・25・37…",x,y+R*.062);
+        }
+      }
+    }
+  }
+
+  /* --- 真珠たち（奥から手前へ） --- */
+  {
+    const list=[];
+    for(const p of pearls){
+      if(mode==="koyomi" && p.A>pos+1e-6 && !p.gold && p.A>pos) {}
+      const s=proj(p.A,p.A/Amax,R,Ht);
+      list.push({p,s});
+    }
+    list.sort((a,b)=>a.s.d-b.s.d);
+    const walked=(A)=>A<=pos;
+    for(const {p,s} of list){
+      const depth=s.d*.5+.5;                       // 0 奥 .. 1 手前
+      const seen=walked(p.A);
+      let col=p.gold?goldC:pearlC;
+      let al=(seen?.42:.10)+.30*depth*(seen?1:.4);
+      let rr2=(p.gold?2.6:1.7)+(1.1*depth);
+      if(p.bday){ col=goldC; al=Math.min(1,al+.35); rr2+=1.2; }
+      if(p.future){ al*=.35; }
+      if(p.chroma===0 && !p.gold){ al=Math.min(1,al+.10); }   // ドの柱はわずかに明るい
+      if(p.n===13){                                            // 最初の繰り上がりの席
+        const tw=.5+.5*Math.sin(t*1.6);
+        ctx2.shadowColor=rgbCss(acc,.5*tw); ctx2.shadowBlur=7;
+      }
+      ctx2.fillStyle=rgbCss(col,al);
+      if(p.gold){ ctx2.shadowColor=rgbCss(goldC,.75); ctx2.shadowBlur=6+3*depth; }
+      ctx2.beginPath(); ctx2.arc(s.x,s.y,rr2,0,TAU); ctx2.fill();
+      ctx2.shadowBlur=0;
+    }
+  }
+
+  /* --- わたしの日の糸（毎年おなじ日が、まっすぐ上へ） --- */
+  if(mode==="watashi" && bdayInfo && tilt>.05){
+    const bs=pearls.filter(p=>p.bday);
+    if(bs.length>1){
+      ctx2.strokeStyle=rgbCss(goldC,.35+.25*Math.sin(t*.9));
+      ctx2.lineWidth=1;
+      ctx2.setLineDash([2,5]); ctx2.lineDashOffset=-t*8;
+      ctx2.beginPath();
+      for(let i=0;i<bs.length;i++){
+        const s=proj(bs[i].A,bs[i].A/Amax,R,Ht);
+        if(i===0)ctx2.moveTo(s.x,s.y); else ctx2.lineTo(s.x,s.y);
+      }
+      ctx2.stroke();
+      ctx2.setLineDash([]); ctx2.lineDashOffset=0;
+    }
+  }
+
+  /* --- 繰り上がりの縦糸（いまの一歩と、一周まえ） --- */
+  if(crossAmt>0 && pos>=360 && tilt>.05){
+    const s1=proj(pos,pos/Amax,R,Ht);
+    const s0=proj(pos-360,(pos-360)/Amax,R,Ht);
+    ctx2.strokeStyle=rgbCss(acc,.65*crossAmt);
+    ctx2.lineWidth=1;
+    ctx2.setLineDash([2,5]); ctx2.lineDashOffset=-t*10;
+    ctx2.beginPath(); ctx2.moveTo(s0.x,s0.y); ctx2.lineTo(s1.x,s1.y); ctx2.stroke();
+    ctx2.setLineDash([]); ctx2.lineDashOffset=0;
+  }
+
+  /* --- 歩む光 --- */
+  {
+    const s=proj(pos,pos/Amax,R,Ht);
+    /* 尾 */
+    ctx2.lineWidth=1.6;
+    let prev=null;
+    for(let k=0;k<=14;k++){
+      const A=pos-k*4;
+      if(A<0)break;
+      const p=proj(A,A/Amax,R,Ht);
+      if(prev){
+        ctx2.strokeStyle=rgbCss(acc,.34*(1-k/14));
+        ctx2.beginPath(); ctx2.moveTo(prev.x,prev.y); ctx2.lineTo(p.x,p.y); ctx2.stroke();
+      }
+      prev=p;
+    }
+    ctx2.fillStyle=rgbCss(acc,.98);
+    ctx2.shadowColor=rgbCss(acc,1); ctx2.shadowBlur=16;
+    ctx2.beginPath(); ctx2.arc(s.x,s.y,3.6,0,TAU); ctx2.fill();
+    ctx2.shadowBlur=0;
+  }
+
+  /* --- ことば --- */
+  {
+    ctx2.textAlign="center"; ctx2.textBaseline="middle";
+    const gyTop=cy()+R*.52;
+    const gyTilt=Math.min(cy()+Math.max(R*1.28, H*.335), H*.82);
+    const gy=gyTop+(gyTilt-gyTop)*Math.min(1,AST*2.6);  // 真上・真下の眼では円の内側へ
+    const step=Math.floor(pos/30);                 // 何歩め（0はじまり）
+    const N=step+1;
+    const lap=Math.floor(step/12);
+    const r=step%12+1;
+
+    if(goldAmt>0 && goldPearl){
+      ctx2.fillStyle=rgbCss(goldC,Math.min(1,goldAmt*1.4));
+      ctx2.font=`500 ${Math.max(15,H*.026)}px ${FONT}`;
+      ctx2.fillText(mode==="watashi"
+        ? `${goldPearl.year}年の、わたしの日`
+        : "閏 —— ずれを癒す、十三番目の月",0+cx(),gy-H*.052);
+    }else if(crossAmt>0 && lap>0){
+      ctx2.fillStyle=rgbCss(acc,Math.min(1,crossAmt*1.4));
+      ctx2.font=`500 ${Math.max(15,H*.026)}px ${FONT}`;
+      ctx2.fillText("くりあがり",cx(),gy-H*.052);
+    }
+
+    ctx2.fillStyle=ink(.96);
+    ctx2.shadowColor="rgba(0,0,0,.55)"; ctx2.shadowBlur=16;
+    ctx2.font=`500 ${Math.max(26,H*.052)}px ${FONT}`;
+    ctx2.fillText(String(N),cx(),gy);
+    ctx2.shadowBlur=0;
+
+    ctx2.font=`400 ${Math.max(12,H*.020)}px ${FONT}`;
+    if(tn<.08||tn>3.92){
+      ctx2.fillStyle=ink(.62);
+      ctx2.fillText(lap===0?"上から見れば、円":"上から見れば、円 —— 1 も 13 も、おなじ場所",cx(),gy+H*.043);
+      ctx2.fillStyle=ink(.30+.14*Math.sin(t*2.2));
+      ctx2.font=`400 ${Math.max(11,H*.017)}px ${FONT}`;
+      ctx2.fillText("かたむけてみてください",cx(),gy+H*.075);
+    }else if(Math.abs(tn-2)<.08){
+      ctx2.fillStyle=ink(.62);
+      ctx2.fillText("裏から見れば、円 —— めぐりは、さかさに見える",cx(),gy+H*.043);
+      ctx2.fillStyle=ink(.34);
+      ctx2.font=`400 ${Math.max(11,H*.017)}px ${FONT}`;
+      ctx2.fillText("おなじ螺旋、反対の眼",cx(),gy+H*.075);
+    }else{
+      ctx2.fillStyle=ink(.62);
+      if(lap===0){
+        ctx2.fillText("はじめのひとめぐり",cx(),gy+H*.043);
+      }else if(r===1){
+        ctx2.fillStyle=rgbCss(acc,.9);
+        ctx2.fillText(`あたらしい 1 —— ${KAN[Math.min(lap-1,11)]}${lap>12?"…":""}めぐりのたかさ`,cx(),gy+H*.043);
+      }else{
+        ctx2.fillText(`${lap}めぐりと、${r}`,cx(),gy+H*.043);
+      }
+      ctx2.fillStyle=ink(.34);
+      ctx2.font=`400 ${Math.max(11,H*.017)}px ${FONT}`;
+      if(mode==="koyomi"){
+        const passed=pearls.filter(p=>p.A<=pos).length;
+        ctx2.fillText(`メトンの環 —— ${passed} ／ 235の月・19のとし`,cx(),gy+H*.075);
+      }else if(bdayInfo){
+        ctx2.fillText(`${bdayInfo.y0}年${bdayInfo.bm}月${bdayInfo.bd}日から —— むかえた日 ${bdayInfo.laps}・いま ${bdayInfo.yN-bdayInfo.y0+1} めぐりめ`,cx(),gy+H*.075);
+      }
+    }
+  }
+}
+
+/* ============================================================
+   メインループ
+============================================================ */
+window.__juusan={
+  set(o){ if(o.tilt!=null){tiltTarget=o.tilt; tilt=tiltTarget;}
+          if(o.p!=null)pos=Math.min(Amax,Math.max(0,o.p));
+          if(o.spin!=null)spin=o.spin; },
+  get(){ return {pos,tilt,spin,mode,pearls:pearls.length,Amax}; },
+  day(d){ buildWatashi(d); pos=0; },
+  pulse(){ crossT=performance.now(); },
+  gold(){ goldT=performance.now(); goldPearl=pearls.find(p=>p.gold)||null; },
+};
+
+let prevStep=-1, prevGoldKey="";
+let prevT=performance.now();
+function frame(now){
+  const dt=Math.min(.05,(now-prevT)/1000); prevT=now;
+  const t=now/1000;
+
+  tilt+=(tiltTarget-tilt)*Math.min(1,dt*4.2);
+  /* まわしつづけても数が育たないよう、そろって一回転ぶんを畳む */
+  while(tilt>4&&tiltTarget>4){ tilt-=4; tiltTarget-=4; }
+  while(tilt<-4&&tiltTarget<-4){ tilt+=4; tiltTarget+=4; }
+
+  /* 歩む光は、視点をつかんでいても止まらない（ドラッグはかたむきと回転だけ） */
+  pos+=FLOWS[flowIdx]*dt;
+  if(pos>=Amax){ pos=0; crossLap=0; prevStep=-1; }
+
+  /* 一歩ごとの音と、くりあがり */
+  const step=Math.floor(pos/30);
+  if(step!==prevStep){
+    if(step>prevStep && step-prevStep<4){
+      for(let s2=prevStep+1;s2<=step;s2++){
+        const ch=((s2%12)+12)%12;
+        if(flowIdx===2){ if(ch===0) playShep(0,false); }
+        else playShep(ch,false);
+        if(ch===0 && s2>0){ crossT=now; crossLap++; }
+      }
+    }
+    prevStep=step;
+  }
+  /* 金の真珠のそばを通ったら */
+  for(const p of pearls){
+    if(p.gold){
+      const key=(p.year||0)+"_"+p.A;
+      if(pos>=p.A && pos-p.A<FLOWS[Math.max(flowIdx,1)]*dt*3+2 && prevGoldKey!==key){
+        prevGoldKey=key; goldT=now; goldPearl=p;
+        playShep(11.5%12,true);
+      }
+    }
+  }
+
+  const acc=hex2rgb(V.accent);
+  gl.uniform2f(U.uRes,glCanvas.width,glCanvas.height);
+  gl.uniform1f(U.uTime,t);
+  gl.uniform3f(U.uBgA,BGA[0],BGA[1],BGA[2]);
+  gl.uniform3f(U.uBgB,BGB[0],BGB[1],BGB[2]);
+  gl.uniform3f(U.uAcc,acc[0],acc[1],acc[2]);
+  gl.uniform1f(U.uTilt,Math.abs(Math.sin(tilt*90*RAD)));   // 帯は真横で最も濃く、環のともしびは表裏の眼で戻る
+  gl.uniform1f(U.uCross,Math.max(0,1-(now-crossT)/1400));
+  gl.drawArrays(gl.TRIANGLES,0,3);
+
+  draw(now);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
