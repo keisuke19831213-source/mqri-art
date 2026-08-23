@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>十二のくちづけ | 「12と13」空間の拾参</title>
+<style>
+  :root{ --ink:#ece5d8; --ink-dim:rgba(236,229,216,.55); }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ width:100%; height:100%; overflow:hidden; background:#0a0b12; }
+  body{
+    font-family:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho","YuMincho",serif;
+    color:var(--ink);
+    -webkit-user-select:none; user-select:none;
+    touch-action:none;
+  }
+  canvas{ position:fixed; inset:0; width:100vw; height:100vh; display:block; }
+  #gl{ z-index:0; } #main{ z-index:1; cursor:grab; }
+  #main.dragging{ cursor:grabbing; }
+  #title{
+    position:fixed; top:28px; left:30px; z-index:2;
+    writing-mode:vertical-rl; letter-spacing:.5em;
+    font-size:clamp(14px,1.6vmin,19px); font-weight:500;
+    color:var(--ink-dim); text-shadow:0 0 18px rgba(0,0,0,.5); pointer-events:none;
+  }
+  #title b{ font-weight:600; color:var(--ink); font-size:1.3em; letter-spacing:.35em; }
+  #series{
+    position:fixed; bottom:24px; left:30px; z-index:2;
+    writing-mode:vertical-rl; letter-spacing:.4em;
+    font-size:11px; color:rgba(236,229,216,.30); pointer-events:none;
+  }
+  #ctrl{ position:fixed; top:26px; right:30px; z-index:2;
+    display:flex; flex-direction:column; gap:10px; align-items:flex-end; }
+  .btn{
+    font-family:inherit; font-size:12px; letter-spacing:.3em; text-indent:.3em;
+    color:var(--ink-dim); background:transparent;
+    border:1px solid rgba(236,229,216,.26); border-radius:999px;
+    padding:8px 16px 7px 16px; cursor:pointer;
+    transition:color .4s, border-color .4s, background .4s; white-space:nowrap;
+  }
+  .btn:hover{ color:var(--ink); border-color:rgba(236,229,216,.6); background:rgba(236,229,216,.06); }
+  .btn.on{ color:var(--ink); border-color:rgba(236,229,216,.7); background:rgba(236,229,216,.08); }
+  #hint{
+    position:fixed; bottom:22px; left:50%; transform:translateX(-50%); z-index:2;
+    font-size:11px; letter-spacing:.3em; color:rgba(236,229,216,.34);
+    white-space:nowrap; pointer-events:none; transition:opacity 1.2s;
+  }
+  #hint.hide{ opacity:0; }
+
+  /* いわれ */
+  #iware{
+    position:fixed; inset:0; z-index:5;
+    background:rgba(6,6,12,.92);
+    overflow-y:auto; -webkit-overflow-scrolling:touch;
+    touch-action:pan-y; user-select:text; -webkit-user-select:text;
+    display:none;
+  }
+  #iware.open{ display:block; }
+  .iw-in{
+    max-width:620px; margin:0 auto; padding:9vh 24px 14vh 24px;
+    line-height:2.05; font-size:14.5px; color:rgba(236,229,216,.82);
+  }
+  .iw-in h1{
+    font-size:24px; font-weight:500; letter-spacing:.35em; text-indent:.35em;
+    color:#ece5d8; text-align:center; margin-bottom:.6em;
+  }
+  .iw-in .sub{ text-align:center; letter-spacing:.3em; color:rgba(236,229,216,.42); font-size:12px; margin-bottom:4.5em; }
+  .iw-in h2{
+    font-size:15px; font-weight:600; letter-spacing:.35em;
+    color:#d9b56a; margin:4em 0 1.2em 0; text-align:center;
+  }
+  .iw-in p{ margin:0 0 1.6em 0; }
+  .iw-in .poem{ text-align:center; line-height:2.5; margin:2.2em 0; color:rgba(236,229,216,.9); }
+  .iw-in .ladder{ text-align:center; line-height:2.4; margin:2em 0; color:rgba(236,229,216,.75); letter-spacing:.1em; }
+  .iw-in .colophon{ margin-top:5em; font-size:11.5px; color:rgba(236,229,216,.38); line-height:1.9; }
+  #iwClose{
+    position:sticky; top:18px; float:right; z-index:6;
+    font-family:inherit; font-size:12px; letter-spacing:.25em; text-indent:.25em;
+    color:rgba(236,229,216,.6); background:rgba(10,10,18,.8);
+    border:1px solid rgba(236,229,216,.3); border-radius:999px;
+    padding:8px 16px; cursor:pointer;
+  }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="main"></canvas>
+<div id="title"><b>十二のくちづけ</b>　触れるのは、十二まで</div>
+<div id="series">「12と13」— 空間の拾参　接吻数</div>
+<div id="ctrl">
+  <button class="btn" id="soundBtn">音を灯す</button>
+  <button class="btn" id="ghostBtn" style="display:none">幽霊を呼ぶ</button>
+  <button class="btn" id="iwBtn">いわれ</button>
+  <button class="btn" id="varBtn">見た目　真珠</button>
+</div>
+<div id="hint">つかむ＝ころがす / なでる＝まわす / 奥へ潜る（スクロール・ピンチ）＝中心の眼 / 十三番目は、そのうち来る</div>
+
+<div id="iware">
+  <div class="iw-in">
+    <button id="iwClose">とじる</button>
+    <h1>十二のくちづけ</h1>
+    <div class="sub">「12と13」— 空間の拾参　kissing number</div>
+
+    <h2>触れるのは、十二まで</h2>
+    <p>同じ大きさの球をひとつ置く。その球に触れながら、たがいに重ならない同じ大きさの球を、まわりに何個置けるか。答えは12。数学ではこれを、3次元の接吻数——kissing number——と呼ぶ。</p>
+    <p>ふしぎなのは、12個ならべてもまだ余白があることだ。この12個は、中心に触れたまま、たがいの位置をすべって入れかわることさえできる。だから1694年、数学者グレゴリーは「13個いけるのではないか」と考えた。ニュートンは「12まで」と言った。答えが証明されたのは、1953年——260年後である。</p>
+    <p class="poem">隙間はある。<br>けれど、十三個目は入らない。<br>余白と不可能が、おなじ場所に住んでいる。</p>
+
+    <h2>この作品の過ごし方</h2>
+    <p><b>くちづけ</b>——球がひとつずつ、闇から漂いよる。ためらい、そして触れる。触れた瞬間に半音がひとつ灯り、中心の球がちいさく息をする。十二個目が触れたとき、殻はひとつの全体になる。球をつかんでころがすと、触れたまま動けること——遊隙——が手でわかる。球どうしが触れあうたび、くちづけの光が生まれ、その球の音が鳴る。</p>
+    <p><b>グレゴリーの幽霊</b>——しばらくすると、十三個目が招かれざる客としてやってくる。輪郭だけの球は、じぶんで殻のうえをすべり、いちばん広い隙間を探しつづける。つかんで押し込むと、12個は場所をゆずって動く。動くのに、どこまでいっても入りきらない。画面の数字は、いま一番惜しい場所で「あと何度足りないか」の実測である。強く放り投げれば幽霊は闇へ帰る——でも、問いはまた来る。</p>
+    <p><b>中心の眼</b>——奥へ潜ってみてほしい（スクロール、またはピンチ）。視点が殻をくぐり、中心の球のなかへ。世界が反転して、十二の球があなたの空になる。そとから見れば、12のむこうの13。うちから見れば、まわりに12、中心に1、あわせて13。13は外にはみ出た数ではなく、12をひとつの全体にする中心かもしれない。十二使徒とひとり、円卓とひとり——中心とまわりの型は、文化のなかで何度も編まれてきた（歴史的な因果ではなく、構造の相似として）。</p>
+
+    <h2>次元の梯子</h2>
+    <p>接吻数が証明されている次元は、まだ少ししかない。</p>
+    <div class="ladder">1次元 — 2<br>2次元 — 6<br>3次元 — 12<br>4次元 — 24<br>8次元 — 240<br>24次元 — 196,560</div>
+    <p>私たちの宇宙の12は、この梯子の三段目にすぎない。そして5次元、6次元、7次元の答えを、人類はまだ知らない。</p>
+
+    <h2>掟のありか</h2>
+    <p>例外ノードは、幽霊そのもの——触れられるのに、属せない十三番目。そして閉じない円はここでは遊隙である。十二の殻は決してかたく閉じない。配置はひとつに定まらず、すべっては組みかわる。閉じないから、うごける。うごけるから、こわれない。</p>
+
+    <div class="colophon">
+      「十二のくちづけ」——「12と13」二部作の第二作（空間の13）／2026年8月23日。<br>
+      第一作「拾参」（時間の13・螺旋）と対をなす。拾参の北辰にふれると、この作品への扉がひらく。<br>
+      単一HTML（WebGL2＋Canvas2D疑似3D）・外部ライブラリなし。球の配置は正二十面体の12頂点（隣接角63.43°＞接触角60°＝遊隙の実測）・物理は球面上の位置ベース法。幽霊の探索は「最小隙間を最大化する方角」への実計算である。<br>
+      3次元の接吻数12の証明= Schütte &amp; van der Waerden (1953)。ニュートン＝グレゴリー論争は1694年。<br>
+      思索の正は制作者のノート「12と13」（2026年8月）——12は秩序、13は再生。
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const TAU=Math.PI*2, RAD=Math.PI/180;
+
+/* ============================================================
+   見た目3案
+============================================================ */
+const VORDER=["A","B","C"];
+const VARIANTS={
+  A:{ name:"真珠", bg:["#0a0b12","#151a28"], sph:"#e8e2d4", core:"#f0ead8", acc:"#d9b56a", tint:.14 },
+  B:{ name:"蜜",   bg:["#120c06","#2a1a0c"], sph:"#e8c894", core:"#f0daa8", acc:"#e8a050", tint:.09 },
+  C:{ name:"玄",   bg:["#0b0b0d","#191920"], sph:"#c8c4bc", core:"#dcd8ce", acc:"#b8b4a8", tint:0 },
+};
+const q0=new URLSearchParams(location.search);
+let vKey=VARIANTS[(q0.get("v")||"A").toUpperCase()]?(q0.get("v")||"A").toUpperCase():"A";
+let V=VARIANTS[vKey];
+function hex2rgb(h){ return [parseInt(h.slice(1,3),16)/255,parseInt(h.slice(3,5),16)/255,parseInt(h.slice(5,7),16)/255]; }
+function rgbCss(c,a=1){ return `rgba(${Math.round(c[0]*255)},${Math.round(c[1]*255)},${Math.round(c[2]*255)},${a})`; }
+function mix3(a,b,t){ return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t]; }
+
+/* ============================================================
+   WebGL2 — 一条の光の間
+============================================================ */
+const glCanvas=document.getElementById("gl");
+const gl=glCanvas.getContext("webgl2",{antialias:false,alpha:false});
+const VERT=`#version 300 es
+layout(location=0) in vec2 aPos;
+void main(){ gl_Position=vec4(aPos,0.,1.); }`;
+const FRAG=`#version 300 es
+precision highp float;
+uniform vec2 uRes; uniform float uTime;
+uniform vec3 uBgA,uBgB,uAcc;
+uniform float uEye;
+uniform float uDeny;
+out vec4 fragColor;
+float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
+float vnoise(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.-2.*f);
+  float a=hash21(i),b=hash21(i+vec2(1,0)),c=hash21(i+vec2(0,1)),d=hash21(i+vec2(1,1));
+  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y); }
+mat2 rot(float a){ float c=cos(a),s=sin(a); return mat2(c,-s,s,c); }
+float fbm(vec2 p){ float v=0.,a=.5; mat2 m=rot(.5);
+  for(int i=0;i<5;i++){ v+=a*vnoise(p); p=m*p*2.02+11.3; a*=.5; } return v; }
+void main(){
+  vec2 frag=gl_FragCoord.xy;
+  vec2 uv=(frag-.5*uRes)/uRes.y;
+  float t=uTime;
+  float rr=length(uv);
+  vec2 p=uv*2.0;
+  vec2 q=vec2(fbm(p+t*.007), fbm(p+vec2(5.2,1.3)-t*.005));
+  float f=fbm(p+2.3*q);
+  vec3 col=mix(uBgA,uBgB,clamp(f*f*2.2,0.,1.));
+  float shaft=exp(-abs(uv.x)*4.5)*smoothstep(-.65,.55,-uv.y+.25);
+  col+=uAcc*shaft*.10*(1.-uEye);
+  col+=uAcc*uEye*.06*(1.-rr*.8);
+  col+=vec3(.8,.35,.2)*exp(-rr*2.2)*.16*uDeny;
+  {
+    vec2 sp=uv*24.;
+    vec2 id=floor(sp), gv=fract(sp)-.5;
+    float n=hash21(id);
+    if(n<.11){
+      vec2 off=(vec2(hash21(id+3.1),hash21(id+7.7))-.5)*.8;
+      float d=length(gv-off);
+      col+=vec3(.9,.92,.95)*smoothstep(.05,.0,d)*(.5+.5*sin(t*(1.+n*3.)+n*40.))*.26;
+    }
+  }
+  col*=1.-.46*pow(rr*1.24,2.2);
+  col+=(hash21(frag+fract(t)*61.7)-.5)*.03;
+  col=col/(1.+col*.12);
+  col=pow(max(col,0.),vec3(.96));
+  fragColor=vec4(col,1.);
+}`;
+function compile(ty,src){ const s=gl.createShader(ty); gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+const prog=gl.createProgram();
+gl.attachShader(prog,compile(gl.VERTEX_SHADER,VERT));
+gl.attachShader(prog,compile(gl.FRAGMENT_SHADER,FRAG));
+gl.linkProgram(prog);
+if(!gl.getProgramParameter(prog,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+const vao=gl.createVertexArray(); gl.bindVertexArray(vao);
+const vbo=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+const U={}; ["uRes","uTime","uBgA","uBgB","uAcc","uEye","uDeny"].forEach(n=>U[n]=gl.getUniformLocation(prog,n));
+let BGA=hex2rgb(V.bg[0]), BGB=hex2rgb(V.bg[1]);
+
+const mainCanvas=document.getElementById("main");
+const ctx2=mainCanvas.getContext("2d");
+let W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2);
+  W=window.innerWidth||1280; H=window.innerHeight||800;
+  glCanvas.width=Math.max(2,W*DPR); glCanvas.height=Math.max(2,H*DPR);
+  mainCanvas.width=Math.max(2,W*DPR); mainCanvas.height=Math.max(2,H*DPR);
+  gl.viewport(0,0,glCanvas.width,glCanvas.height);
+}
+window.addEventListener("resize",resize); resize();
+
+/* ============================================================
+   音 — くちづけの鐘
+============================================================ */
+let audioCtx=null, soundOn=false;
+const soundBtn=document.getElementById("soundBtn");
+soundBtn.addEventListener("click",()=>{
+  if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  audioCtx.resume();
+  soundOn=!soundOn;
+  soundBtn.textContent=soundOn?"音を消す":"音を灯す";
+  soundBtn.classList.toggle("on",soundOn);
+  hideHint();
+});
+let lastChime=0;
+function chime(semi,vol=.12,dur=1.4,force=false){
+  if(!soundOn||!audioCtx) return;
+  const now=performance.now();
+  if(!force&&now-lastChime<70) return;
+  lastChime=now;
+  const t0=audioCtx.currentTime;
+  const o=audioCtx.createOscillator();
+  const o2=audioCtx.createOscillator();
+  const g=audioCtx.createGain();
+  const f=audioCtx.createBiquadFilter();
+  o.type="sine";  o.frequency.value=261.63*Math.pow(2,semi/12);
+  o2.type="sine"; o2.frequency.value=261.63*Math.pow(2,semi/12)*2.001;
+  f.type="lowpass"; f.frequency.value=2400; f.Q.value=.6;
+  g.gain.setValueAtTime(0,t0);
+  g.gain.linearRampToValueAtTime(vol,t0+.015);
+  g.gain.exponentialRampToValueAtTime(.0008,t0+dur);
+  o.connect(f); o2.connect(f); f.connect(g); g.connect(audioCtx.destination);
+  o.start(t0); o.stop(t0+dur+.1); o2.start(t0); o2.stop(t0+dur+.1);
+}
+function thud(){
+  if(!soundOn||!audioCtx) return;
+  const t0=audioCtx.currentTime;
+  const o=audioCtx.createOscillator();
+  const g=audioCtx.createGain();
+  o.type="triangle"; o.frequency.setValueAtTime(98,t0);
+  o.frequency.exponentialRampToValueAtTime(62,t0+.35);
+  g.gain.setValueAtTime(0,t0);
+  g.gain.linearRampToValueAtTime(.10,t0+.01);
+  g.gain.exponentialRampToValueAtTime(.0008,t0+.5);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(t0); o.stop(t0+.6);
+}
+
+/* ============================================================
+   ベクトルの小道具
+============================================================ */
+function dot3(a,b){ return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
+function norm3(a){ const l=Math.hypot(a[0],a[1],a[2])||1; return [a[0]/l,a[1]/l,a[2]/l]; }
+function add3(a,b,s=1){ return [a[0]+b[0]*s,a[1]+b[1]*s,a[2]+b[2]*s]; }
+function slerp3(a,b,t){
+  const d=Math.max(-1,Math.min(1,dot3(a,b)));
+  const w=Math.acos(d);
+  if(w<1e-4) return a.slice();
+  const sw=Math.sin(w);
+  const ka=Math.sin((1-t)*w)/sw, kb=Math.sin(t*w)/sw;
+  return norm3([a[0]*ka+b[0]*kb, a[1]*ka+b[1]*kb, a[2]*ka+b[2]*kb]);
+}
+function pushAway(u,v,delta){
+  const d=dot3(u,v);
+  let t=[u[0]-v[0]*d, u[1]-v[1]*d, u[2]-v[2]*d];
+  const l=Math.hypot(t[0],t[1],t[2]);
+  if(l<1e-6){ t=norm3([v[1],-v[0],v[2]*.3+.1]); } else { t=[t[0]/l,t[1]/l,t[2]/l]; }
+  const c=Math.cos(delta), s=Math.sin(delta);
+  return norm3([u[0]*c+t[0]*s, u[1]*c+t[1]*s, u[2]*c+t[2]*s]);
+}
+function randDir(){
+  const z=Math.random()*2-1, a=Math.random()*TAU, r=Math.sqrt(1-z*z);
+  return [r*Math.cos(a), z, r*Math.sin(a)];
+}
+function hsl2rgb(h,s,l){
+  const f=(n)=>{ const k=(n+h/30)%12; const a=s*Math.min(l,1-l);
+    return l-a*Math.max(-1,Math.min(k-3,Math.min(9-k,1))); };
+  return [f(0),f(8),f(4)];
+}
+/* 十二の真珠に、半音ぶんの淡い色をひとしずくずつ */
+const TINTS=Array.from({length:12},(_,i)=>hsl2rgb(i*30,.42,.80));
+/* 一条の光にただよう光塵 */
+const MOTES=Array.from({length:42},()=>({
+  p:[(Math.random()*2-1)*1.7,(Math.random()*2-1)*1.7,(Math.random()*2-1)*1.7],
+  sp:.018+Math.random()*.03, ph:Math.random()*TAU,
+}));
+
+/* ============================================================
+   十二の球 — 正二十面体の頂点から、ひとつずつ漂いつく
+============================================================ */
+const PHI=(1+Math.sqrt(5))/2;
+let SPH=[];
+const now0=performance.now();
+(function init(){
+  const raw=[];
+  for(const s1 of [1,-1]) for(const s2 of [1,-1]){
+    raw.push([0, s1, s2*PHI]);
+    raw.push([s1, s2*PHI, 0]);
+    raw.push([s2*PHI, 0, s1]);
+  }
+  /* 到着の間合い——等間隔にしない。ためらいのある拍 */
+  let tacc=now0+900;
+  SPH=raw.map((p,i)=>{
+    const u=norm3(p);
+    /* 入口＝席から60〜110度はなれた方角 */
+    let e=randDir();
+    for(let k=0;k<8;k++){ const th=Math.acos(Math.max(-1,Math.min(1,dot3(e,u))))/RAD;
+      if(th>55&&th<115) break; e=randDir(); }
+    const born=tacc;
+    tacc+=760+Math.random()*760+(i===10?520:0)+(i===11?900:0);   // 終盤、間が深くなる
+    return {u, seat:u.slice(), e, born, dur:1750+Math.random()*450, seated:false, note:i, glow:0};
+  });
+})();
+const THETA=60*RAD;
+let ghost={state:"none", u:randDir(), showR:1, alpha:0, deny:0, bestGap:1,
+           nextEvent:0, wanderTo:null, wanderNext:0, grabbed:false};
+let ghostPref=null;    // null=物語にまかせる / true=呼んだ / false=帰した（勝手に戻らない）
+let introDone=false, introChordT=0;
+let ripples=[];                    // {p:[x,y,z], t0} 中心球のうえのくちづけの波紋
+let coreBreath=0;
+
+/* ============================================================
+   状態
+============================================================ */
+let yaw=(q0.get("yaw")?parseFloat(q0.get("yaw")):.6), pitch=-.35, pitchEff=-.35;
+let Z=1;                           // 奥へ潜る（>2で中心の眼）
+let eyeAmt=0, eyeEverEntered=false, whisperOn=false;
+let wordT=performance.now();       // ことばの目ざめ
+let contacts=[];
+
+function cx(){ return W/2; } function cy(){ return H/2; }
+function scale(){ return Math.min(W,H)*.168*Math.min(Z,2.1); }
+function rpx(){ return scale()*.5; }
+function eyeOn(){ return Z>2.0; }
+
+function toCam(p){
+  const cy1=Math.cos(yaw), sy1=Math.sin(yaw);
+  const cx1=Math.cos(pitchEff), sx1=Math.sin(pitchEff);
+  const x=p[0]*cy1+p[2]*sy1;
+  const z=-p[0]*sy1+p[2]*cy1;
+  const y=p[1]*cx1-z*sx1;
+  const z2=p[1]*sx1+z*cx1;
+  return [x,y,z2];
+}
+function fromCam(p){
+  const cy1=Math.cos(yaw), sy1=Math.sin(yaw);
+  const cx1=Math.cos(pitchEff), sx1=Math.sin(pitchEff);
+  const y=p[1]*cx1+p[2]*sx1;
+  const z=-p[1]*sx1+p[2]*cx1;
+  const x=p[0]*cy1-z*sy1;
+  const z2=p[0]*sy1+z*cy1;
+  return [x,y,z2];
+}
+function unproject(px,py){
+  const S=scale();
+  let x=(px-cx())/S, y=(cy()-py)/S;
+  const rr=Math.hypot(x,y);
+  if(rr>.999){ x=x/rr*.999; y=y/rr*.999; }
+  const z=Math.sqrt(Math.max(0,1-x*x-y*y));
+  return fromCam([x,y,z]);
+}
+
+/* ============================================================
+   物理 — 球面の位置ベース法
+============================================================ */
+function seatedList(){ return SPH.filter(s=>s.seated); }
+function relax(){
+  contacts.length=0;
+  const act=seatedList();
+  const gOn=(ghost.state==="active");
+  for(let it=0;it<4;it++){
+    for(let i=0;i<act.length;i++) for(let j=i+1;j<act.length;j++){
+      const a=act[i], b=act[j];
+      const th=Math.acos(Math.max(-1,Math.min(1,dot3(a.u,b.u))));
+      if(th<THETA){
+        const d=(THETA-th)*.5;
+        a.u=pushAway(a.u,b.u,d);
+        b.u=pushAway(b.u,a.u,d);
+        if(it===0&&d>.004){ contacts.push({a:a.note,b:b.note,imp:d,ua:a.u,ub:b.u}); }
+      }else if(it===0&&th<THETA+.035){ contacts.push({a:a.note,b:b.note,imp:0,ua:a.u,ub:b.u}); }
+    }
+    if(gOn){
+      for(const a of act){
+        const th=Math.acos(Math.max(-1,Math.min(1,dot3(a.u,ghost.u))));
+        if(th<THETA){
+          const d=THETA-th;
+          a.u=pushAway(a.u,ghost.u,d*.72);
+          ghost.u=pushAway(ghost.u,a.u,d*.28);
+          if(it===0&&d>.02) contacts.push({a:a.note,b:12,imp:d,ua:a.u,ub:ghost.u});
+        }
+      }
+      if(it===3){
+        let minGap=1e9;
+        for(const a of act){
+          const th=Math.acos(Math.max(-1,Math.min(1,dot3(a.u,ghost.u))));
+          minGap=Math.min(minGap,th-THETA);
+        }
+        ghost.bestGap=minGap;
+        ghost.deny+=((minGap<-.005?1:0)-ghost.deny)*.08;
+      }
+    }
+  }
+}
+/* 幽霊のさがしもの——最小隙間を最大化する方角 */
+function widestSpot(){
+  let best=null, bs=-1e9;
+  for(let k=0;k<52;k++){
+    const c=k<40?randDir():norm3(add3(ghost.u,randDir(),.35));
+    let m=1e9;
+    for(const s of SPH){ if(!s.seated) continue;
+      m=Math.min(m,Math.acos(Math.max(-1,Math.min(1,dot3(c,s.u))))); }
+    if(m>bs){ bs=m; best=c; }
+  }
+  return best||randDir();
+}
+
+/* ============================================================
+   入力 — 指のかず（ピンチ）は台帳で自己修復
+============================================================ */
+const fingers=new Map();
+let dragging=false, dragSph=-1, px0=0, py0=0, moved=0;
+let pinchD0=0, vxHist=[];
+function pick(px,py){
+  const S=scale(), r=rpx();
+  let best=-1, bd=1e9;
+  const test=(u,idx)=>{
+    const c=toCam(u);
+    if(c[2]<-.15) return;
+    const sx=cx()+c[0]*S, sy=cy()-c[1]*S;
+    const d=Math.hypot(px-sx,py-sy);
+    if(d<r*1.15&&d<bd){ bd=d; best=idx; }
+  };
+  if(ghost.state==="active") test(ghost.u,12);
+  if(best<0) for(const s of SPH){ if(s.seated) test(s.u,s.note); }
+  return best;
+}
+mainCanvas.addEventListener("pointerdown",e=>{
+  if(e.isPrimary) fingers.clear();               // 迷子の指の自己修復
+  fingers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(fingers.size===2){
+    const f=[...fingers.values()];
+    pinchD0=Math.hypot(f[0].x-f[1].x,f[0].y-f[1].y);
+    dragSph=-1; dragging=false;
+    return;
+  }
+  dragging=true; moved=0; px0=e.clientX; py0=e.clientY; vxHist.length=0;
+  if(!introDone){ finishIntro(); wake(); }
+  dragSph=eyeAmt>.5?-1:pick(e.clientX,e.clientY);
+  if(dragSph===12) ghost.grabbed=true;
+  mainCanvas.classList.add("dragging");
+  mainCanvas.setPointerCapture(e.pointerId);
+  wake(); hideHint();
+});
+mainCanvas.addEventListener("pointermove",e=>{
+  const f=fingers.get(e.pointerId);
+  if(f){ f.x=e.clientX; f.y=e.clientY; }
+  if(fingers.size===2){
+    const fs=[...fingers.values()];
+    const d=Math.hypot(fs[0].x-fs[1].x,fs[0].y-fs[1].y);
+    if(pinchD0>0){ Z=Math.max(.55,Math.min(3.0,Z*d/pinchD0)); }
+    pinchD0=d;
+    return;
+  }
+  if(!dragging) return;
+  const dx=e.clientX-px0, dy=e.clientY-py0;
+  px0=e.clientX; py0=e.clientY; moved+=Math.abs(dx)+Math.abs(dy);
+  vxHist.push({dx,dy,t:performance.now()});
+  if(vxHist.length>6) vxHist.shift();
+  if(dragSph>=0){
+    const target=unproject(e.clientX,e.clientY);
+    const obj=dragSph===12?ghost:SPH[dragSph];
+    obj.u=norm3(add3(obj.u,target,.34));
+  }else{
+    yaw+=dx*.005;
+    pitch=Math.max(-1.35,Math.min(1.35,pitch+dy*.005));
+  }
+});
+function endPointer(e){
+  fingers.delete(e.pointerId);
+  if(fingers.size<2) pinchD0=0;
+  if(!dragging) return;
+  if(dragSph===12){
+    ghost.grabbed=false;
+    /* 放り investigate——強ければ幽霊は闇へ */
+    let vx=0,vy=0;
+    const nowT=performance.now();
+    for(const h of vxHist){ if(nowT-h.t<120){ vx+=h.dx; vy+=h.dy; } }
+    if(Math.hypot(vx,vy)>46){
+      ghost.state="leaving"; ghost.nextEvent=0;
+      wake(); thud(); syncGhostBtn();
+    }
+  }
+  dragging=false; dragSph=-1; mainCanvas.classList.remove("dragging");
+}
+mainCanvas.addEventListener("pointerup",endPointer);
+mainCanvas.addEventListener("pointercancel",endPointer);
+window.addEventListener("wheel",e=>{
+  Z=Math.max(.55,Math.min(3.0,Z*Math.exp(-e.deltaY*.0011)));
+  wake(); hideHint();
+},{passive:true});
+
+const ghostBtn=document.getElementById("ghostBtn");
+function syncGhostBtn(){
+  const here=(ghost.state==="active"||ghost.state==="coming");
+  ghostBtn.textContent=here?"幽霊を帰す":"幽霊を呼ぶ";
+  ghostBtn.classList.toggle("on",here);
+}
+function summonGhost(){
+  ghost.state="coming"; ghost.showR=2.9; ghost.alpha=0;
+  ghost.u=randDir(); ghost.nextEvent=0;
+  if(ghost.trail) ghost.trail.length=0;
+  thud(); wake(); syncGhostBtn();
+}
+ghostBtn.addEventListener("click",()=>{
+  if(ghost.state==="active"||ghost.state==="coming"){
+    ghostPref=false;                      // 帰したら、勝手には戻らない
+    ghost.state="leaving"; ghost.nextEvent=0;
+    wake();
+  }else{
+    ghostPref=true;
+    summonGhost();
+  }
+  syncGhostBtn(); hideHint();
+});
+document.getElementById("iwBtn").addEventListener("click",()=>{ document.getElementById("iware").classList.add("open"); hideHint(); });
+document.getElementById("iwClose").addEventListener("click",()=>{ document.getElementById("iware").classList.remove("open"); });
+const varBtn=document.getElementById("varBtn");
+varBtn.textContent="見た目　"+V.name;
+varBtn.addEventListener("click",()=>{
+  vKey=VORDER[(VORDER.indexOf(vKey)+1)%VORDER.length];
+  V=VARIANTS[vKey];
+  BGA=hex2rgb(V.bg[0]); BGB=hex2rgb(V.bg[1]);
+  document.body.style.background=V.bg[0];
+  varBtn.textContent="見た目　"+V.name;
+});
+document.body.style.background=V.bg[0];
+let hintHidden=false;
+function hideHint(){ if(hintHidden)return; hintHidden=true;
+  setTimeout(()=>document.getElementById("hint").classList.add("hide"),2500); }
+setTimeout(hideHint,20000);
+
+function wake(){ wordT=performance.now(); }
+function finishIntro(){
+  for(const s of SPH){ s.seated=true; }
+  introDone=true;
+  ghost.nextEvent=performance.now()+9000;
+  ghostBtn.style.display="";
+}
+
+/* ============================================================
+   描画
+============================================================ */
+const FONT='"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif';
+const ink=(a)=>`rgba(236,229,216,${a})`;
+
+function drawSphere(sx,sy,r,col,depth,alpha,ghostly){
+  if(ghostly){
+    /* けむりの球——うちに淡い光、ふちは息の線 */
+    const g=ctx2.createRadialGradient(sx-r*.25,sy-r*.3,r*.1,sx,sy,r);
+    g.addColorStop(0,rgbCss(col,alpha*.20));
+    g.addColorStop(.7,rgbCss(col,alpha*.07));
+    g.addColorStop(1,rgbCss(col,alpha*.015));
+    ctx2.fillStyle=g;
+    ctx2.beginPath(); ctx2.arc(sx,sy,r,0,TAU); ctx2.fill();
+    ctx2.strokeStyle=rgbCss(col,alpha*.75);
+    ctx2.lineWidth=1;
+    ctx2.shadowColor=rgbCss(col,.6); ctx2.shadowBlur=r*.12;
+    ctx2.setLineDash([3,5]); ctx2.lineDashOffset=performance.now()*.004;
+    ctx2.beginPath(); ctx2.arc(sx,sy,r,0,TAU); ctx2.stroke();
+    ctx2.setLineDash([]); ctx2.shadowBlur=0;
+    return;
+  }
+  /* 真珠——一条の光（左上）と、闇からの照り返し */
+  const lite=.55+.45*depth;
+  const g=ctx2.createRadialGradient(sx-r*.36,sy-r*.42,r*.06,sx,sy,r*1.04);
+  g.addColorStop(0,rgbCss(mix3(col,[1,1,1],.60),alpha*lite));
+  g.addColorStop(.36,rgbCss(col,alpha*.86*lite));
+  g.addColorStop(.74,rgbCss(mix3(col,[.06,.07,.10],.60),alpha*.94*lite));
+  g.addColorStop(1,rgbCss(mix3(col,[.02,.02,.04],.82),alpha*.92*lite));
+  ctx2.fillStyle=g;
+  ctx2.beginPath(); ctx2.arc(sx,sy,r,0,TAU); ctx2.fill();
+  /* 影がわの冷たいリム（環境の照り返し） */
+  ctx2.strokeStyle=rgbCss(mix3(col,[.72,.82,1],.55),alpha*.30*lite);
+  ctx2.lineWidth=Math.max(1,r*.055);
+  ctx2.shadowColor=rgbCss(mix3(col,[.72,.82,1],.5),.5); ctx2.shadowBlur=r*.10;
+  ctx2.beginPath(); ctx2.arc(sx,sy,r*.93,.12*Math.PI,.62*Math.PI); ctx2.stroke();
+  ctx2.shadowBlur=0;
+  /* 光がわの、あたたかい虹の気配 */
+  ctx2.strokeStyle=rgbCss(mix3(col,hex2rgb(V.acc),.6),alpha*.16*lite);
+  ctx2.lineWidth=Math.max(1,r*.05);
+  ctx2.beginPath(); ctx2.arc(sx,sy,r*.88,1.05*Math.PI,1.6*Math.PI); ctx2.stroke();
+  /* 鏡面のひかり——小さく、強く */
+  ctx2.fillStyle=`rgba(255,255,255,${(alpha*.8*lite).toFixed(3)})`;
+  ctx2.shadowColor="rgba(255,255,255,.95)"; ctx2.shadowBlur=r*.22;
+  ctx2.beginPath(); ctx2.arc(sx-r*.33,sy-r*.39,Math.max(1.1,r*.085),0,TAU); ctx2.fill();
+  ctx2.shadowBlur=0;
+  ctx2.fillStyle=`rgba(255,255,255,${(alpha*.22*lite).toFixed(3)})`;
+  ctx2.beginPath(); ctx2.arc(sx-r*.18,sy-r*.5,Math.max(.8,r*.045),0,TAU); ctx2.fill();
+}
+
+/* 到着のふるまい——近づく・ためらう・触れる */
+function arrivalPose(s,now){
+  const p=Math.max(0,Math.min(1,(now-s.born)/s.dur));
+  let rad;
+  if(p<.58){ const q=p/.58; rad=3.1-(3.1-1.24)*(1-(1-q)*(1-q)); }
+  else if(p<.84){ const q=(p-.58)/.26; rad=1.24-.12*q; }          // ためらい
+  else{ const q=(p-.84)/.16; rad=1.12-.12*(q*q*(3-2*q)); }       // そっと触れる
+  const dir=slerp3(s.e,s.seat,Math.min(1,p/.8)*Math.min(1,p/.8)*(3-2*Math.min(1,p/.8))||0);
+  const al=.20+.80*p;
+  return {dir,rad,al,p};
+}
+
+function draw(now){
+  const t=now/1000;
+  ctx2.setTransform(DPR,0,0,DPR,0,0);
+  ctx2.clearRect(0,0,W,H);
+  const S=scale(), r=rpx();
+  const sphC=hex2rgb(V.sph), coreC=hex2rgb(V.core), accC=hex2rgb(V.acc);
+  ctx2.textAlign="center"; ctx2.textBaseline="middle";
+  pitchEff=pitch+.018*Math.sin(t*.11);          // 息をするカメラ
+
+  /* 光塵——一条の光にただよう（奥→手前の二層） */
+  const moteDraw=(front)=>{
+    for(const m of MOTES){
+      const c=toCam(m.p);
+      if(front?(c[2]<=.35):(c[2]>.35)) continue;
+      const sx=cx()+c[0]*S, sy=cy()-c[1]*S;
+      const sh=Math.exp(-Math.abs(sx-cx())/(W*.17));
+      const tw=.55+.45*Math.sin(t*.7+m.ph);
+      const a=(.035+.11*sh)*tw*(1-eyeAmt);
+      if(a<.01) continue;
+      ctx2.fillStyle=rgbCss(accC,a);
+      ctx2.beginPath(); ctx2.arc(sx,sy,front?1.2:.8,0,TAU); ctx2.fill();
+    }
+  };
+  const occ=(sx,sy,rad,a)=>{
+    const g=ctx2.createRadialGradient(sx,sy,0,sx,sy,rad);
+    g.addColorStop(0,`rgba(4,4,8,${a.toFixed(3)})`);
+    g.addColorStop(1,"rgba(4,4,8,0)");
+    ctx2.fillStyle=g;
+    ctx2.beginPath(); ctx2.arc(sx,sy,rad,0,TAU); ctx2.fill();
+  };
+  if(eyeAmt<.999){
+    /* 後光——一条の光が球の群れに落ちて、闇ににじむ */
+    const hg=ctx2.createRadialGradient(cx(),cy()-S*.5,S*.2,cx(),cy(),S*2.7);
+    hg.addColorStop(0,rgbCss(accC,.075*(1-eyeAmt)));
+    hg.addColorStop(.45,rgbCss(accC,.028*(1-eyeAmt)));
+    hg.addColorStop(1,"rgba(0,0,0,0)");
+    ctx2.fillStyle=hg;
+    ctx2.fillRect(0,0,W,H);
+    moteDraw(false);
+  }
+
+  if(eyeAmt<.999){
+    /* ---------- そとの眼 ---------- */
+    const items=[];
+    const breath=1+.035*coreBreath*Math.sin(Math.min(1,coreBreath)*Math.PI);
+    items.push({kind:"core", c:toCam([0,0,0]), breath});
+    for(const s of SPH){
+      if(s.seated){
+        items.push({kind:"sph", s, c:toCam(s.u), al:1});
+      }else if(now>=s.born){
+        const ap=arrivalPose(s,now);
+        items.push({kind:"sph", s, c:toCam([ap.dir[0]*ap.rad,ap.dir[1]*ap.rad,ap.dir[2]*ap.rad]), al:ap.al});
+      }
+    }
+    if(ghost.state!=="none"&&ghost.alpha>.01) items.push({kind:"ghost", c:toCam([ghost.u[0]*ghost.showR,ghost.u[1]*ghost.showR,ghost.u[2]*ghost.showR])});
+    items.sort((a,b)=>a.c[2]-b.c[2]);
+
+    const fade=1-eyeAmt;
+    for(const it of items){
+      const sx=cx()+it.c[0]*S, sy=cy()-it.c[1]*S;
+      const depth=Math.max(0,Math.min(1,(it.c[2]+1)/2));
+      if(it.kind==="core"){
+        drawSphere(sx,sy,r*it.breath,coreC,.62,.98*fade,false);
+        /* 内側からの微光——中心はみずから灯る */
+        const ig=ctx2.createRadialGradient(sx,sy,0,sx,sy,r*.9);
+        ig.addColorStop(0,rgbCss(coreC,.22*fade));
+        ig.addColorStop(1,rgbCss(coreC,0));
+        ctx2.fillStyle=ig;
+        ctx2.beginPath(); ctx2.arc(sx,sy,r*.9,0,TAU); ctx2.fill();
+        ctx2.fillStyle=ink(.55*fade);
+        ctx2.shadowColor=rgbCss(accC,.7); ctx2.shadowBlur=8;
+        ctx2.font=`400 ${Math.max(12,r*.34)}px ${FONT}`;
+        ctx2.fillText("一",sx,sy+r*.02);
+        ctx2.shadowBlur=0;
+      }else if(it.kind==="ghost"){
+        const heat=Math.max(0,-ghost.bestGap)/.12;
+        const col=mix3(accC,[0.9,.35,.2],Math.min(1,heat*1.2));
+        drawSphere(sx,sy,r,col,depth,ghost.alpha*.9*fade,true);
+      }else{
+        const hl=(dragSph===it.s.note)?.16:0;
+        const base=V.tint>0?mix3(sphC,TINTS[it.s.note],V.tint):sphC;
+        const gcol=mix3(base,accC,hl+it.s.glow*.3);
+        drawSphere(sx,sy,r,gcol,depth,.96*it.al*fade,false);
+        it.s.glow*=.94;
+      }
+    }
+    /* 幽霊のさがした跡——殻のうえに、消えてゆく銀の点々 */
+    if(ghost.state==="active"&&ghost.trail&&ghost.trail.length>1&&fade>.02){
+      const nowT=performance.now();
+      for(const tp of ghost.trail){
+        const age=(nowT-tp.t)/6500;
+        if(age>1) continue;
+        const c=toCam(tp.u);
+        if(c[2]<0) continue;
+        ctx2.fillStyle=rgbCss(accC,.16*(1-age)*fade);
+        ctx2.beginPath(); ctx2.arc(cx()+c[0]*S,cy()-c[1]*S,1.1,0,TAU); ctx2.fill();
+      }
+    }
+    /* くちづけの波紋——中心球のうえに */
+    if(fade>.02){
+      for(let i=ripples.length-1;i>=0;i--){
+        const rp=ripples[i];
+        const age=(now-rp.t0)/900;
+        if(age>1){ ripples.splice(i,1); continue; }
+        const rr0=rp.rad||.5;
+        const c=toCam([rp.p[0]*rr0,rp.p[1]*rr0,rp.p[2]*rr0]);
+        if(c[2]<-.1) continue;
+        ctx2.strokeStyle=rgbCss(accC,(1-age)*.75*fade);
+        ctx2.lineWidth=1.2*(1-age)+.4;
+        ctx2.beginPath();
+        ctx2.arc(cx()+c[0]*S,cy()-c[1]*S,r*(.10+.55*age),0,TAU);
+        ctx2.stroke();
+      }
+      /* 中心とのくちづけ——触れ目の影と、灯 */
+      for(const s of SPH){
+        if(!s.seated) continue;
+        const c=toCam([s.u[0]*.5,s.u[1]*.5,s.u[2]*.5]);
+        if(c[2]<.15) continue;
+        const sx=cx()+c[0]*S, sy=cy()-c[1]*S;
+        occ(sx,sy,r*.44,.26*fade);
+        const tw=.5+.5*Math.sin(t*1.6+s.note*2.1);
+        ctx2.fillStyle=rgbCss(accC,.5*tw*fade);
+        ctx2.shadowColor=rgbCss(accC,.8); ctx2.shadowBlur=6;
+        ctx2.beginPath(); ctx2.arc(sx,sy,1.8,0,TAU); ctx2.fill();
+        ctx2.shadowBlur=0;
+      }
+      for(const k of contacts){
+        if(k.b===12) continue;
+        const m=norm3(add3(k.ua,k.ub));
+        const c=toCam([m[0]*.866,m[1]*.866,m[2]*.866]);
+        if(c[2]<.25) continue;
+        const sx=cx()+c[0]*S, sy=cy()-c[1]*S;
+        occ(sx,sy,r*.40,.24*fade);
+        ctx2.fillStyle=rgbCss(accC,.7*fade);
+        ctx2.shadowColor=rgbCss(accC,.9); ctx2.shadowBlur=8;
+        ctx2.beginPath(); ctx2.arc(sx,sy,2.1,0,TAU); ctx2.fill();
+        ctx2.shadowBlur=0;
+      }
+    }
+    moteDraw(true);
+  }
+
+  if(eyeAmt>.001){
+    /* ---------- 中心の眼 ---------- */
+    const Rv=Math.min(W,H)*.44*eyeAmt;
+    const PSI=130*RAD;
+    const items=[];
+    for(const s of SPH){ if(s.seated) items.push({u:s.u, ghost:false, note:s.note}); }
+    if(ghost.state==="active") items.push({u:ghost.u, ghost:true});
+    for(const it of items){
+      const c=toCam(it.u);
+      const psi=Math.acos(Math.max(-1,Math.min(1,c[2])));
+      if(psi>PSI) continue;
+      const rr2=psi/PSI*Rv;
+      const az=Math.atan2(c[1],c[0]);
+      const sx=cx()+Math.cos(az)*rr2, sy=cy()-Math.sin(az)*rr2;
+      const sr=Math.max(6,(30*RAD)/PSI*Rv*(1-psi/PSI*.25));
+      if(it.ghost){
+        const heat=Math.max(0,-ghost.bestGap)/.12;
+        drawSphere(sx,sy,sr,mix3(accC,[.9,.35,.2],Math.min(1,heat*1.2)),.6,.8*eyeAmt*ghost.alpha,true);
+      }else{
+        const base=V.tint>0?mix3(sphC,TINTS[it.note],V.tint):sphC;
+        drawSphere(sx,sy,sr,base,.72,.92*eyeAmt,false);
+      }
+    }
+    ctx2.strokeStyle=rgbCss(accC,.6*eyeAmt);
+    ctx2.lineWidth=.9;
+    ctx2.beginPath();
+    ctx2.moveTo(cx()-8,cy()); ctx2.lineTo(cx()+8,cy());
+    ctx2.moveTo(cx(),cy()-8); ctx2.lineTo(cx(),cy()+8);
+    ctx2.stroke();
+    ctx2.fillStyle=ink(.55*eyeAmt);
+    ctx2.font=`400 ${Math.max(11,H*.016)}px ${FONT}`;
+    ctx2.fillText("あなた（十三番目＝中心の一）",cx(),cy()+22);
+  }
+
+  /* ---------- ことば（さわぐと目ざめ、しずかだと退く） ---------- */
+  {
+    const idle=(now-wordT-5200)/3000;
+    const wa=.34+.66*Math.max(0,Math.min(1,1-idle));
+    const gy=Math.min(cy()+Math.max(S*2.05,H*.30), H*.84);
+    const seatedN=seatedList().length;
+    let big, l1="", l2="";
+    if(!introDone){
+      big=String(seatedN);
+      l1=seatedN>0?"くちづけ——ひとつずつ、触れてゆく":"闇のむこうから、最初のひと粒";
+      l2="タップで、すべて迎える";
+    }else if(eyeAmt>.5){
+      big="1 ＋ 12";
+      l1="うちから見れば、まわりに十二、中心に一——あわせて十三";
+      l2="そとへ戻る＝手前へ引く（スクロール・ピンチ）";
+    }else if(ghost.state==="active"){
+      const lack=Math.max(0,-ghost.bestGap)/RAD;
+      big="12 ＋ ?";
+      l1=ghost.grabbed
+        ? (lack>0.2?`隙間はあるのに——あと ${lack.toFixed(1)}° 足りない`:"すべって、探している……")
+        : "十三番目が、じぶんで隙間を探している";
+      l2="1694年の問い（ニュートン対グレゴリー）。答えは、1953年";
+    }else if(ghost.state==="coming"){
+      big="……";
+      l1="招かれざる、十三個目";
+      l2="";
+    }else if(ghost.state==="leaving"){
+      big="12";
+      l1="幽霊は、闇へ——でも問いは、また来る";
+      l2="";
+    }else{
+      big="12";
+      l1="触れられるのは、十二まで——それでも殻は、すべって組みかわる";
+      l2=whisperOn?"そのまま奥へ——中心の眼がひらく":"つかんで、ころがしてみてください";
+    }
+    ctx2.font=`500 ${Math.max(24,H*.048)}px ${FONT}`;
+    ctx2.fillStyle=ink(.96*wa);
+    ctx2.shadowColor="rgba(0,0,0,.55)"; ctx2.shadowBlur=16;
+    ctx2.fillText(big,cx(),gy);
+    ctx2.shadowBlur=0;
+    ctx2.font=`400 ${Math.max(12,H*.019)}px ${FONT}`;
+    ctx2.fillStyle=ink(.62*wa);
+    ctx2.fillText(l1,cx(),gy+H*.042);
+    ctx2.font=`400 ${Math.max(11,H*.016)}px ${FONT}`;
+    ctx2.fillStyle=ink(.34*wa);
+    ctx2.fillText(l2,cx(),gy+H*.073);
+  }
+}
+
+/* ============================================================
+   メインループ
+============================================================ */
+window.__kuchi={
+  get(){ return {seated:seatedList().length,introDone,ghost:ghost.state,gapDeg:ghost.bestGap/RAD,
+    Z,eye:eyeOn(),yaw,pitch}; },
+  skip(){ finishIntro(); },
+  setGhost(on){ if(!introDone)finishIntro();
+    ghostPref=on?true:false;
+    ghost.state=on?"active":"none"; ghost.alpha=on?1:0; ghost.showR=1;
+    if(!on) ghost.nextEvent=0;
+    syncGhostBtn(); wake(); },
+  setEye(on){ if(!introDone)finishIntro(); Z=on?2.35:1; eyeAmt=on?1:0; wake(); },
+  setView(y,p){ if(y!=null)yaw=y; if(p!=null)pitch=p; },
+  setZ(z){ Z=Math.max(.55,Math.min(3.0,z)); },
+  pushGhost(x,y,z){ ghost.u=norm3([x,y,z]); },
+};
+
+let prevContacts=new Set();
+let prevT=performance.now();
+function frame(now){
+  const dt=Math.min(.05,(now-prevT)/1000); prevT=now;
+  const t=now/1000;
+
+  /* 到着——触れた瞬間の灯と鐘 */
+  if(!introDone){
+    let all=true;
+    for(const s of SPH){
+      if(!s.seated){
+        if(now>=s.born+s.dur){
+          s.seated=true; s.glow=1;
+          chime(s.note,.13,1.7,true);
+          ripples.push({p:s.seat.slice(),rad:.5,t0:now});
+          coreBreath=1; wake();
+        }else all=false;
+      }
+    }
+    if(all){
+      introDone=true;
+      introChordT=now;
+      ghost.nextEvent=now+15000+Math.random()*6000;
+      ghostBtn.style.display="";
+      /* とじの和音——根と五度とオクターブ、しずかに */
+      setTimeout(()=>chime(0,.07,2.4,true),350);
+      setTimeout(()=>chime(7,.06,2.4,true),470);
+      setTimeout(()=>chime(12,.07,2.8,true),600);
+      wake();
+    }
+  }
+
+  /* 幽霊の訪れと退場 */
+  if(introDone){
+    if(ghost.state==="none"&&ghostPref!==false&&ghost.nextEvent>0&&now>=ghost.nextEvent){
+      summonGhost();                         // 招かれざる客（初回と、放り投げ後の再訪）
+    }
+    if(ghost.state==="coming"){
+      ghost.showR+=((1.02)-ghost.showR)*Math.min(1,dt*1.1);
+      ghost.alpha=Math.min(1,ghost.alpha+dt*.5);
+      if(ghost.showR<1.09){ ghost.state="active"; ghost.showR=1;
+        ghost.wanderNext=now+800; thud(); wake(); }
+    }
+    if(ghost.state==="active"&&!ghost.grabbed){
+      if(now>=ghost.wanderNext){
+        ghost.wanderTo=widestSpot();
+        ghost.wanderNext=now+2200+Math.random()*1800;
+      }
+      if(ghost.wanderTo){
+        const w=Math.acos(Math.max(-1,Math.min(1,dot3(ghost.u,ghost.wanderTo))));
+        const step=Math.min(w,.42*dt);
+        if(w>1e-3) ghost.u=slerp3(ghost.u,ghost.wanderTo,step/w);
+      }
+    }
+    if(ghost.state==="active"){
+      if(!ghost.trail) ghost.trail=[];
+      if(!ghost.trailT||now-ghost.trailT>160){
+        ghost.trail.push({u:ghost.u.slice(),t:now});
+        if(ghost.trail.length>44) ghost.trail.shift();
+        ghost.trailT=now;
+      }
+    }
+    if(ghost.state==="leaving"){
+      ghost.showR+=dt*1.7;
+      ghost.alpha=Math.max(0,ghost.alpha-dt*.7);
+      if(ghost.alpha<=0){
+        ghost.state="none";
+        ghost.nextEvent=(ghostPref===false)?0:now+34000+Math.random()*22000;
+        syncGhostBtn();
+      }
+    }
+  }
+
+  /* 光塵はゆっくりのぼり、天でめぐる */
+  for(const m of MOTES){
+    m.p[1]+=m.sp*dt*2;
+    m.p[0]+=Math.sin(t*.3+m.ph)*.004*dt*60;
+    if(m.p[1]>1.7){ m.p[1]=-1.7; m.p[0]=(Math.random()*2-1)*1.7; m.p[2]=(Math.random()*2-1)*1.7; }
+  }
+
+  /* 視点——しずかな自転と、眼のうつり */
+  if(!dragging&&fingers.size<2) yaw+=.045*dt;
+  eyeAmt+=((eyeOn()?1:0)-eyeAmt)*Math.min(1,dt*3.2);
+  if(eyeOn()&&!eyeEverEntered){ eyeEverEntered=true; wake(); }
+  if(!eyeEverEntered&&Z>1.5&&!whisperOn){ whisperOn=true; wake(); }
+  if(whisperOn&&(Z<1.2||eyeEverEntered)) whisperOn=false;
+
+  relax();
+
+  const cur=new Set();
+  for(const k of contacts){
+    const key=k.a+"_"+k.b;
+    cur.add(key);
+    if(!prevContacts.has(key)&&k.imp>.006&&introDone){
+      if(k.b===12){ thud(); }
+      else{
+        chime(Math.min(k.a,k.b),.07,1.0);
+        const m=norm3(add3(k.ua,k.ub));
+        ripples.push({p:m,rad:.866,t0:now});
+      }
+    }
+  }
+  prevContacts=cur;
+  coreBreath=Math.max(0,coreBreath-dt*1.3);
+
+  const accC=hex2rgb(V.acc);
+  gl.uniform2f(U.uRes,glCanvas.width,glCanvas.height);
+  gl.uniform1f(U.uTime,t);
+  gl.uniform3f(U.uBgA,BGA[0],BGA[1],BGA[2]);
+  gl.uniform3f(U.uBgB,BGB[0],BGB[1],BGB[2]);
+  gl.uniform3f(U.uAcc,accC[0],accC[1],accC[2]);
+  gl.uniform1f(U.uEye,eyeAmt);
+  gl.uniform1f(U.uDeny,ghost.state==="active"?ghost.deny:0);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+
+  draw(now);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
