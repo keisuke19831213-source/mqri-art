@@ -140,7 +140,7 @@
   <button class="btn" id="iwBtn">いわれ</button>
   <button class="btn" id="varBtn">見た目　北辰</button>
 </div>
-<div id="hint">上下になでる＝円→螺旋→裏の眼→ぐるり一回転 / 左右＝まわす / 北辰にふれる＝中心の眼 / 何もない所をタップ＝絵だけになる</div>
+<div id="hint">上下になでる＝円→螺旋→裏の眼→ぐるり一回転 / 左右＝まわす（十二が頂きにとまる） / 北辰にふれる＝中心の眼 / 何もない所をタップ＝絵だけになる</div>
 
 <div id="dayCard">
   <div class="dc-t">わたしの日</div>
@@ -391,7 +391,7 @@ buildKoyomi();
 ============================================================ */
 let pos=(q0.get("p")?parseFloat(q0.get("p")):0);       // 連続角（度）
 let tilt=0, tiltTarget=(q0.get("tilt")?parseFloat(q0.get("tilt")):0);
-let spin=0;
+let spin=(q0.get("spin")?parseFloat(q0.get("spin")):30*RAD);   // 十二を頂きに（時計の作法）
 let flowIdx=1;
 const FLOWS=[0, 14, 220];                               // 度/秒
 let crossT=-1e9, crossLap=0, goldT=-1e9, goldPearl=null;
@@ -606,7 +606,7 @@ function draw(now){
   {
     const list=[];
     for(const p of pearls){
-      if(mode==="koyomi" && p.A>pos+1e-6 && !p.gold && p.A>pos) {}
+      if(p.gold && !showGold) continue;          // 印を消したら、粒ごと消える
       const s=proj(p.A,p.A/Amax,R,Ht);
       list.push({p,s});
     }
@@ -740,10 +740,14 @@ function draw(now){
       ctx2.fillStyle=ink(.34);
       ctx2.font=`400 ${Math.max(11,H*.017)}px ${FONT}`;
       if(mode==="koyomi"){
-        const passed=pearls.filter(p=>p.A<=pos).length;
-        ctx2.fillText(`メトンの環 —— ${passed} ／ 235の月・19のとし${showGold?"（金の粒は、閏）":""}`,cx(),gy+H*.075);
+        const passed=pearls.filter(p=>p.A<=pos&&(showGold||!p.gold)).length;
+        ctx2.fillText(showGold
+          ? `メトンの環 —— ${passed} ／ 235の月・19のとし（金の粒は、閏）`
+          : `十二の環 —— ${passed} ／ 228の月・19のとし`,cx(),gy+H*.075);
       }else if(bdayInfo){
-        ctx2.fillText(`${bdayInfo.y0}年${bdayInfo.bm}月${bdayInfo.bd}日から —— むかえた日 ${bdayInfo.laps}・いま ${bdayInfo.yN-bdayInfo.y0+1} めぐりめ${showGold?"（金の粒は、あなたの日）":""}`,cx(),gy+H*.075);
+        ctx2.fillText(showGold
+          ? `${bdayInfo.y0}年${bdayInfo.bm}月${bdayInfo.bd}日から —— むかえた日 ${bdayInfo.laps}・いま ${bdayInfo.yN-bdayInfo.y0+1} めぐりめ（金の粒は、あなたの日）`
+          : `${bdayInfo.y0}年${bdayInfo.bm}月${bdayInfo.bd}日から —— いま ${bdayInfo.yN-bdayInfo.y0+1} めぐりめ`,cx(),gy+H*.075);
       }
     }
     ctx2.restore();
@@ -757,7 +761,7 @@ window.__juusan={
   set(o){ if(o.tilt!=null){tiltTarget=o.tilt; tilt=tiltTarget;}
           if(o.p!=null)pos=Math.min(Amax,Math.max(0,o.p));
           if(o.spin!=null)spin=o.spin; },
-  get(){ return {pos,tilt,spin,mode,pearls:pearls.length,Amax,showGold,quiet,quietAmt:+quietAmt.toFixed(3),
+  get(){ return {pos,tilt,spin,spinDeg:+(spin/RAD).toFixed(2),mode,pearls:pearls.length,Amax,showGold,quiet,quietAmt:+quietAmt.toFixed(3),
                  dim:document.body.classList.contains("dim")}; },
   day(d){ buildWatashi(d); pos=0; },
   setGold(on){ showGold=!!on; goldBtn.classList.toggle("on",showGold); },
@@ -784,6 +788,29 @@ function frame(now){
   /* まわしつづけても数が育たないよう、そろって一回転ぶんを畳む */
   while(tilt>4&&tiltTarget>4){ tilt-=4; tiltTarget-=4; }
   while(tilt<-4&&tiltTarget<-4){ tilt+=4; tiltTarget+=4; }
+
+  /* ============================================================
+     とまり木 — 手をはなすと、十二が頂きへ／円は真上と真裏へ
+     （磁力は近くだけ。遠くではどこにでも置ける＝自由はそのまま）
+  ============================================================ */
+  if(!dragging){
+    const seat=30*RAD;
+    const t12=Math.round((spin-seat)/TAU)*TAU+seat;      // 十二が頂きに立つ向き
+    const near=Math.round(spin/seat)*seat;               // どれかの数が頂きに立つ向き
+    let sTgt=null, k=2.2;
+    if(Math.abs(spin-t12)<15*RAD){ sTgt=t12; k=3.6; }    // 十二はいちばん強く引く
+    else if(Math.abs(spin-near)<7*RAD){ sTgt=near; }
+    if(sTgt!==null){
+      spin+=(sTgt-spin)*Math.min(1,dt*k);
+      if(Math.abs(sTgt-spin)<1e-4) spin=sTgt;
+    }
+    /* 真上（0）と真裏（2）——円になる眼だけ、とまりやすく */
+    const eye=Math.round(tiltTarget/2)*2;
+    if(Math.abs(tiltTarget-eye)<.14){
+      tiltTarget+=(eye-tiltTarget)*Math.min(1,dt*3.0);
+      if(Math.abs(eye-tiltTarget)<1e-4) tiltTarget=eye;
+    }
+  }
 
   /* 歩む光は、視点をつかんでいても止まらない（ドラッグはかたむきと回転だけ） */
   pos+=FLOWS[flowIdx]*dt;
