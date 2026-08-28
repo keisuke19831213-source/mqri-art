@@ -16,21 +16,21 @@
   #title h1{font-size:min(13vw,84px);font-weight:300;letter-spacing:.42em;margin:0 0 .2em .42em;}
   #title p{font-size:min(3.4vw,15px);letter-spacing:.55em;margin:0 0 0 .55em;opacity:.66;}
   #hint{
-    position:fixed;right:18px;bottom:14px;pointer-events:none;opacity:0;transition:opacity 2s ease;
+    position:fixed;right:calc(70px + env(safe-area-inset-right,0px));bottom:calc(14px + env(safe-area-inset-bottom,0px));pointer-events:none;opacity:0;transition:opacity 2s ease;
     font-family:"Hiragino Mincho ProN","Yu Mincho",serif;color:#aebccb;font-size:11px;letter-spacing:.18em;
     text-align:right;line-height:1.9;text-shadow:0 1px 8px rgba(0,0,10,.8);
   }
   #err{position:fixed;inset:0;display:none;align-items:center;justify-content:center;color:#889;font:14px/1.8 serif;padding:2em;text-align:center;}
   /* ---- 調（きょうの水面）---- */
   #pToggle{
-    position:fixed;right:16px;bottom:16px;width:44px;height:44px;border-radius:50%;
+    position:fixed;right:calc(16px + env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));width:44px;height:44px;border-radius:50%;
     background:rgba(8,14,24,.55);border:1px solid rgba(200,215,230,.28);color:#cfdae4;
     font-family:"Hiragino Mincho ProN","Yu Mincho",serif;font-size:17px;cursor:pointer;
     backdrop-filter:blur(6px);transition:background .3s;z-index:10;
   }
   #pToggle:hover{background:rgba(20,30,48,.7);}
   #panel{
-    position:fixed;right:16px;bottom:70px;width:236px;max-height:calc(100vh - 110px);overflow-y:auto;
+    position:fixed;right:calc(16px + env(safe-area-inset-right,0px));bottom:calc(70px + env(safe-area-inset-bottom,0px));width:236px;max-height:calc(100vh - 120px - env(safe-area-inset-bottom,0px));overflow-y:auto;
     background:rgba(6,11,20,.62);border:1px solid rgba(200,215,230,.22);border-radius:10px;
     padding:16px 16px 12px;color:#cfdae4;backdrop-filter:blur(10px);z-index:9;
     font-family:"Hiragino Mincho ProN","Yu Mincho",serif;font-size:12px;letter-spacing:.12em;
