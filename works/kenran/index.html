@@ -1,0 +1,733 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="検卵 Kenran — 卵に光を透かして命を検める。照らしているのは卵のなかの命そのもの。波長ごとの吸収を実積分し、血管は反応拡散が育て、孵化のひびは金になる。MQRI ART。">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="検卵">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.webmanifest">
+<title>検卵 — Kenran / Candling</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;cursor:grab;touch-action:none}
+  canvas:active{cursor:grabbing}
+  #title{
+    position:fixed;color:#c8b89a;pointer-events:none;
+    left:calc(28px + env(safe-area-inset-left));
+    bottom:calc(26px + env(safe-area-inset-bottom));
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;letter-spacing:.35em;
+    opacity:0;animation:ttl 14s ease forwards .8s;user-select:none
+  }
+  #title h1{font-size:22px;font-weight:400;margin:0}
+  #title p{font-size:10.5px;letter-spacing:.28em;margin:.55em 0 0;color:#8a7d66}
+  @keyframes ttl{0%{opacity:0}12%{opacity:.92}78%{opacity:.92}100%{opacity:0}}
+  /* 手わざの案内は「まだ触れていない人」にだけ残す */
+  #hint{
+    position:fixed;color:#6f6552;pointer-events:none;
+    left:calc(28px + env(safe-area-inset-left));
+    bottom:calc(26px + env(safe-area-inset-bottom));
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    font-size:10px;letter-spacing:.22em;
+    opacity:0;animation:hnt 6s ease forwards 15s;
+    transition:opacity 1.2s ease;user-select:none
+  }
+  @keyframes hnt{0%{opacity:0}30%{opacity:.85}100%{opacity:.85}}
+  body.touched #hint{opacity:0 !important;animation:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="title"><h1>検　卵</h1><p>KENRAN — candling · the light within</p></div>
+<div id="hint">長く押すと、光をかざせる　　つつくと、こたえる　　なでると、まわる</div>
+<script>
+'use strict';
+/* ============================================================
+   検卵 — Kenran  (ccf5-art series / theme: 卵)
+   - 卵形: 円弧合成の厳密な卵SDF(moss egg)の回転体
+   - 透光: Beer–Lambert 波長別吸収 × 内部発光の実積分(検卵の物理)
+   - 命:   Gray-Scott 反応拡散が内膜に血管網を自己組織化
+   - 環:   鼓動→血管→ひび→孵化の光→静寂 (PERIOD秒で循環)
+   ============================================================ */
+const PERIOD = 104;          // 一生の長さ(秒)
+const RD_W = 768, RD_H = 384; // 反応拡散テクスチャ(equirect 2:1)
+const RD_RATE = 480;         // 反応拡散 steps/sec (成長時間で配る)
+const RD_CAP_WARM = 70000;   // warm時の総step上限
+
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', {antialias:false, alpha:false});
+if(!gl){ document.body.innerHTML='<p style="color:#888;font:14px sans-serif;padding:2em">WebGL2 が必要です</p>'; throw 0; }
+gl.getExtension('EXT_color_buffer_float');
+gl.getExtension('OES_texture_float_linear');
+
+/* ---------- shader utils ---------- */
+const VS = `#version 300 es
+void main(){ vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2)); gl_Position=vec4(p*2.-1.,0,1); }`;
+function prog(fs){
+  const c=(t,s)=>{const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);
+    if(!gl.getShaderParameter(o,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)+'\n'+s.split('\n').map((l,i)=>(i+1)+': '+l).join('\n'));
+    return o;};
+  const p=gl.createProgram();
+  gl.attachShader(p,c(gl.VERTEX_SHADER,VS)); gl.attachShader(p,c(gl.FRAGMENT_SHADER,fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  p.u={}; const n=gl.getProgramParameter(p,gl.ACTIVE_UNIFORMS);
+  for(let i=0;i<n;i++){const a=gl.getActiveUniform(p,i); p.u[a.name.replace('[0]','')]=gl.getUniformLocation(p,a.name);}
+  return p;
+}
+function tex(w,h,ifmt,fmt,type,filt,wrapS){
+  const t=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.texStorage2D(gl.TEXTURE_2D,1,ifmt,w,h);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,filt);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,filt);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,wrapS||gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  t.w=w; t.h=h; return t;
+}
+function fbo(t){ const f=gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER,f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0); f.t=t; return f; }
+function draw(f,w,h){ gl.bindFramebuffer(gl.FRAMEBUFFER,f); gl.viewport(0,0,w,h); gl.drawArrays(gl.TRIANGLES,0,3); }
+
+/* ---------- 反応拡散 (Gray-Scott) ---------- */
+const seedP = prog(`#version 300 es
+precision highp float;
+uniform vec2 uRes; uniform float uSeed;
+out vec4 o;
+float h1(float n){ return fract(sin(n*127.1+uSeed*311.7)*43758.5453); }
+void main(){
+  vec2 uv=gl_FragCoord.xy/uRes;
+  float v=0.0;
+  for(int i=0;i<6;i++){
+    float fi=float(i);
+    vec2 c = (i==0)? vec2(0.5,0.56)
+           : vec2(0.5,0.56)+vec2(h1(fi*3.1)-0.5, h1(fi*7.7)-0.5)*vec2(0.10,0.16);
+    vec2 d=(uv-c); d.x*=2.0;                    // equirect 2:1 補正
+    float px=length(d)*uRes.y;
+    float r=(i==0)?4.5:2.6;
+    v=max(v, 1.0-smoothstep(r*0.55,r,px));
+  }
+  o=vec4(1.0-0.5*v, 0.9*v, 0.0, 1.0);
+}`);
+const rdP = prog(`#version 300 es
+precision highp float;
+uniform sampler2D uPrev; uniform vec2 uRes;
+out vec4 o;
+vec2 T(ivec2 q){
+  ivec2 R=ivec2(uRes);
+  q.x=(q.x+R.x)%R.x; q.y=clamp(q.y,0,R.y-1);
+  return texelFetch(uPrev,q,0).rg;
+}
+void main(){
+  ivec2 q=ivec2(gl_FragCoord.xy);
+  vec2 c=T(q);
+  vec2 lap = -c
+    + 0.2 *(T(q+ivec2(1,0))+T(q-ivec2(1,0))+T(q+ivec2(0,1))+T(q-ivec2(0,1)))
+    + 0.05*(T(q+ivec2(1,1))+T(q-ivec2(1,1))+T(q+ivec2(1,-1))+T(q-ivec2(1,-1)));
+  float u=c.x, v=c.y, uvv=u*v*v;
+  const float F=0.0545, K=0.0620, Du=0.2097, Dv=0.1050;   // coral growth: 樹状に分枝
+  float nu=u+(Du*lap.x-uvv+F*(1.0-u));
+  float nv=v+(Dv*lap.y+uvv-(F+K)*v);
+  o=vec4(clamp(nu,0.0,1.0),clamp(nv,0.0,1.0),0.0,1.0);
+}`);
+const rdT=[0,1].map(()=>tex(RD_W,RD_H,gl.RG16F,gl.RG,gl.HALF_FLOAT,gl.LINEAR,gl.REPEAT));
+const rdF=rdT.map(fbo);
+let rdCur=0;
+function rdSeed(seed){
+  gl.useProgram(seedP);
+  gl.uniform2f(seedP.u.uRes,RD_W,RD_H); gl.uniform1f(seedP.u.uSeed,seed);
+  draw(rdF[rdCur],RD_W,RD_H);
+}
+function rdStep(n){
+  gl.useProgram(rdP);
+  gl.uniform2f(rdP.u.uRes,RD_W,RD_H);
+  for(let i=0;i<n;i++){
+    const src=rdCur, dst=1-rdCur;
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,rdT[src]);
+    gl.uniform1i(rdP.u.uPrev,0);
+    draw(rdF[dst],RD_W,RD_H);
+    rdCur=dst;
+  }
+}
+
+/* ---------- 本体 (レイマーチ + 検卵積分) ---------- */
+const mainP = prog(`#version 300 es
+precision highp float;
+uniform vec2  uRes;
+uniform float uTime, uCycle;
+uniform vec2  uCam;            // yaw, pitch
+uniform float uDist;
+uniform float uBeat;           // 積分済み鼓動位相 (JS側double)
+uniform float uLife, uHeartAmp, uVein, uCrack, uBurst, uFade;
+uniform vec3  uLampPos, uKickPos;   // 検卵ライトの珠 / 蹴りの位置
+uniform float uLampAmp, uKick;
+uniform sampler2D uRD;
+out vec4 o;
+
+#define RA 0.75
+#define RB 0.30
+#define YOFF 0.165
+
+float h11(float n){ return fract(sin(n*127.1)*43758.5453); }
+float h31(vec3 p){ return fract(sin(dot(p,vec3(127.1,311.7,74.7)))*43758.5453); }
+vec3  h33(vec3 p){ p=fract(p*vec3(443.897,441.423,437.195)); p+=dot(p,p.yzx+19.19); return fract((p.xxy+p.yzz)*p.zyx); }
+float ign(vec2 p){ return fract(52.9829189*fract(dot(p,vec2(0.06711056,0.00583715)))); }
+
+float vnoise(vec3 p){
+  vec3 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+  return mix(mix(mix(h31(i),h31(i+vec3(1,0,0)),f.x),mix(h31(i+vec3(0,1,0)),h31(i+vec3(1,1,0)),f.x),f.y),
+             mix(mix(h31(i+vec3(0,0,1)),h31(i+vec3(1,0,1)),f.x),mix(h31(i+vec3(0,1,1)),h31(i+vec3(1,1,1)),f.x),f.y),f.z);
+}
+float fbm(vec3 p){ float a=0.5,s=0.0; for(int i=0;i<4;i++){ s+=a*vnoise(p); p=p*2.03+11.3; a*=0.5; } return s; }
+
+// 円弧合成の厳密な卵SDF (moss egg) — 回転体
+float sdEgg2(vec2 p, float ra, float rb){
+  const float k=1.7320508;
+  p.x=abs(p.x);
+  float r=ra-rb;
+  return ((p.y<0.0)       ? length(vec2(p.x,p.y))-r :
+          (k*(p.x+r)<p.y) ? length(vec2(p.x,p.y-k*r)) :
+                            length(vec2(p.x+r,p.y))-2.0*r) - rb;
+}
+float mapEgg(vec3 p){ return sdEgg2(vec2(length(p.xz), p.y+YOFF), RA, RB); }
+vec3 eggN(vec3 p){
+  const vec2 e=vec2(0.0012,0.0);
+  return normalize(vec3(mapEgg(p+e.xyy)-mapEgg(p-e.xyy),
+                        mapEgg(p+e.yxy)-mapEgg(p-e.yxy),
+                        mapEgg(p+e.yyx)-mapEgg(p-e.yyx)));
+}
+
+// 鼓動 (lub-dub)
+float heartbeat(){
+  float s=fract(uBeat);
+  return exp(-pow((s-0.070)/0.048,2.0)) + 0.55*exp(-pow((s-0.330)/0.062,2.0));
+}
+
+// ひび: 3D voronoi の稜線 + 嘴打点からの伝播
+vec3 NUC = normalize(vec3(0.78,0.42,0.22));
+float crackMask(vec3 pos){
+  if(uCrack<=0.001) return 0.0;
+  // fbmドメインワープで直線的なvoronoi稜線をギザギザの毛細ひびに
+  vec3 w=vec3(fbm(pos*6.3+1.3),fbm(pos*6.3+5.2),fbm(pos*6.3+9.4))-0.5;
+  vec3 x=pos*3.6 + w*1.15 + uCycle*7.31;
+  vec3 ip=floor(x), fp=fract(x);
+  float f1=8.0,f2=8.0,ch=0.0;
+  for(int k=-1;k<=1;k++)for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){
+    vec3 g=vec3(float(i),float(j),float(k));
+    vec3 r=g+h33(ip+g)-fp;
+    float d=dot(r,r);
+    if(d<f1){ f2=f1; f1=d; ch=h31(ip+g); }
+    else if(d<f2){ f2=d; }
+  }
+  float edge=sqrt(f2)-sqrt(f1);
+  float ang=acos(clamp(dot(normalize(pos),NUC),-1.0,1.0));
+  float reach=uCrack*3.5;
+  float gate=smoothstep(0.0,0.30, reach-ang-ch*0.9);
+  float vary=0.45+1.1*fbm(pos*9.7+31.0);              // ひびごとの濃淡
+  return (1.0-smoothstep(0.0,0.026,edge))*gate*vary;
+}
+
+// 内部発光: 卵黄 + 胚の熾火 (+ 卵白のうす明かり)
+vec3 emitAt(vec3 p, float hb){
+  float ry=length((p-vec3(0.0,0.03,0.0))*vec3(1.0,1.18,1.0));
+  float yolk=exp(-ry*ry*5.5);
+  vec3 col = vec3(1.00,0.38,0.085)*yolk*(0.68+0.26*hb)*uLife;
+
+  vec3 hp=vec3(0.335,0.10,0.0);
+  float rh2=dot(p-hp,p-hp);
+  col += vec3(1.00,0.30,0.08)*exp(-rh2*95.0)*(1.6+8.5*hb)*uHeartAmp;
+
+  col += vec3(1.00,0.52,0.20)*0.045*uLife;   // 卵白のうす明かり
+
+  // 検卵ライト: かざした光が殻を抜けて内側にしみこむ
+  vec3 dl=p-uLampPos;
+  col += vec3(1.00,0.62,0.28)*uLampAmp*2.1*exp(-dot(dl,dl)*6.5);
+
+  // ノックへの応え: 内側からの蹴り
+  vec3 dk=p-uKickPos;
+  col += vec3(1.00,0.55,0.20)*uKick*3.0*exp(-dot(dk,dk)*42.0);
+  return col;
+}
+
+// 内膜の血管網: レイが内膜面を横切る点で面として評価 (体積積分だと縞が出る)
+// 血管は発光ではなく吸収 — 血液が透過光を遮り、暗い深紅の枝として浮かぶ
+const vec3 EMB = vec3(0.98058,0.19612,0.0);   // 胚の方向 (RDシードと一致)
+float veinAt(vec3 pos){
+  vec3 dir=normalize(pos);
+  vec2 uv=vec2(atan(dir.z,dir.x)*0.15915494+0.5, asin(clamp(dir.y,-1.0,1.0))*0.31830989+0.5);
+  // ドメインワープで格子由来のジグザグを有機的な曲線に崩す
+  uv += (vec2(fbm(dir*5.7+3.1), fbm(dir*5.7+17.7))-0.5)*0.045;
+  float ang=acos(clamp(dot(dir,EMB),-1.0,1.0));
+  float fall=1.0-0.88*smoothstep(0.45,2.4,ang);        // 胚から遠いほど疎に
+  return smoothstep(0.08,0.36,textureLod(uRD,uv,0.0).g)*fall;
+}
+
+void main(){
+  vec2 uv=(gl_FragCoord.xy*2.0-uRes)/uRes.y;
+  float cy=uCam.x, cp=uCam.y;
+  vec3 ro=uDist*vec3(cos(cp)*sin(cy), sin(cp), cos(cp)*cos(cy));
+  vec3 ww=normalize(-ro);
+  vec3 uu=normalize(cross(ww,vec3(0,1,0)));
+  vec3 vv=cross(uu,ww);
+  vec3 rd=normalize(uv.x*uu+uv.y*vv+2.7*ww);
+
+  // 背景: 闇 + ごく淡い冷たい底光
+  float r2=dot(uv,uv);
+  vec3 col=vec3(0.030,0.042,0.062)*(0.35+0.65*exp(-r2*0.55))*0.32;
+  bool ghit=false; float gtHit=0.0;
+
+  // 包含球で早期棄却
+  float b=dot(ro,rd);
+  float disc=b*b-dot(ro,ro)+1.21;
+  if(disc>0.0){
+    float sq=sqrt(disc);
+    float tFar=-b+sq;
+    float t=max(-b-sq,0.0);
+    bool hit=false;
+    for(int i=0;i<96;i++){
+      float d=mapEgg(ro+rd*t);
+      if(d<0.0009){ hit=true; break; }
+      t+=d*0.92;
+      if(t>tFar+0.05) break;
+    }
+    if(hit){
+      ghit=true; gtHit=t;
+      vec3 pos=ro+rd*t;
+      vec3 N=eggN(pos);
+      float hb=heartbeat();
+
+      // 内部の出口を内側からスフィアトレース
+      float t2=t+0.02;
+      for(int i=0;i<64;i++){
+        float di=-mapEgg(ro+rd*t2);
+        if(di<0.0012) break;
+        t2+=max(di*0.95,0.03);
+      }
+      float path=max(t2-t,0.0);
+
+      // 検卵の積分: 発光-吸収 (Beer–Lambert, 波長別)
+      const int NS=22;
+      float jit=ign(gl_FragCoord.xy);
+      float ds=path/float(NS);
+      vec3 sigma=vec3(0.78,1.95,3.55);
+      vec3 T=vec3(1.0), Lint=vec3(0.0);
+      vec3 stepT=exp(-sigma*ds);
+      for(int i=0;i<NS;i++){
+        vec3 p=ro+rd*(t+(float(i)+jit)*ds);
+        Lint+=T*emitAt(p,hb)*ds;
+        T*=stepT;
+      }
+
+      // 血管網: 手前の内膜横切りが背後の光を吸収 (斜め横断=縁ほど光学厚が増す)
+      float grz=clamp(1.0/max(dot(N,-rd),0.22),1.0,3.2);
+      float vF=veinAt(pos)*uVein;
+      Lint*=mix(vec3(1.0), vec3(0.42,0.055,0.035), clamp(vF*(0.45+0.28*grz),0.0,1.0));
+      Lint*=1.0+uBurst*1.25;
+
+      // 殻の斑(まだら)が透光をわずかに翳らせる
+      float sp=fbm(pos*11.0+uCycle*3.7);
+      float speck=smoothstep(0.56,0.70,sp);
+      Lint*=1.0-0.20*speck;
+
+      // ひび割れ: 光の漏れ道
+      float cm=crackMask(pos);
+      Lint*=1.0+cm*(3.0+10.0*uBurst);
+
+      // 殻表面: 冷たい微光のキーライト + フレネル
+      float ndv=max(dot(N,-rd),0.0);
+      vec3 Ld=normalize(vec3(-0.62,0.72,0.34));
+      vec3 H=normalize(Ld-rd);
+      float fres=pow(1.0-ndv,4.0);
+      float diff=max(dot(N,Ld),0.0);
+      vec3 shellAlb=vec3(0.94,0.90,0.84)*(1.0-0.16*speck);
+      vec3 surf = shellAlb*diff*vec3(0.068,0.080,0.100)
+                + vec3(0.60,0.75,0.95)*pow(max(dot(N,H),0.0),90.0)*(0.05+0.55*fres)*0.55
+                + vec3(0.35,0.50,0.75)*fres*0.075
+                + vec3(1.00,0.44,0.14)*pow(1.0-ndv,2.2)*0.085*uLife;  // 殻内散乱のぬくもりのリム
+      // 検卵ライトの表面照り
+      if(uLampAmp>0.001){
+        vec3 Lv=uLampPos-pos; float ld2=dot(Lv,Lv);
+        vec3 Ll=Lv*inversesqrt(max(ld2,1e-4));
+        surf += vec3(1.00,0.70,0.40)*uLampAmp*(
+                  0.30*pow(max(dot(N,normalize(Ll-rd)),0.0),60.0)
+                + 0.09*max(dot(N,Ll),0.0)/(1.0+6.0*ld2));
+      }
+      col=surf+Lint;
+    }
+  }
+  // 手にした検卵ライトの珠 (卵に隠れていなければ)
+  if(uLampAmp>0.001){
+    float tp=dot(uLampPos-ro,rd);
+    if(tp>0.0 && !(ghit && gtHit<tp)){
+      float h=length(uLampPos-ro-rd*tp);
+      col += vec3(1.00,0.72,0.42)*uLampAmp*(1.1*exp(-pow(h/0.022,2.0)) + 0.10*exp(-pow(h/0.10,2.0)));
+    }
+  }
+  col*=1.0-uFade;
+  o=vec4(col,1.0);
+}`);
+
+/* ---------- bloom ---------- */
+const brightP = prog(`#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uRes;
+out vec4 o;
+void main(){
+  vec3 c=textureLod(uSrc,gl_FragCoord.xy/uRes,0.0).rgb;
+  float l=dot(c,vec3(0.2126,0.7152,0.0722));
+  o=vec4(c*smoothstep(0.55,1.35,l),1.0);
+}`);
+const downP = prog(`#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uRes, uSrcRes;   // uRes=dst
+out vec4 o;
+void main(){
+  vec2 uv=gl_FragCoord.xy/uRes;                        // dst texel基準
+  vec2 h=0.5/uSrcRes;
+  vec3 c = textureLod(uSrc,uv+vec2(-h.x,-h.y),0.0).rgb
+         + textureLod(uSrc,uv+vec2( h.x,-h.y),0.0).rgb
+         + textureLod(uSrc,uv+vec2(-h.x, h.y),0.0).rgb
+         + textureLod(uSrc,uv+vec2( h.x, h.y),0.0).rgb;
+  o=vec4(c*0.25,1.0);
+}`);
+const upP = prog(`#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uRes, uSrcRes;
+out vec4 o;
+void main(){
+  vec2 uv=gl_FragCoord.xy/uRes;
+  vec2 h=1.0/uSrcRes;
+  vec3 c = textureLod(uSrc,uv,0.0).rgb*4.0
+         + (textureLod(uSrc,uv+vec2(h.x,0),0.0).rgb+textureLod(uSrc,uv-vec2(h.x,0),0.0).rgb
+           +textureLod(uSrc,uv+vec2(0,h.y),0.0).rgb+textureLod(uSrc,uv-vec2(0,h.y),0.0).rgb)*2.0
+         + textureLod(uSrc,uv+h,0.0).rgb+textureLod(uSrc,uv-h,0.0).rgb
+         + textureLod(uSrc,uv+vec2(h.x,-h.y),0.0).rgb+textureLod(uSrc,uv+vec2(-h.x,h.y),0.0).rgb;
+  o=vec4(c/16.0*0.72,1.0);
+}`);
+const compP = prog(`#version 300 es
+precision highp float;
+uniform sampler2D uScene, uBloom; uniform vec2 uRes;
+uniform float uTime;
+out vec4 o;
+float ign(vec2 p){ return fract(52.9829189*fract(dot(p,vec2(0.06711056,0.00583715)))); }
+vec3 aces(vec3 x){
+  return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0);
+}
+void main(){
+  vec2 uv=gl_FragCoord.xy/uRes;
+  vec3 c=textureLod(uScene,uv,0.0).rgb + textureLod(uBloom,uv,0.0).rgb*0.85;
+  c*=1.15;                                             // 露出
+  c=aces(c);
+  vec2 q=uv*2.0-1.0; q.x*=uRes.x/uRes.y;
+  c*=1.0-0.32*smoothstep(0.55,1.75,length(q));         // ビネット
+  c=pow(c,vec3(0.4545));
+  c+=(ign(gl_FragCoord.xy+fract(uTime)*vec2(31.0,17.0))-0.5)*(2.2/255.0);
+  o=vec4(c,1.0);
+}`);
+
+/* ---------- FBOs ---------- */
+let W=2,H=2,sceneF=null,bloomF=[],bloomUpF=[];
+const DPR_CAP=1.6;
+function allocate(){
+  const iw=Math.max(window.innerWidth,64), ih=Math.max(window.innerHeight,64);
+  const dpr=Math.min(window.devicePixelRatio||1,DPR_CAP);
+  W=Math.max(Math.round(iw*dpr),64); H=Math.max(Math.round(ih*dpr),64);
+  canvas.width=W; canvas.height=H;
+  sceneF=fbo(tex(W,H,gl.RGBA16F,gl.RGBA,gl.HALF_FLOAT,gl.LINEAR));
+  bloomF=[]; bloomUpF=[];
+  let w=W>>1,h=H>>1;
+  for(let i=0;i<5;i++){
+    bloomF.push(fbo(tex(Math.max(w,2),Math.max(h,2),gl.RGBA16F,gl.RGBA,gl.HALF_FLOAT,gl.LINEAR)));
+    bloomUpF.push(fbo(tex(Math.max(w,2),Math.max(h,2),gl.RGBA16F,gl.RGBA,gl.HALF_FLOAT,gl.LINEAR)));
+    w>>=1; h>>=1;
+  }
+}
+allocate();
+addEventListener('resize',allocate);
+
+/* ---------- 状態 / 一生の環 ---------- */
+let simTime=0, beatPhase=0, cycleIdx=-1;
+let dragYaw=0.35, dragPitch=0.10, autoYaw=0;
+/* 手わざの状態: idle / maybe(判別中) / orbit(なでる) / lamp(かざす) */
+let mode='idle', downX=0, downY=0, lampTimer=null, px=0, py=0;
+let lampAmp=0, lampTarget=0, lampPos=[0.0,0.0,1.4];
+let kick=0, kickPos=[0.30,0.10,0.0], crackExtra=0;
+let yawW=0, pitchW=0, yawV=0, pitchV=0;          // ノックの揺れバネ
+/* 収まり: 縦長画面では卵の幅がはみ出るのでカメラを引く。
+   uvは uRes.y 正規化なので縦の画角は不変・横だけが aspect 倍に痩せる */
+function baseDist(){
+  const aspect=W/Math.max(H,1);
+  return Math.max(3.35, 2.62/Math.max(aspect,0.30));
+}
+let zoomTarget=1, zoom=1, curDist=baseDist();
+
+/* 卵SDF (シェーダと同一式) — ポインタレイの当たり判定用 */
+function mapEggJS(x,y,z){
+  const k=1.7320508, ra=0.75, rb=0.30, r=ra-rb;
+  let qx=Math.hypot(x,z), qy=y+0.165, d;
+  qx=Math.abs(qx);
+  if(qy<0) d=Math.hypot(qx,qy)-r;
+  else if(k*(qx+r)<qy) d=Math.hypot(qx,qy-k*r);
+  else d=Math.hypot(qx+r,qy)-2*r;
+  return d-rb;
+}
+/* 画面座標→レイ→卵表面 (シェーダと同じカメラ式) */
+function lampRaycast(camYaw,camPitch){
+  const rect=canvas.getBoundingClientRect();
+  const fx=(px-rect.left)*(W/Math.max(rect.width,1));
+  const fy=H-(py-rect.top)*(H/Math.max(rect.height,1));
+  const uvx=(fx*2-W)/H, uvy=(fy*2-H)/H;
+  const cp=Math.cos(camPitch), sp=Math.sin(camPitch), cy=Math.cos(camYaw), sy=Math.sin(camYaw);
+  const ro=[curDist*cp*sy, curDist*sp, curDist*cp*cy];
+  const wl=Math.hypot(ro[0],ro[1],ro[2]);
+  const ww=[-ro[0]/wl,-ro[1]/wl,-ro[2]/wl];
+  let ux=-ww[2], uy=0, uz=ww[0];                       // cross(ww,(0,1,0))=(-wz,0,wx)
+  const ul=Math.hypot(ux,uy,uz)||1; ux/=ul; uz/=ul;
+  const vx=uy*ww[2]-uz*ww[1], vy=uz*ww[0]-ux*ww[2], vz=ux*ww[1]-uy*ww[0]; // cross(uu,ww)
+  let dx=uvx*ux+uvy*vx+2.7*ww[0], dy=uvx*uy+uvy*vy+2.7*ww[1], dz=uvx*uz+uvy*vz+2.7*ww[2];
+  const dl=Math.hypot(dx,dy,dz); dx/=dl; dy/=dl; dz/=dl;
+  let t=0, hit=false;
+  for(let i=0;i<64;i++){
+    const d=mapEggJS(ro[0]+dx*t, ro[1]+dy*t, ro[2]+dz*t);
+    if(d<0.002){ hit=true; break; }
+    t+=d*0.9;
+    if(t>9) break;
+  }
+  if(hit){ t-=0.13; }                                  // 表面の少し手前=手にした珠
+  else { t=-(ro[0]*dx+ro[1]*dy+ro[2]*dz); }            // 外したら最接近点に浮かべる
+  return [ro[0]+dx*t, ro[1]+dy*t, ro[2]+dz*t];
+}
+/* つつく → 中の命がこたえる */
+function knock(){
+  kick=1;
+  const a=Math.random()*6.2832, r=0.22+0.22*Math.random();
+  kickPos=[0.30+0.20*(Math.random()-0.5), 0.05+r*Math.sin(a)*0.55, r*Math.cos(a)*0.65];
+  yawV+=(Math.random()-0.5)*0.55; pitchV+=(Math.random()-0.5)*0.40;
+  const ph=(simTime/PERIOD)%1;
+  if(ph>0.56) crackExtra=Math.min(crackExtra+0.05,0.30);   // ひび割れ期: ひびが進む
+  if(ph>0.84&&ph<0.92) simTime+=1.0;                       // 終盤: 孵化を手伝う
+}
+const S=(a,b,x)=>{x=Math.min(1,Math.max(0,(x-a)/(b-a)));return x*x*(3-2*x);};
+function envelopes(ph){
+  const burst=Math.exp(-Math.pow((ph-0.925)/0.028,2));
+  return {
+    life:  S(0.03,0.42,ph)*(1-S(0.965,0.998,ph)),
+    heart: S(0.20,0.50,ph)*(1-S(0.955,0.995,ph)),
+    vein:  S(0.11,0.34,ph)*(1-S(0.960,0.998,ph)),
+    crack: S(0.56,0.90,ph),
+    burst,
+    fade:  Math.min(1, S(0.962,0.998,ph) + (1-S(0.0,0.022,ph))),
+    bpm:   42+58*S(0.20,0.85,ph)+46*burst,
+  };
+}
+function hbJS(){ const s=beatPhase-Math.floor(beatPhase);
+  return Math.exp(-Math.pow((s-0.07)/0.048,2))+0.55*Math.exp(-Math.pow((s-0.33)/0.062,2)); }
+
+function update(dt){
+  simTime+=dt;
+  const ci=Math.floor(simTime/PERIOD);
+  if(ci!==cycleIdx){ cycleIdx=ci; rdSeed(ci*17.13+3.7); crackExtra=0; }
+  const ph=(simTime/PERIOD)%1;
+  const env=envelopes(ph);
+  // 命のゆらぎ: ろうそくのような微細な明滅
+  env.life*=0.962+0.038*(Math.sin(simTime*2.1)+Math.sin(simTime*3.73+1.7))*0.5;
+  // ノックの余韻: 心拍が速まり・強まり・ひびが進む
+  env.bpm*=1+0.35*kick;
+  env.heart=Math.min(env.heart*(1+0.5*kick),1.35);
+  env.crack=Math.min(1,env.crack+(ph>0.5?crackExtra:0));
+  kick*=Math.exp(-dt*2.0);
+  // 揺れバネ (減衰振動)
+  yawW+=yawV*dt;  yawV+=(-70*yawW-6.5*yawV)*dt;
+  pitchW+=pitchV*dt; pitchV+=(-70*pitchW-6.5*pitchV)*dt;
+  beatPhase+=dt*env.bpm/60;
+  // 反応拡散は成長期にのみ回す (総予算を成長時間で配る)
+  if(ph>0.05&&ph<0.90) rdStep(Math.min(Math.round(dt*RD_RATE),80));
+  autoYaw+=dt*0.055;
+  return env;
+}
+
+function render(env){
+  const ph=(simTime/PERIOD)%1;
+  const trem=(env.crack*0.25+env.burst*0.8)*hbJS();
+  const jy=(Math.sin(simTime*61.7)+Math.sin(simTime*47.3))*0.0016*trem;
+  const jp=(Math.sin(simTime*53.1)+Math.sin(simTime*71.9))*0.0016*trem;
+  const camYaw=(lockYaw?0:autoYaw)+dragYaw+jy+yawW;
+  const camPitch=Math.max(-0.9,Math.min(0.9,dragPitch))+jp+pitchW;
+
+  // 検卵ライト: 指の下の卵表面へ珠を運ぶ
+  if(lampAmp>0.003||lampTarget>0){
+    const P=lampRaycast(camYaw,camPitch);
+    lampPos[0]+=(P[0]-lampPos[0])*0.5;
+    lampPos[1]+=(P[1]-lampPos[1])*0.5;
+    lampPos[2]+=(P[2]-lampPos[2])*0.5;
+  }
+
+  gl.useProgram(mainP);
+  gl.uniform2f(mainP.u.uRes,W,H);
+  gl.uniform1f(mainP.u.uTime,simTime);
+  gl.uniform1f(mainP.u.uCycle,cycleIdx);
+  gl.uniform2f(mainP.u.uCam,camYaw,camPitch);
+  gl.uniform1f(mainP.u.uDist,curDist+0.14*Math.sin(simTime*0.09));
+  gl.uniform3f(mainP.u.uLampPos,lampPos[0],lampPos[1],lampPos[2]);
+  gl.uniform1f(mainP.u.uLampAmp,lampAmp);
+  gl.uniform3f(mainP.u.uKickPos,kickPos[0],kickPos[1],kickPos[2]);
+  gl.uniform1f(mainP.u.uKick,kick);
+  gl.uniform1f(mainP.u.uBeat,beatPhase%1);
+  gl.uniform1f(mainP.u.uLife,env.life);
+  gl.uniform1f(mainP.u.uHeartAmp,env.heart);
+  gl.uniform1f(mainP.u.uVein,env.vein);
+  gl.uniform1f(mainP.u.uCrack,env.crack);
+  gl.uniform1f(mainP.u.uBurst,env.burst);
+  gl.uniform1f(mainP.u.uFade,env.fade);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,rdT[rdCur]);
+  gl.uniform1i(mainP.u.uRD,0);
+  draw(sceneF,W,H);
+
+  // bloom: bright → down×4 → up(加算)
+  gl.useProgram(brightP);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,sceneF.t);
+  gl.uniform1i(brightP.u.uSrc,0);
+  gl.uniform2f(brightP.u.uRes,bloomF[0].t.w,bloomF[0].t.h);
+  draw(bloomF[0],bloomF[0].t.w,bloomF[0].t.h);
+  gl.useProgram(downP);
+  for(let i=1;i<5;i++){
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,bloomF[i-1].t);
+    gl.uniform1i(downP.u.uSrc,0);
+    gl.uniform2f(downP.u.uRes,bloomF[i].t.w,bloomF[i].t.h);
+    gl.uniform2f(downP.u.uSrcRes,bloomF[i-1].t.w,bloomF[i-1].t.h);
+    draw(bloomF[i],bloomF[i].t.w,bloomF[i].t.h);
+  }
+  // upsample: dstを読みながら書かない — 加算ブレンドで別チェーンに畳む
+  gl.useProgram(upP);
+  let srcT=bloomF[4].t;
+  for(let i=3;i>=0;i--){
+    // まず dst に元mipをコピー(down結果) → 加算で上位を足す
+    gl.bindFramebuffer(gl.FRAMEBUFFER,bloomUpF[i]);
+    gl.viewport(0,0,bloomUpF[i].t.w,bloomUpF[i].t.h);
+    gl.disable(gl.BLEND);
+    // copy pass: downP流用 (同解像度4tap=ほぼコピー)
+    gl.useProgram(downP);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,bloomF[i].t);
+    gl.uniform1i(downP.u.uSrc,0);
+    gl.uniform2f(downP.u.uRes,bloomUpF[i].t.w,bloomUpF[i].t.h);
+    gl.uniform2f(downP.u.uSrcRes,bloomF[i].t.w,bloomF[i].t.h);
+    gl.drawArrays(gl.TRIANGLES,0,3);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE);
+    gl.useProgram(upP);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,srcT);
+    gl.uniform1i(upP.u.uSrc,0);
+    gl.uniform2f(upP.u.uRes,bloomUpF[i].t.w,bloomUpF[i].t.h);
+    gl.uniform2f(upP.u.uSrcRes,srcT.w,srcT.h);
+    gl.drawArrays(gl.TRIANGLES,0,3);
+    gl.disable(gl.BLEND);
+    srcT=bloomUpF[i].t;
+  }
+
+  gl.useProgram(compP);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,sceneF.t);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,srcT);
+  gl.uniform1i(compP.u.uScene,0); gl.uniform1i(compP.u.uBloom,1);
+  gl.uniform2f(compP.u.uRes,W,H);
+  gl.uniform1f(compP.u.uTime,simTime);
+  draw(null,W,H);
+}
+
+/* ---------- 入力: なでる=まわす / 長押し=かざす / タップ=つつく / ホイール・ピンチ=近づく ---------- */
+let lx=0,ly=0;
+const ptrs=new Map(); let pinch0=1,pinchBase=3.35;
+const pdist=()=>{ const a=[...ptrs.values()]; return Math.max(Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y),24); };
+canvas.addEventListener('pointerdown',e=>{
+  canvas.setPointerCapture(e.pointerId);
+  document.body.classList.add('touched');        // 触れた人には案内を出さない
+  if(e.isPrimary) ptrs.clear();                  // 迷子の指の自己修復
+  ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(ptrs.size===2){                             // ピンチ=近づく
+    clearTimeout(lampTimer); lampTarget=0; mode='pinch';
+    pinch0=pdist(); pinchBase=zoomTarget; return;
+  }
+  mode='maybe'; downX=e.clientX; downY=e.clientY; px=e.clientX; py=e.clientY;
+  clearTimeout(lampTimer);
+  lampTimer=setTimeout(()=>{ if(mode==='maybe'){ mode='lamp'; lampTarget=1; } },260);
+});
+canvas.addEventListener('pointermove',e=>{
+  if(ptrs.has(e.pointerId)) ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(mode==='pinch'){
+    if(ptrs.size>=2) zoomTarget=Math.max(0.72,Math.min(1.55,pinchBase*pinch0/pdist()));
+    return;
+  }
+  px=e.clientX; py=e.clientY;
+  if(mode==='maybe' && Math.hypot(e.clientX-downX,e.clientY-downY)>7){
+    mode='orbit'; clearTimeout(lampTimer); lx=e.clientX; ly=e.clientY;
+  }
+  if(mode==='orbit'){
+    dragYaw+=(e.clientX-lx)*0.006; dragPitch+=(e.clientY-ly)*0.006;
+    lx=e.clientX; ly=e.clientY;
+  }
+});
+function pointerEnd(e){
+  ptrs.delete(e.pointerId);
+  if(mode==='pinch'){ if(ptrs.size<2) mode='idle'; return; }
+  clearTimeout(lampTimer);
+  if(mode==='maybe') knock();
+  mode='idle'; lampTarget=0;
+}
+canvas.addEventListener('pointerup',pointerEnd);
+canvas.addEventListener('pointercancel',pointerEnd);
+canvas.addEventListener('wheel',e=>{
+  e.preventDefault();
+  zoomTarget=Math.max(0.72,Math.min(1.55,zoomTarget+e.deltaY*0.0007));
+},{passive:false});
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+
+/* ---------- warm / step / loop ---------- */
+const qp=new URLSearchParams(location.search);
+const warmN=parseFloat(qp.get('warm')||'0');
+const yawQ=qp.get('yaw'); if(yawQ!==null){ dragYaw=parseFloat(yawQ); }
+const lockYaw=qp.has('yaw');
+if(warmN>0){
+  // simTimeを進め、反応拡散を同量だけ回す(上限あり)
+  let t=0; const dt=1/30; let rdBudget=RD_CAP_WARM;
+  while(t<warmN){
+    simTime+=dt; t+=dt;
+    const ci=Math.floor(simTime/PERIOD);
+    if(ci!==cycleIdx){ cycleIdx=ci; rdSeed(ci*17.13+3.7); rdBudget=RD_CAP_WARM; }
+    const ph=(simTime/PERIOD)%1;
+    const env=envelopes(ph);
+    beatPhase+=dt*env.bpm/60;
+    if(ph>0.05&&ph<0.90&&rdBudget>0){ const n=Math.min(Math.round(dt*RD_RATE),rdBudget); rdStep(n); rdBudget-=n; }
+    autoYaw+=dt*0.055;
+  }
+}else{
+  rdSeed(3.7); cycleIdx=0;
+}
+window.__step=(n,fps)=>{ fps=fps||60; for(let i=0;i<n;i++){ const env=update(1/fps); render(env); } };
+
+/* 検証用: ?lamp=fx,fy(画面割合)でライト固定・?kick=0..1で蹴りを固定 */
+const dbgLamp=qp.get('lamp');
+const dbgKick=parseFloat(qp.get('kick')||'0');
+if(dbgLamp){
+  const a=dbgLamp.split(',').map(Number);
+  const set=()=>{ const r=canvas.getBoundingClientRect(); px=r.left+r.width*a[0]; py=r.top+r.height*a[1]; };
+  set(); addEventListener('resize',set);
+  mode='lamp'; lampTarget=1;
+}
+
+let last=performance.now();
+function frame(now){
+  let dt=(now-last)/1000; last=now;
+  if(dt>0.05)dt=0.05;               // 非表示タブの巨大dtを封じる
+  lampAmp+=(lampTarget-lampAmp)*Math.min(1,dt*9);
+  zoom+=(zoomTarget-zoom)*Math.min(1,dt*6);
+  curDist+=(baseDist()*zoom-curDist)*Math.min(1,dt*6);
+  if(dbgKick>0) kick=Math.max(kick,dbgKick);
+  const mult=(mode==='lamp')?3:1;   // かざす=温める: 命が早く育つ
+  const env=update(dt*mult);
+  render(env);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
