@@ -1,0 +1,1336 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>水面 — MINAMO</title>
+<style>
+  html,body{margin:0;padding:0;background:#02040a;overflow:hidden;height:100%;}
+  #c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:crosshair;}
+  #title{
+    position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    pointer-events:none;opacity:0;transition:opacity 2.8s ease;
+    font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;color:#dfe8ef;
+    text-shadow:0 0 24px rgba(10,20,40,.9);
+  }
+  #title h1{font-size:min(13vw,84px);font-weight:300;letter-spacing:.42em;margin:0 0 .2em .42em;}
+  #title p{font-size:min(3.4vw,15px);letter-spacing:.55em;margin:0 0 0 .55em;opacity:.66;}
+  #hint{
+    position:fixed;right:18px;bottom:14px;pointer-events:none;opacity:0;transition:opacity 2s ease;
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;color:#aebccb;font-size:11px;letter-spacing:.18em;
+    text-align:right;line-height:1.9;text-shadow:0 1px 8px rgba(0,0,10,.8);
+  }
+  #err{position:fixed;inset:0;display:none;align-items:center;justify-content:center;color:#889;font:14px/1.8 serif;padding:2em;text-align:center;}
+  /* ---- 調（きょうの水面）---- */
+  #pToggle{
+    position:fixed;right:16px;bottom:16px;width:44px;height:44px;border-radius:50%;
+    background:rgba(8,14,24,.55);border:1px solid rgba(200,215,230,.28);color:#cfdae4;
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;font-size:17px;cursor:pointer;
+    backdrop-filter:blur(6px);transition:background .3s;z-index:10;
+  }
+  #pToggle:hover{background:rgba(20,30,48,.7);}
+  #panel{
+    position:fixed;right:16px;bottom:70px;width:236px;max-height:calc(100vh - 110px);overflow-y:auto;
+    background:rgba(6,11,20,.62);border:1px solid rgba(200,215,230,.22);border-radius:10px;
+    padding:16px 16px 12px;color:#cfdae4;backdrop-filter:blur(10px);z-index:9;
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;font-size:12px;letter-spacing:.12em;
+    opacity:0;pointer-events:none;transform:translateY(8px);transition:opacity .35s,transform .35s;
+  }
+  #panel.open{opacity:1;pointer-events:auto;transform:none;}
+  #panel .ph{font-size:13px;letter-spacing:.4em;margin-bottom:12px;color:#e6edf3;}
+  #panel .presets{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;}
+  #panel .presets button{
+    flex:1 0 auto;background:rgba(120,150,180,.12);border:1px solid rgba(200,215,230,.22);
+    color:#dbe4ec;border-radius:6px;padding:6px 8px;font:inherit;letter-spacing:.18em;cursor:pointer;
+  }
+  #panel .presets button:hover{background:rgba(150,180,210,.22);}
+  #panel label{display:block;margin:11px 0 3px;color:#9fb0c0;}
+  #panel label .v{float:right;color:#7b8b9a;font-size:10.5px;letter-spacing:.05em;}
+  #panel input[type=range]{
+    -webkit-appearance:none;width:100%;height:18px;background:transparent;margin:0;
+  }
+  #panel input[type=range]::-webkit-slider-runnable-track{height:2px;background:rgba(200,215,230,.30);border-radius:1px;}
+  #panel input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:#dfe8ef;margin-top:-5.5px;
+    border:1px solid rgba(30,40,60,.6);cursor:pointer;
+  }
+  #panel .row{display:flex;gap:6px;align-items:center;}
+  #panel .seg{display:flex;gap:5px;margin-top:4px;}
+  #panel .seg button{
+    flex:1;background:rgba(120,150,180,.10);border:1px solid rgba(200,215,230,.20);color:#c4d0da;
+    border-radius:5px;padding:4px 2px;font:inherit;font-size:11px;letter-spacing:.1em;cursor:pointer;
+  }
+  #panel .seg button.on{background:rgba(190,210,230,.30);color:#f0f5f9;border-color:rgba(220,230,240,.45);}
+  #panel .chk{display:flex;align-items:center;gap:7px;margin-top:10px;color:#9fb0c0;cursor:pointer;user-select:none;}
+  #panel .chk input{accent-color:#9fb8cc;}
+  #panel .reset{margin-top:14px;width:100%;background:none;border:1px solid rgba(200,215,230,.25);
+    color:#9fb0c0;border-radius:6px;padding:6px;font:inherit;letter-spacing:.25em;cursor:pointer;}
+  #panel .reset:hover{color:#dfe8ef;border-color:rgba(220,230,240,.5);}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="title"><h1>水面</h1><p>MINAMO</p></div>
+<div id="hint">触れる — 波紋<br>撫でる — 視線（真下も、真後ろも）<br>ホイール・つまむ — ズーム<br>右下の「調」— きょうの水面</div>
+<button id="pToggle" title="きょうの水面">調</button>
+<div id="panel">
+  <div class="ph">きょうの水面</div>
+  <div class="presets">
+    <button data-p="kagami">鏡</button><button data-p="michi">光の道</button><button data-p="nibi">鈍色</button><button data-p="shigure">時雨</button><button data-p="tsukinagi">月の凪</button>
+  </div>
+  <div class="presets">
+    <button data-p="mahiru">真昼</button><button data-p="iwashi">いわし</button><button data-p="namari">鉛</button><button data-p="nyudo">入道</button>
+  </div>
+  <label>季節</label>
+  <div class="seg" id="segSeason">
+    <button data-s="haru">春</button><button data-s="natsu">夏</button><button data-s="aki">秋</button><button data-s="fuyu">冬</button>
+  </div>
+  <label>風 <span class="v" id="vWind"></span></label>
+  <input type="range" id="sWind" min="0" max="6.5" step="0.05">
+  <label>時のながれ <span class="v" id="vFlow"></span></label>
+  <input type="range" id="sFlow" min="-2" max="2" step="0.05" value="0">
+  <label>刻（そら） <span class="v" id="vSky"></span></label>
+  <input type="range" id="sSky" min="0" max="300" step="0.5">
+  <label class="chk"><input type="checkbox" id="cDay" checked>そらは めぐる</label>
+  <label>目線のたかさ <span class="v" id="vCam"></span></label>
+  <input type="range" id="sCam" min="0.08" max="1.9" step="0.01">
+  <label>ズーム <span class="v" id="vZoom"></span></label>
+  <input type="range" id="sZoom" min="15" max="75" step="1" value="52">
+  <label>雲のりょう <span class="v" id="vCov"></span></label>
+  <input type="range" id="sCov" min="0" max="1" step="0.01">
+  <label>雲のかたち</label>
+  <div class="seg" id="segCloud">
+    <button data-t="0">巻</button><button data-t="1">鱗</button><button data-t="2">羊</button><button data-t="3">綿</button>
+  </div>
+  <div class="seg" id="segCloud2">
+    <button data-t="4">入道</button><button data-t="5">層</button><button data-t="6">霞</button>
+  </div>
+  <label>水の肌 <span class="v" id="vTex"></span></label>
+  <input type="range" id="sTex" min="0" max="1" step="0.01" value="0.5">
+  <label>うねり <span class="v" id="vSwell"></span></label>
+  <input type="range" id="sSwell" min="0" max="1" step="0.01" value="0">
+  <label>スリック（凪の帯） <span class="v" id="vSlick"></span></label>
+  <input type="range" id="sSlick" min="0" max="1" step="0.01" value="0">
+  <label class="chk"><input type="checkbox" id="cRain">時雨（あまつぶ）</label>
+  <button class="reset" id="bAuto">おまかせに戻す</button>
+</div>
+<div id="err">この作品は WebGL2（float色バッファ）が必要です。</div>
+<script>
+'use strict';
+/* ============================================================
+   水面 — MINAMO
+   Tessendorf FFT ocean (JONSWAP + gravity–capillary dispersion,
+   2 cascades, Stockham GPU-IFFT) / Cox–Munk slope-statistics
+   sun & moon glitter / gust "cat's paws" field / analytic
+   dispersive rain-rings. Single-file WebGL2.
+   ============================================================ */
+const Q = new URLSearchParams(location.search);
+const WARM = Q.get('warm') != null ? (parseFloat(Q.get('warm')) || 0) : 85;
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', {antialias:false, alpha:false, depth:false, stencil:false, powerPreference:'high-performance'});
+const extCBF = gl && gl.getExtension('EXT_color_buffer_float');
+if (!gl || !extCBF){ document.getElementById('err').style.display='flex'; throw new Error('no webgl2 float'); }
+gl.getExtension('OES_texture_float_linear');
+
+/* ---------- constants ---------- */
+const N = 256;                 // FFT size
+const LOG2N = 8;
+const L0 = 87.0;               // swell cascade tile (m)
+const L1 = 5.27;               // ripple cascade tile (m)
+const K_SPLIT = 2*Math.PI/1.15;// cascade band split (λ=1.15m)
+const DAY_T = 300.0;           // sun cycle period (s)
+const MAXR = 24;               // ring slots (時雨で増える)
+
+/* ---------- tiny GL helpers ---------- */
+function sh(type, src){
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)+'\n'+src.split('\n').map((l,i)=>(i+1)+': '+l).join('\n'));
+  return s;
+}
+function prog(vs, fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+function tex(w, h, ifmt, filt, wrap, mips){
+  const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texStorage2D(gl.TEXTURE_2D, mips||1, ifmt, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mips? gl.LINEAR_MIPMAP_LINEAR : filt);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filt);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap);
+  return t;
+}
+function fbo(t){ const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0); return f; }
+
+const QUAD_VS = `#version 300 es
+void main(){ vec2 p = vec2((gl_VertexID<<1)&2, gl_VertexID&2);
+  gl_Position = vec4(p*2.0-1.0, 0.0, 1.0); }`;
+
+/* ============================================================
+   1) spectrum initialisation  h0(k)
+   ============================================================ */
+const FS_H0 = `#version 300 es
+precision highp float; precision highp int;
+uniform float uL, uWindU, uWindAng, uFetch, uKmin, uKmax, uAmp, uSeed, uChop;
+uniform float uSwell, uSwellAng;
+out vec4 o;
+const float PI = 3.14159265358979;
+const float G = 9.81;
+const float KM = 363.0;          // gravity–capillary transition wavenumber
+float hash(vec2 p){ p = fract(p*vec2(443.897,441.423)); p += dot(p,p.yx+19.19); return fract((p.x+p.y)*p.x); }
+void main(){
+  ivec2 px = ivec2(gl_FragCoord.xy);
+  int n = px.x <= ${N/2} ? px.x : px.x - ${N};
+  int m = px.y <= ${N/2} ? px.y : px.y - ${N};
+  vec2 kv = 2.0*PI*vec2(float(n), float(m))/uL;
+  float k = length(kv);
+  if (k < 1e-5){ o = vec4(0.0); return; }
+  float w2 = G*k*(1.0 + (k/KM)*(k/KM));
+  float w = sqrt(w2);
+  // JONSWAP (fetch-limited)
+  float wp = 22.0*pow(G*G/(uWindU*uFetch), 1.0/3.0);
+  float alpha = 0.076*pow(uWindU*uWindU/(uFetch*G), 0.22);
+  float sig = w <= wp ? 0.07 : 0.09;
+  float r = exp(-(w-wp)*(w-wp)/(2.0*sig*sig*wp*wp));
+  float S = alpha*G*G/(w*w*w*w*w) * exp(-1.25*pow(wp/w,4.0)) * pow(3.3, r);
+  // directional spread cos^{2s}(θ/2), sharper near peak
+  float th = atan(kv.y, kv.x) - uWindAng;
+  float sPow = mix(10.0, 3.0, clamp(w/wp - 1.0, 0.0, 1.0)*0.5 + 0.0);
+  float D = pow(abs(cos(th*0.5)), 2.0*sPow);
+  D *= (sPow+1.0)/(2.0*PI);           // rough normalisation
+  // band-limit this cascade (smooth in log k)
+  float lk = log(k);
+  float band = smoothstep(log(uKmin), log(uKmin)+0.35, lk)
+             * (1.0 - smoothstep(log(uKmax)-0.35, log(uKmax), lk));
+  // viscous cutoff for the very shortest ripples
+  float visc = exp(-k*k*1.2e-5);
+  float dwdk = G*(1.0 + 3.0*(k/KM)*(k/KM))/(2.0*w);
+  float dk = 2.0*PI/uL;
+  // 風は、自分より速い波を起こせない（c(k) < U の生成条件）→ 凪で鏡面が物理から出る
+  float cph = w/k;
+  float Ug = max(uWindU - 0.22, 0.02);     // ~0.25m/s以下は何も起こせない（ビューフォート0=鏡）
+  float gen = 1.0 - smoothstep(0.85, 1.5, cph/Ug);
+  gen = mix(gen, 1.0, 0.05*exp(-k*1.2));   // 長いうねりの残り
+  float a = sqrt(max(2.0*S*D*dwdk/k, 0.0)) * dk * sqrt(band*visc) * gen * uAmp;
+  // うねり: 遠い低気圧の置き土産（局所風と無関係＝生成条件の外）。λ≈26mの狭帯域
+  if (uSwell > 0.001){
+    float ks = 0.242;
+    float bump = exp(-pow((k-ks)/(ks*0.45), 2.0));
+    float Ds = pow(abs(cos((th - (uSwellAng - uWindAng))*0.5)), 40.0);
+    float asw = uSwell * 0.055 * bump * Ds * dk * sqrt(band);
+    a = sqrt(a*a + asw*asw);
+  }
+  // gaussian complex amplitude (deterministic per texel)
+  vec2 sp = vec2(px) + uSeed;
+  float u1 = max(hash(sp), 1e-6);
+  float u2 = hash(sp + 37.51);
+  float g0 = sqrt(-2.0*log(u1));
+  vec2 xi = g0*vec2(cos(2.0*PI*u2), sin(2.0*PI*u2));
+  o = vec4(xi*a*0.70710678, w, uChop);
+}`;
+
+/* ============================================================
+   2) time evolution  h(k,t), packed choppy spectrum
+   ============================================================ */
+const FS_EVOLVE = `#version 300 es
+precision highp float; precision highp int;
+uniform sampler2D uH0;
+uniform float uT, uL;
+out vec4 o;
+vec2 cmul(vec2 a, vec2 b){ return vec2(a.x*b.x-a.y*b.y, a.x*b.y+a.y*b.x); }
+void main(){
+  ivec2 px = ivec2(gl_FragCoord.xy);
+  vec4 h0 = texelFetch(uH0, px, 0);
+  ivec2 mpx = ivec2((${N}-px.x)%${N}, (${N}-px.y)%${N});
+  vec4 h0mv = texelFetch(uH0, mpx, 0);
+  float w = h0.z;
+  float c = cos(w*uT), s = sin(w*uT);
+  vec2 H = cmul(h0.xy, vec2(c,s)) + cmul(vec2(h0mv.x,-h0mv.y), vec2(c,-s));
+  int n = px.x <= ${N/2} ? px.x : px.x - ${N};
+  int m = px.y <= ${N/2} ? px.y : px.y - ${N};
+  vec2 kv = 6.28318530718*vec2(float(n), float(m))/uL;
+  float k = max(length(kv), 1e-6);
+  float chop = h0.w;
+  vec2 Dx = chop*vec2( kv.x/k*H.y, -kv.x/k*H.x);
+  vec2 Dz = chop*vec2( kv.y/k*H.y, -kv.y/k*H.x);
+  vec2 P = vec2(Dx.x - Dz.y, Dx.y + Dz.x);   // Dx + i·Dz packed
+  o = vec4(H, P);
+}`;
+
+/* ============================================================
+   3) Stockham radix-2 inverse FFT pass (RG and BA = 2 complex)
+   ============================================================ */
+const FS_FFT = `#version 300 es
+precision highp float; precision highp int;
+uniform sampler2D uSrc;
+uniform int uNs;
+uniform int uHoriz;
+out vec4 o;
+vec2 cmul(vec2 a, vec2 b){ return vec2(a.x*b.x-a.y*b.y, a.x*b.y+a.y*b.x); }
+void main(){
+  ivec2 px = ivec2(gl_FragCoord.xy);
+  int i = (uHoriz==1) ? px.x : px.y;
+  int twoNs = uNs*2;
+  int b = i % twoNs;
+  bool hi = b >= uNs;
+  int bb = hi ? b-uNs : b;
+  int j = (i/twoNs)*uNs + bb;
+  ivec2 p0 = (uHoriz==1) ? ivec2(j, px.y)         : ivec2(px.x, j);
+  ivec2 p1 = (uHoriz==1) ? ivec2(j+${N/2}, px.y)  : ivec2(px.x, j+${N/2});
+  vec4 x0 = texelFetch(uSrc, p0, 0);
+  vec4 x1 = texelFetch(uSrc, p1, 0);
+  float ang = 6.28318530718*float(bb)/float(twoNs);
+  vec2 w = vec2(cos(ang), sin(ang));
+  vec4 t = vec4(cmul(w, x1.xy), cmul(w, x1.zw));
+  o = hi ? (x0 - t) : (x0 + t);
+}`;
+
+/* ============================================================
+   4) unpack IFFT → displacement texture (dx, hy, dz)
+   ============================================================ */
+const FS_DISP = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+out vec4 o;
+void main(){
+  vec4 v = texelFetch(uSrc, ivec2(gl_FragCoord.xy), 0);
+  o = vec4(v.z, v.x, v.w, 0.0);   // (dx, height, dz)
+}`;
+
+/* ============================================================
+   5) scene: raycast the displaced surface + sky + glitter
+   ============================================================ */
+const FS_SCENE = `#version 300 es
+precision highp float; precision highp int;
+uniform vec2  uRes;
+uniform float uTime;
+uniform vec3  uCamPos;
+uniform mat3  uCamRot;
+uniform float uTanHalf;
+uniform sampler2D uDisp0, uDisp1;
+uniform vec3  uSunDir, uMoonDir;
+uniform vec3  uSunCol, uMoonCol;    // glitter/disk radiance
+uniform float uDayF, uDuskF, uNightF;
+uniform vec2  uWindV;               // gust advection (m/s)
+uniform float uWindU;
+uniform float uCloudCov;            // 0=快晴 .. 1=曇天
+uniform float uCloudType;           // 0巻 1鱗 2羊 3綿 4入道 5層 6霞
+uniform float uOvercast;            // 曇天の鈍り(0..1)
+uniform float uRainF;               // 時雨(0..1)
+uniform float uDayHi;               // 高い太陽(0..1)
+uniform float uHaze;                // 霞・視程(0=澄む 1=朧)
+uniform float uCrisp;               // 空の乾き（秋=高い）
+uniform vec3  uWaterTint;           // 季節の水の色
+uniform float uSigScale, uDistSig;  // 水の肌: グリッターσの倍率
+uniform float uSlick;               // 凪の帯（毛細管波を殺す膜）
+uniform int   uRingN;
+uniform vec4  uRings[${MAXR}];      // (cx, cz, t0, amp)
+out vec4 o;
+const float PI = 3.14159265358979;
+
+float hash21(vec2 p){ p = fract(p*vec2(233.34, 851.73)); p += dot(p, p+23.45); return fract(p.x*p.y); }
+float hash13(vec3 p){ p = fract(p*0.1031); p += dot(p, p.zyx+31.32); return fract((p.x+p.y)*p.z); }
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f*f*(3.0-2.0*f);
+  float a = hash21(i), b = hash21(i+vec2(1,0)), c = hash21(i+vec2(0,1)), d = hash21(i+vec2(1,1));
+  return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
+}
+float fbm(vec2 p){
+  float v = 0.0, a = 0.5;
+  for(int i=0;i<4;i++){ v += a*vnoise(p); p = p*2.03 + 11.3; a *= 0.5; }
+  return v;
+}
+float fbm3(vec2 p){
+  float v = 0.0, a = 0.5;
+  for(int i=0;i<3;i++){ v += a*vnoise(p); p = p*2.11 + 7.7; a *= 0.5; }
+  return v;
+}
+
+/* --- gusts: cat's paws. local multiplier on ripple energy --- */
+float gustField(vec2 wp){
+  vec2 adv = uWindV*uTime;
+  float base  = fbm(wp*0.021 - adv*0.55);
+  float large = fbm3(wp*0.0042 - adv*0.16 + 31.7);
+  float m = base*0.62 + large*0.58;
+  float g = smoothstep(0.32, 0.92, m);
+  return mix(0.18, 1.55, g);
+}
+
+/* --- rain / fish rings: dispersive capillary packet --- */
+void ringGrad(vec2 wp, inout vec2 grad){
+  for(int i=0;i<${MAXR};i++){
+    if(i >= uRingN) break;
+    vec4 r = uRings[i];
+    float tau = uTime - r.z;
+    if(tau <= 0.0 || tau > 14.0) continue;
+    vec2 d = wp - r.xy;
+    float rr = max(length(d), 1e-4);
+    float R = 0.42*tau;                 // group speed
+    float wdt = 0.22 + 0.06*tau;
+    float env = exp(-(rr-R)*(rr-R)/(wdt*wdt)) * exp(-tau*0.26) * r.w / (1.0 + rr*0.22);
+    float kk = 26.0;                    // carrier ~24cm
+    float ph = kk*rr - kk*0.30*tau;     // phase speed < group speed (capillary)
+    float dhdr = -kk*env*sin(ph);
+    grad += (d/rr)*dhdr*1.6;
+  }
+}
+
+/* --- surface height (coarse, for raycast) --- */
+float Hcoarse(vec2 wp){
+  return textureLod(uDisp0, wp/${L0.toFixed(2)}, 2.0).y
+       + 0.6*textureLod(uDisp1, wp/${L1.toFixed(2)}, 2.0).y;
+}
+
+/* --- mountain ridge silhouette height (radians) --- */
+float ridgeH(vec2 hdir){
+  float f = fbm(hdir*2.3 + 7.31);
+  float g = fbm3(hdir*0.7 - 3.7);
+  float h = pow(max(f*0.85 + g*0.55 - 0.42, 0.0), 1.9);
+  return 0.004 + 0.085*h;
+}
+
+/* --- 雲の場: 七つのかたち（0巻 1鱗 2羊 3綿 4入道 5層 6霞）--- */
+float cloudBase(vec2 cp, float ty, float t1){
+  if (ty < 0.5){            // 巻: 絹の筋（ワープした流線）
+    vec2 w = cp + 1.4*vec2(vnoise(cp*0.33 + t1), vnoise(cp*0.33 - t1 + 7.0));
+    return fbm(w*vec2(0.30, 1.9) + vec2(t1, 0.0));
+  } else if (ty < 1.5){     // 鱗（いわし・うろこ）: 細かいbillow
+    float f = 1.0 - abs(fbm(cp*2.7 + vec2(t1*1.5, 3.7))*2.0 - 1.0);
+    return f*0.72 + 0.18*fbm(cp*0.7 + 11.0);
+  } else if (ty < 2.5){     // 羊: 指2〜3本の群れ
+    float b = 1.0 - abs(fbm(cp*0.95 + vec2(t1*1.1, 5.2))*2.0 - 1.0);
+    return pow(b, 1.7)*0.92 + 0.14*fbm(cp*2.4 + 3.0);
+  } else if (ty < 3.5){     // 綿: 晴れの日のちぎれ雲（点在する団子）
+    float b = fbm(cp*0.72 + vec2(t1*0.8, 1.3));
+    float puff = smoothstep(0.50, 0.70, b);
+    return puff*(0.55 + 0.65*fbm(cp*2.3 + 8.0));
+  } else if (ty < 4.5){     // 入道の日: 近景は綿すこし（塔は別描画）
+    float b = fbm(cp*0.5 + vec2(t1*0.8, 1.3));
+    return smoothstep(0.5, 0.78, b)*0.62;
+  } else if (ty < 5.5){     // 層: しとね
+    return fbm(cp*0.26 + vec2(t1*0.5, 9.1))*0.85 + 0.25;
+  }
+  return 0.40 + 0.28*fbm(cp*0.16 + vec2(t1*0.3, 2.2));   // 霞: ひくいヴェール
+}
+
+/* --- sky (also used for reflections) --- */
+vec3 skyBase(vec3 rd){
+  float y = max(rd.y, 0.0);
+  vec2 hxz = normalize(rd.xz + vec2(1e-5, 0.0));
+  vec2 sxz = normalize(uSunDir.xz + vec2(1e-5, 0.0));
+  float ca = dot(hxz, sxz);
+  float sunHalo = pow(clamp(ca*0.5+0.5, 0.0, 1.0), 7.0);
+
+  vec3 zenGold  = vec3(0.052, 0.093, 0.230);
+  vec3 zenNight = vec3(0.0035, 0.0050, 0.0110);
+  vec3 zen = mix(zenGold, zenNight, uNightF);
+  // 高い太陽のレイリー青空（乾いた秋ほど深く、霞むほど淡い）
+  vec3 zenDay = mix(vec3(0.085, 0.185, 0.460), vec3(0.048, 0.125, 0.400), uCrisp);
+  zenDay = mix(zenDay, vec3(0.30, 0.40, 0.55), uHaze*0.45);
+  zen = mix(zen, zenDay, uDayHi);
+
+  vec3 horGold = vec3(1.00, 0.40, 0.115) * (1.05*uDuskF + 0.55*uDayF) * (1.0-uDayHi);
+  vec3 horCool = vec3(0.290, 0.245, 0.360) * (0.40*uDayF + 0.55*uDuskF);
+  vec3 horNight= vec3(0.0011, 0.0018, 0.0042);
+  vec3 horDay = mix(vec3(0.360, 0.475, 0.640), vec3(0.66, 0.73, 0.82), uHaze);
+  horDay = mix(horDay, vec3(0.30, 0.41, 0.60), uCrisp*0.5*(1.0-uHaze));
+  vec3 hor = mix(mix(horCool + horGold*sunHalo, horNight, uNightF), horDay, uDayHi);
+
+  float grad = 1.0 - exp(-y*(5.5 - 2.2*uHaze));
+  vec3 col = mix(hor, zen, grad);
+  col += horGold * sunHalo * exp(-y*16.0) * 0.85 * (1.0-uNightF);
+  // 昼のミー前方散乱（太陽まわりの白い暈・霞むほど広い）
+  float csun0 = max(dot(rd, uSunDir), 0.0);
+  col += vec3(0.9,0.92,0.95) * uDayHi * (0.10+0.30*uHaze) * pow(csun0, 9.0-6.0*uHaze);
+
+  // sun disk + glow — the disk swells and reddens as it touches the horizon
+  float cs = dot(rd, uSunDir);
+  float lowS = 1.0 - smoothstep(0.02, 0.12, uSunDir.y);
+  float rad = 0.0052 + 0.0074*lowS;
+  float cR = cos(rad);
+  float disk = smoothstep(cR - rad*rad*0.9, cR + rad*rad*0.35, cs);
+  col += uSunCol * (0.42 + 0.5*lowS) * disk * mix(vec3(1.0), vec3(1.0,0.62,0.38), lowS);
+  col += uSunCol * (0.00095 + 0.0022*lowS) * pow(max(cs, 0.0), 700.0);
+  col += uSunCol * 0.00022 * pow(max(cs, 0.0), 60.0);
+
+  // moon disk + glow
+  float cm = dot(rd, uMoonDir);
+  col += uMoonCol * 0.85 * smoothstep(0.999900, 0.999960, cm);
+  col += uMoonCol * 0.0022 * pow(max(cm, 0.0), 700.0);
+  col += uMoonCol * 0.00030 * pow(max(cm, 0.0), 40.0);
+
+  // stars — 3Dセルハッシュ（全天シームレス・真後ろでも継ぎ目なし）
+  if (uNightF > 0.003 && rd.y > 0.015 && uCloudCov < 0.85){
+    vec3 sp3 = rd*135.0;
+    vec3 cell3 = floor(sp3);
+    vec3 f3 = fract(sp3);
+    float h = hash13(cell3);
+    if (h > 0.972){
+      vec3 spos = vec3(hash13(cell3+13.1), hash13(cell3+27.7), hash13(cell3+5.9))*0.6 + 0.2;
+      vec3 dd = f3 - spos;
+      dd -= rd * dot(dd, rd);   // 半径方向のずれを除く（シェルがセルのどこを通っても星は光る）
+      float d2 = dot(dd, dd);
+      float tw = 0.55 + 0.45*sin(uTime*(1.5+4.0*hash13(cell3+3.3)) + h*40.0);
+      float b = pow((h-0.972)/0.028, 2.0)*tw;
+      col += vec3(0.85, 0.92, 1.05) * exp(-d2*70.0) * b * 1.4
+             * uNightF * smoothstep(0.02, 0.30, rd.y) * (1.0 - 0.95*uCloudCov);
+    }
+  }
+
+  // ---- 雲: 七つのかたち × 量 × 日向日陰 ----
+  if (rd.y > 0.012){
+    vec2 cp = rd.xz/(rd.y + 0.12);
+    float t1 = uTime*0.006;
+    float ty = clamp(uCloudType, 0.0, 6.0);
+    float tyA = floor(ty), tyB = min(tyA + 1.0, 6.0), tyF = fract(ty);
+    float cf = mix(cloudBase(cp, tyA, t1), cloudBase(cp, tyB, t1), tyF);
+    float th = mix(0.80, 0.05, uCloudCov);
+    float dens = smoothstep(th, th + 0.30, cf);
+    dens *= mix(exp(-rd.y*(2.4 - 1.3*uDayHi)), 0.92, uOvercast);
+    // 太陽側の場を見て自己陰影（日向の峰と日陰の底）
+    vec2 sunH2 = normalize(uSunDir.xz + vec2(1e-4, 0.0));
+    vec2 cps = cp + sunH2*0.30;
+    float cfs = mix(cloudBase(cps, tyA, t1), cloudBase(cps, tyB, t1), tyF);
+    float shadow = clamp(1.0 - (cfs - cf)*3.2, 0.30, 1.30);
+    vec3 duskLit = uSunCol*0.0065*(0.25 + 0.75*sunHalo) + zen*1.6;
+    vec3 dayLit = vec3(0.88, 0.90, 0.94)*(0.42 + 0.58*shadow) + vec3(0.85)*0.22*pow(csun0, 4.0);
+    vec3 lit = mix(duskLit*(0.45 + 0.55*shadow), dayLit, uDayHi);
+    vec3 gray = mix(vec3(0.30, 0.32, 0.36)*(0.55*uDuskF + 0.75*uDayF + 0.9*uDayHi), zen*1.2, 0.35);
+    vec3 ccol = mix(mix(lit, gray*(0.55 + 0.45*shadow), uOvercast), zen*0.75, uNightF);
+    float veil = (ty > 5.5) ? 0.45 : 1.0;      // 霞は薄く均一
+    col = mix(col, ccol, dens*mix(0.55, 0.92, uOvercast)*veil);
+    // 入道雲: 地平にそびえる白い塔（type≈4）
+    float nyu = 1.0 - min(abs(uCloudType - 4.0), 1.0);
+    if (nyu > 0.01){
+      float azr = atan(rd.x, rd.z);
+      float dd0 = azr - 2.35;
+      dd0 = atan(sin(dd0), cos(dd0));
+      float base = exp(-dd0*dd0/0.115)
+                 + 0.62*exp(-pow(dd0-0.315, 2.0)/0.022)
+                 + 0.45*exp(-pow(dd0+0.24, 2.0)/0.014);
+      float edge = fbm(vec2(azr*9.0, rd.y*8.0) + t1*0.35);
+      float hh = (0.27 + 0.20*edge)*base;
+      float m = 1.0 - smoothstep(hh - 0.05, hh + 0.008, rd.y);
+      m *= smoothstep(0.0, 0.02, rd.y);
+      float vert = clamp(rd.y/max(hh, 1e-3), 0.0, 1.0);
+      vec3 towerLit = mix(vec3(0.32,0.33,0.37), vec3(1.05,1.04,1.02), pow(vert, 1.4))
+                      * (0.22 + 0.78*uDayHi);
+      towerLit = mix(towerLit, duskLit*1.35, (1.0-uDayHi)*0.6);
+      towerLit = mix(towerLit, zen*0.8, uNightF);
+      col = mix(col, towerLit, m*nyu*0.92);
+    }
+  }
+  // 曇りの鈍り: 彩度をそっと抜く
+  float gl = dot(col, vec3(0.30, 0.50, 0.20));
+  col = mix(col, vec3(gl)*vec3(0.96, 1.0, 1.06), 0.4*uOvercast);
+  return col;
+}
+
+vec3 sky(vec3 rd){
+  vec3 col = skyBase(rd);
+  // mountain ridge on the horizon
+  vec2 hdir = normalize(rd.xz + vec2(1e-5, 0.0));
+  float rh = ridgeH(hdir);
+  float m = 1.0 - smoothstep(rh - 0.004, rh + 0.0015, rd.y);
+  if (m > 0.001){
+    vec3 duskM  = vec3(0.048, 0.034, 0.068);
+    vec3 nightM = vec3(0.0016, 0.0022, 0.0045);
+    vec3 mCol = mix(duskM, nightM, uNightF);
+    vec3 dayM = mix(vec3(0.085, 0.135, 0.120), vec3(0.34, 0.43, 0.55), 0.25 + 0.60*uHaze);
+    mCol = mix(mCol, dayM, uDayHi);
+    // aerial haze: distant ridges melt into the sky
+    mCol = mix(mCol, skyBase(vec3(hdir.x, max(rd.y,0.0)+0.015, hdir.y))*0.72, 0.42);
+    col = mix(col, mCol, m);
+  }
+  return col;
+}
+
+/* --- Cox–Munk style glitter --- */
+vec3 glint(vec3 L, vec3 rad, vec3 n, vec3 V, float s2){
+  if (L.y < 0.005) return vec3(0.0);
+  vec3 h = normalize(V + L);
+  float c = clamp(dot(h, n), 1e-3, 1.0);
+  float t2 = (1.0 - c*c)/(c*c);
+  float D = exp(-t2/(2.0*s2)) / (2.0*PI*s2*c*c*c*c);
+  float Fh = 0.02 + 0.98*pow(1.0 - clamp(dot(V,h), 0.0, 1.0), 5.0);
+  float geo = smoothstep(0.004, 0.045, L.y);
+  float denom = max(4.0*max(dot(n,V), 1e-3), 0.06);
+  float s = min(D*Fh*geo/denom, 160.0);
+  return rad * s * 0.00135;
+}
+
+void main(){
+  vec2 ndc = (gl_FragCoord.xy/uRes)*2.0 - 1.0;
+  ndc.x *= uRes.x/uRes.y;
+  vec3 rd = normalize(uCamRot * normalize(vec3(ndc.x*uTanHalf, ndc.y*uTanHalf, 1.0)));
+  vec3 col;
+
+  if (rd.y > -0.0012){
+    col = sky(rd);
+  } else {
+    // ---- raycast the displaced water plane ----
+    float t = -uCamPos.y/rd.y;
+    for(int i=0;i<4;i++){
+      vec2 wp = uCamPos.xz + rd.xz*t;
+      float h = Hcoarse(wp);
+      t = (h - uCamPos.y)/rd.y;
+    }
+    t = clamp(t, 0.5, 4200.0);
+    vec3 p = uCamPos + rd*t;
+    float dist = t;
+
+    float gW = gustField(p.xz);
+
+    // スリック: 天然の膜が毛細管波を殺す鏡の帯（風向きに平行なwindrows）
+    float slick = 0.0;
+    if (uSlick > 0.002){
+      vec2 lon = normalize(uWindV + vec2(1e-4, 0.0));
+      vec2 lat = vec2(-lon.y, lon.x);
+      vec2 q = vec2(dot(p.xz, lon)*0.006, dot(p.xz, lat)*0.05) - vec2(uTime*0.012, 0.0);
+      slick = uSlick * smoothstep(0.52, 0.72, fbm3(q));
+    }
+    gW *= (1.0 - 0.90*slick);
+
+    // ---- normal from both cascades (mip-filtered slopes) ----
+    float pixA = uTanHalf*2.0/uRes.y;
+    float lod0 = clamp(log2(max(dist*pixA*${(N/L0).toFixed(4)}, 0.25)) + 1.0, 0.0, 7.0);
+    float lod1 = clamp(log2(max(dist*pixA*${(N/L1).toFixed(4)}, 0.25)) + 1.0, 0.0, 7.0);
+    vec2 u0 = p.xz/${L0.toFixed(2)};  float e0 = 1.0/${N.toFixed(1)};  float du0 = ${(L0/N).toFixed(5)};
+    vec2 u1 = p.xz/${L1.toFixed(2)};  float e1 = 1.0/${N.toFixed(1)};  float du1 = ${(L1/N).toFixed(5)};
+    vec3 c0 = textureLod(uDisp0, u0, lod0).xyz;
+    vec3 x0 = textureLod(uDisp0, u0+vec2(e0,0.0), lod0).xyz;
+    vec3 z0 = textureLod(uDisp0, u0+vec2(0.0,e0), lod0).xyz;
+    vec3 c1 = textureLod(uDisp1, u1, lod1).xyz * gW;
+    vec3 x1 = textureLod(uDisp1, u1+vec2(e1,0.0), lod1).xyz * gW;
+    vec3 z1 = textureLod(uDisp1, u1+vec2(0.0,e1), lod1).xyz * gW;
+
+    float Jx = max(1.0 + (x0.x-c0.x)/du0 + (x1.x-c1.x)/du1, 0.35);
+    float Jz = max(1.0 + (z0.z-c0.z)/du0 + (z1.z-c1.z)/du1, 0.35);
+    vec2 grad = vec2((x0.y-c0.y)/du0 + (x1.y-c1.y)/du1,
+                     (z0.y-c0.y)/du0 + (z1.y-c1.y)/du1);
+    grad.x /= Jx; grad.y /= Jz;
+    ringGrad(p.xz, grad);
+    vec3 n = normalize(vec3(-grad.x, 1.0, -grad.y));
+
+    vec3 V = -rd;
+    float F = 0.02 + 0.98*pow(1.0 - clamp(dot(V,n), 0.0, 1.0), 5.0);
+
+    vec3 R = reflect(rd, n);
+    R.y = max(R.y, 0.013);
+    R = normalize(R);
+    vec3 skyR = sky(R);
+
+    // upwelling body colour（昼は明るい青緑・曇りは鈍色へ・季節の色）
+    vec3 amb = mix(vec3(0.052,0.093,0.230), vec3(0.0035,0.005,0.011), uNightF);
+    amb = mix(amb, vec3(0.30, 0.42, 0.62), uDayHi*(1.0-uNightF));
+    amb = mix(amb, vec3(dot(amb, vec3(0.4,0.4,0.2)))*1.25, 0.65*uOvercast);
+    vec3 body = mix(uWaterTint, vec3(0.105, 0.120, 0.120), uOvercast) * amb * 2.1;
+
+    // 見下ろしの表情: 波の傾きの陰影（すじ）＋日向の拡散＋風の足の紋
+    float upView = clamp(-rd.y, 0.0, 1.0);
+    vec2 sunH = normalize(uSunDir.xz + vec2(1e-5, 0.0));
+    float stripe = dot(-grad, sunH);
+    float shade = 1.0 + stripe*(1.4 + 4.5*upView*upView);
+    shade = clamp(shade, 0.60, 1.45);
+    float sunUp = clamp(uSunDir.y*4.0, 0.0, 1.0) * (1.0 - uNightF);
+    vec3 dif = uSunCol*0.0022*max(dot(n, uSunDir), 0.0)*sunUp;
+    body = body*shade + mix(uWaterTint, vec3(0.105,0.120,0.120), uOvercast)*dif;
+    body *= 1.0 - 0.10*clamp(gW - 0.9, 0.0, 0.7)*upView;
+
+    col = mix(body, skyR, F);
+
+    // ---- glitter path (Cox–Munk mss, gust-modulated, distance-filtered) ----
+    float wf = clamp(uWindU/2.5, 0.0, 1.0);
+    float s2 = (0.0004 + 0.0032*uWindU*0.33)*gW*uSigScale
+             + min(dist*2.6e-5, 0.030)*(0.25 + 0.75*wf)*uDistSig
+             + 0.0075*uRainF + 1.0e-4;
+    s2 *= (1.0 - 0.72*slick);
+    col += glint(uSunDir,  uSunCol,  n, V, s2);
+    col += glint(uMoonDir, uMoonCol, n, V, s2);
+
+    // ---- horizon mist ----
+    vec3 hc = skyBase(normalize(vec3(rd.x, 0.016, rd.z)));
+    float fog = 1.0 - exp(-dist/(2100.0*(1.25 - 0.88*uHaze)));
+    col = mix(col, hc, fog*fog);
+  }
+  o = vec4(col, 1.0);
+}`;
+
+/* ============================================================
+   6) bloom + composite
+   ============================================================ */
+const FS_DOWN = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform vec2 uDstRes;
+uniform vec2 uSrcTexel;
+uniform int uFirst;
+out vec4 o;
+void main(){
+  vec2 uv = gl_FragCoord.xy/uDstRes;
+  vec3 c = ( texture(uSrc, uv+vec2( 0.5, 0.5)*uSrcTexel).rgb
+           + texture(uSrc, uv+vec2(-0.5, 0.5)*uSrcTexel).rgb
+           + texture(uSrc, uv+vec2( 0.5,-0.5)*uSrcTexel).rgb
+           + texture(uSrc, uv+vec2(-0.5,-0.5)*uSrcTexel).rgb )*0.25;
+  if(uFirst==1){
+    float l = dot(c, vec3(0.2126,0.7152,0.0722));
+    float w = max(l-1.05, 0.0)/(l+1e-4);
+    c *= w;
+  }
+  o = vec4(c, 1.0);
+}`;
+const FS_UP = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform vec2 uDstRes;
+uniform vec2 uSrcTexel;
+out vec4 o;
+void main(){
+  vec2 uv = gl_FragCoord.xy/uDstRes;
+  vec3 c = ( texture(uSrc, uv+vec2( 0.7, 0.7)*uSrcTexel).rgb
+           + texture(uSrc, uv+vec2(-0.7, 0.7)*uSrcTexel).rgb
+           + texture(uSrc, uv+vec2( 0.7,-0.7)*uSrcTexel).rgb
+           + texture(uSrc, uv+vec2(-0.7,-0.7)*uSrcTexel).rgb )*0.25;
+  o = vec4(c*0.62, 1.0);
+}`;
+const FS_POST = `#version 300 es
+precision highp float;
+uniform sampler2D uScene, uBloom;
+uniform vec2 uRes;
+uniform float uExposure, uTime;
+out vec4 o;
+vec3 aces(vec3 x){
+  return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0);
+}
+void main(){
+  vec2 uv = gl_FragCoord.xy/uRes;
+  vec3 c = texture(uScene, uv).rgb + texture(uBloom, uv).rgb*0.16;
+  c *= uExposure;
+  c = aces(c);
+  // gentle blue-hour lift in the shadows
+  c = pow(c, vec3(1.0/2.2));
+  // vignette
+  vec2 q = uv*2.0-1.0; q.x *= 0.85;
+  c *= 0.82 + 0.18*smoothstep(1.55, 0.35, length(q));
+  // fine grain (IGN)
+  float g = fract(52.9829189*fract(0.06711056*gl_FragCoord.x + 0.00583715*gl_FragCoord.y + fract(uTime*0.7)*0.1));
+  c += (g-0.5)*0.009;
+  o = vec4(c, 1.0);
+}`;
+
+/* ============================================================
+   build programs & resources
+   ============================================================ */
+const pH0     = prog(QUAD_VS, FS_H0);
+const pEvolve = prog(QUAD_VS, FS_EVOLVE);
+const pFFT    = prog(QUAD_VS, FS_FFT);
+const pDisp   = prog(QUAD_VS, FS_DISP);
+const pScene  = prog(QUAD_VS, FS_SCENE);
+const pDown   = prog(QUAD_VS, FS_DOWN);
+const pUp     = prog(QUAD_VS, FS_UP);
+const pPost   = prog(QUAD_VS, FS_POST);
+const U = {};
+for (const [name,p] of Object.entries({pH0,pEvolve,pFFT,pDisp,pScene,pDown,pUp,pPost})){
+  U[name] = {};
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for(let i=0;i<n;i++){ const info = gl.getActiveUniform(p,i);
+    U[name][info.name.replace(/\[0\]$/,'')] = gl.getUniformLocation(p, info.name); }
+}
+const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+
+// spectrum + FFT working textures (32F, NEAREST)
+const texH0   = [tex(N,N,gl.RGBA32F,gl.NEAREST,gl.CLAMP_TO_EDGE),
+                 tex(N,N,gl.RGBA32F,gl.NEAREST,gl.CLAMP_TO_EDGE)];
+const fboH0   = texH0.map(fbo);
+const texPing = tex(N,N,gl.RGBA32F,gl.NEAREST,gl.CLAMP_TO_EDGE);
+const texPong = tex(N,N,gl.RGBA32F,gl.NEAREST,gl.CLAMP_TO_EDGE);
+const fboPing = fbo(texPing), fboPong = fbo(texPong);
+// displacement maps (16F, repeat, mipmapped)
+const texDisp = [tex(N,N,gl.RGBA16F,gl.LINEAR,gl.REPEAT,LOG2N+1),
+                 tex(N,N,gl.RGBA16F,gl.LINEAR,gl.REPEAT,LOG2N+1)];
+const fboDisp = texDisp.map(fbo);
+
+// screen-sized targets (rebuilt on resize / scale change)
+let sceneTex=null, sceneFbo=null, bloomT=[], bloomF=[], W=0, Hh=0;
+let renderScale = 1.0;
+function allocScreen(){
+  const dpr = Math.min(window.devicePixelRatio||1, 1.75);
+  let cw = window.innerWidth, ch = window.innerHeight;
+  if (!cw || !ch){ cw = 1280; ch = 720; }           // hidden-tab guard
+  canvas.width = Math.round(cw*dpr); canvas.height = Math.round(ch*dpr);
+  W = Math.max(64, Math.round(canvas.width*renderScale));
+  Hh = Math.max(64, Math.round(canvas.height*renderScale));
+  if(sceneTex){ gl.deleteTexture(sceneTex); gl.deleteFramebuffer(sceneFbo);
+    bloomT.forEach(t=>gl.deleteTexture(t)); bloomF.forEach(f=>gl.deleteFramebuffer(f)); bloomT=[]; bloomF=[]; }
+  sceneTex = tex(W,Hh,gl.RGBA16F,gl.LINEAR,gl.CLAMP_TO_EDGE);
+  sceneFbo = fbo(sceneTex);
+  let bw = W>>1, bh = Hh>>1;
+  for(let i=0;i<5;i++){
+    bloomT.push(tex(Math.max(bw,4),Math.max(bh,4),gl.RGBA16F,gl.LINEAR,gl.CLAMP_TO_EDGE));
+    bloomF.push(fbo(bloomT[i]));
+    bw>>=1; bh>>=1;
+  }
+}
+allocScreen();
+window.addEventListener('resize', allocScreen);
+
+/* ============================================================
+   state: wind, celestial, rings, interaction
+   ============================================================ */
+let rings = [];                        // {x,z,t0,amp}
+let lastFish = -8;
+
+/* --- きょうの水面: 状態 --- */
+const P = {
+  windAuto: true, windU: 2.2,          // 風（凪=0）
+  flowLog: 0,                          // 時のながれ = 2^flowLog
+  dayRun: true,                        // そらは めぐる
+  camH: 2.1, pitch: -0.115, yaw: 0,    // 視線（真下-89°〜見上げ+48°・ヨー全周）
+  fov: 52,                             // ズーム（画角deg）
+  season: 'natsu',                     // 季節（南中高度・空の乾き・霞・水の色）
+  cloudAuto: true, cloudCov: 0.30, cloudType: 3,
+  rain: false,
+  waterTex: 0.5,                       // 水の肌: 0=絹 → 1=硝子
+  swell: 0,                            // うねり（遠方からのλ26mスウェル）
+  slick: 0,                            // スリック（凪の帯）
+};
+/* 十種雲形の季節感: 春=霞 夏=綿/入道 秋=鱗と澄んだ青 冬=層の鉛色 */
+const SEASONS = {
+  haru: {eNoon:50, crisp:0.22, haze:0.60, water:[0.058,0.140,0.135], cov:0.42, ctype:6},
+  natsu:{eNoon:70, crisp:0.50, haze:0.32, water:[0.050,0.160,0.130], cov:0.36, ctype:3},
+  aki:  {eNoon:45, crisp:0.95, haze:0.10, water:[0.042,0.115,0.140], cov:0.30, ctype:1},
+  fuyu: {eNoon:28, crisp:0.72, haze:0.28, water:[0.055,0.100,0.112], cov:0.55, ctype:5},
+};
+let scur = {eNoon:70, crisp:0.50, haze:0.32, water:[0.050,0.160,0.130]};
+function applySeason(name, snap){
+  const S = SEASONS[name]; if (!S) return;
+  P.season = name;
+  P.cloudType = S.ctype;
+  if (snap){ scur.eNoon=S.eNoon; scur.crisp=S.crisp; scur.haze=S.haze; scur.water=[...S.water]; ctCur=S.ctype; }
+}
+function seasonByMonth(){
+  const m = new Date().getMonth()+1;
+  return m>=3&&m<=5?'haru':m>=6&&m<=8?'natsu':m>=9&&m<=11?'aki':'fuyu';
+}
+const tanHalfNow = () => Math.tan(P.fov*Math.PI/360);
+/* いま見つめている水面の点（雨・魚信の的） */
+function lookAtXZ(){
+  const B = camBasis();
+  if (B.fwd[1] < -0.02){
+    const tt = Math.min(P.camH / -B.fwd[1], 130);
+    return [B.fwd[0]*tt, B.fwd[2]*tt];
+  }
+  return [Math.sin(P.yaw)*14, Math.cos(P.yaw)*14];
+}
+let wCur = {U: 2.0, az: 0.62};
+let covCur = 0.30, ctCur = 0, rainCur = 0, rainAcc = 0;
+const camRot = new Float32Array(9);
+
+function camBasis(){
+  const cpv = Math.cos(P.pitch), spv = Math.sin(P.pitch);
+  const cy = Math.cos(P.yaw),  sy = Math.sin(P.yaw);
+  return {
+    right: [cy, 0, -sy],
+    up:    [-spv*sy, cpv, -spv*cy],
+    fwd:   [ cpv*sy, spv,  cpv*cy],
+  };
+}
+function windTarget(t){
+  const az = 0.62 + 0.35*Math.sin(t*0.006);
+  if (!P.windAuto) return {U: P.windU, az};
+  const U0 = 1.8 + 0.9*Math.sin(t*0.013+1.7) + 0.45*Math.sin(t*0.0047+0.3);
+  return {U: Math.min(Math.max(U0, 0.9), 6.5), az};
+}
+function celestial(t){
+  // t=0 が正午・150 が真夜中。南中高度は季節（scur.eNoon）から
+  const phi = 2*Math.PI*t/DAY_T;
+  const eMax = scur.eNoon*Math.PI/180, eMin = -20*Math.PI/180;
+  const A = (eMax-eMin)/2, B = (eMax+eMin)/2;
+  const e = A*Math.cos(phi) + B;
+  const sunAz = 0.13 + 0.85*Math.sin(phi);     // 東 → 南 → 西（構図が保てる振れ幅で）
+  const sunDir = [Math.cos(e)*Math.sin(sunAz), Math.sin(e), Math.cos(e)*Math.cos(sunAz)];
+  const dayF  = smooth(-0.02, 0.10, e);
+  const dayHi = smooth(0.14, 0.50, e);
+  const nightF= 1 - smooth(-0.19, -0.045, e);
+  const duskF = Math.exp(-Math.pow((e+0.015)/0.075, 2));
+  const upS = smooth(-0.035, 0.012, e);
+  const hiS = smooth(0.0, 0.16, e);
+  const inten = (18 + 34*hiS)*upS + 85*dayHi;  // 昼は白く強く
+  const sunCol = [ 1.0*inten,
+                   Math.min(0.30+0.52*hiS+0.17*dayHi, 0.99)*inten,
+                   Math.min(0.075+0.44*hiS+0.43*dayHi, 0.97)*inten ];
+  // 月: 太陽と逆の弧
+  const mphi = phi + Math.PI;
+  const mE = (14*Math.cos(mphi) + 0.5)*Math.PI/180;   // 低く懸かる月（月の道の美学）
+  const mAz = -0.21 + 0.85*Math.sin(mphi);
+  const moonDir = [Math.cos(mE)*Math.sin(mAz), Math.sin(mE), Math.cos(mE)*Math.cos(mAz)];
+  const mb = 2.1*smooth(0.0, 0.10, mE)*(0.10 + 0.90*nightF);
+  const moonCol = [0.72*mb, 0.82*mb, 1.0*mb];
+  const exposure = (1.0 + 2.4*nightF)*(1.0 - 0.60*dayHi);
+  return {sunDir, moonDir, sunCol, moonCol, dayF, dayHi, nightF, duskF, exposure};
+}
+function smooth(a,b,x){ const u = Math.min(Math.max((x-a)/(b-a),0),1); return u*u*(3-2*u); }
+
+/* pointer → world unproject (for rings) */
+function unproject(px, py){
+  const cw = canvas.clientWidth||1, ch = canvas.clientHeight||1;
+  let nx = (px/cw)*2-1, ny = -((py/ch)*2-1);
+  nx *= cw/ch;
+  const th = tanHalfNow();
+  const lx = nx*th, ly = ny*th;
+  const B = camBasis();
+  const d = [ lx*B.right[0] + ly*B.up[0] + B.fwd[0],
+              lx*B.right[1] + ly*B.up[1] + B.fwd[1],
+              lx*B.right[2] + ly*B.up[2] + B.fwd[2] ];
+  const len = Math.hypot(d[0],d[1],d[2]);
+  const rd = [d[0]/len, d[1]/len, d[2]/len];
+  if (rd[1] >= -0.005) return null;
+  let t = -P.camH/rd[1];
+  if (t > 300) t = 300;
+  return [rd[0]*t, P.camH + rd[1]*t, rd[2]*t];
+}
+/* 1本指=視線（全周・真下まで）／2本指=ピンチズーム／ホイール=ズーム／タップ=波紋 */
+const ptrs = new Map();
+let pinch0 = 0, fov0 = 52, tapInfo = null;
+function setFov(f){
+  P.fov = Math.min(Math.max(f, 15), 75);
+  const s = document.getElementById('sZoom');
+  if (s) s.value = P.fov;
+  uiTick(true);
+}
+canvas.addEventListener('pointerdown', e=>{
+  canvas.setPointerCapture(e.pointerId);
+  ptrs.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  tapInfo = (ptrs.size === 1) ? {x:e.clientX, y:e.clientY, t:performance.now(), moved:false} : null;
+  if (ptrs.size === 2){
+    const [a,b] = [...ptrs.values()];
+    pinch0 = Math.hypot(a.x-b.x, a.y-b.y); fov0 = P.fov;
+  }
+});
+canvas.addEventListener('pointermove', e=>{
+  const p = ptrs.get(e.pointerId); if (!p) return;
+  const dx = e.clientX - p.x, dy = e.clientY - p.y;
+  p.x = e.clientX; p.y = e.clientY;
+  if (ptrs.size === 1){
+    if (tapInfo && !tapInfo.moved &&
+        Math.abs(e.clientX-tapInfo.x)+Math.abs(e.clientY-tapInfo.y) > 6) tapInfo.moved = true;
+    if (!tapInfo || tapInfo.moved){
+      const s = P.fov/52;                       // ズーム中は細かく回る
+      P.yaw -= dx*0.0022*s;
+      if (P.yaw > Math.PI) P.yaw -= 2*Math.PI;
+      else if (P.yaw < -Math.PI) P.yaw += 2*Math.PI;
+      P.pitch = Math.min(Math.max(P.pitch + dy*0.0013*s, -1.55), 0.85);
+    }
+  } else if (ptrs.size === 2 && pinch0 > 0){
+    const [a,b] = [...ptrs.values()];
+    const d = Math.hypot(a.x-b.x, a.y-b.y);
+    if (d > 10) setFov(fov0 * pinch0/d);
+  }
+});
+function endPtr(e){
+  const had = ptrs.delete(e.pointerId);
+  if (had && ptrs.size === 0 && tapInfo && !tapInfo.moved && performance.now()-tapInfo.t < 400){
+    const w = unproject(tapInfo.x, tapInfo.y);
+    if (w) addRing(w[0], w[2], 0.0095 + Math.random()*0.004);
+  }
+  if (ptrs.size < 2) pinch0 = 0;
+  if (ptrs.size === 0) tapInfo = null;
+}
+canvas.addEventListener('pointerup', endPtr);
+canvas.addEventListener('pointercancel', endPtr);
+canvas.addEventListener('wheel', e=>{
+  e.preventDefault();
+  setFov(P.fov * Math.exp(e.deltaY*0.0012));
+}, {passive:false});
+function addRing(x, z, amp){
+  rings.push({x, z, t0: simTime(), amp});
+  if (rings.length > MAXR) rings.shift();
+}
+
+/* ============================================================
+   render
+   ============================================================ */
+let simT = WARM, skyT = WARM;
+let lastWind = {U:-1, az:-999};
+function simTime(){ return simT; }
+
+function runFFT(){
+  // 16 Stockham passes ping<->pong; starts reading Ping (evolve output)
+  gl.useProgram(pFFT);
+  gl.uniform1i(U.pFFT.uSrc, 0);
+  let src = texPing, sf = fboPing, dst = texPong, df = fboPong;
+  for(let dir=0; dir<2; dir++){
+    gl.uniform1i(U.pFFT.uHoriz, dir===0?1:0);
+    for(let s=0; s<LOG2N; s++){
+      gl.uniform1i(U.pFFT.uNs, 1<<s);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, df);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      [src, dst] = [dst, src]; [sf, df] = [df, sf];
+    }
+  }
+  return src;  // texture holding final result
+}
+
+function simulate(t){
+  const w = {U: Math.max(wCur.U, 0.15), az: wCur.az};
+  gl.viewport(0,0,N,N);
+  { // h0は毎フレーム再生成（2×256²パス=無料）。閾値方式は緩和の尻尾で凍結する
+    gl.useProgram(pH0);
+    // 水の肌: 絹(0)=毛細管ゲイン高くチョップ柔らかい / 硝子(1)=チョップ鋭く
+    const tx = P.waterTex;
+    const chopM = 0.60 + 0.75*tx;
+    const capG  = 1.45 - 0.60*tx;
+    const casc = [
+      {L:L0, kmin:2*Math.PI/L0*0.9, kmax:K_SPLIT,            amp:0.52,      chop:0.82*chopM, seed:3.7,  fbo:fboH0[0]},
+      {L:L1, kmin:K_SPLIT,          kmax:Math.PI*N/L1*0.85,  amp:0.80*capG, chop:0.32*chopM, seed:19.3, fbo:fboH0[1]},
+    ];
+    gl.uniform1f(U.pH0.uSwell, P.swell);
+    gl.uniform1f(U.pH0.uSwellAng, 2.4);
+    for(const c of casc){
+      gl.uniform1f(U.pH0.uL, c.L);
+      gl.uniform1f(U.pH0.uWindU, w.U);
+      gl.uniform1f(U.pH0.uWindAng, w.az);
+      gl.uniform1f(U.pH0.uFetch, 1500.0);
+      gl.uniform1f(U.pH0.uKmin, c.kmin);
+      gl.uniform1f(U.pH0.uKmax, c.kmax);
+      gl.uniform1f(U.pH0.uAmp, c.amp);
+      gl.uniform1f(U.pH0.uSeed, c.seed);
+      gl.uniform1f(U.pH0.uChop, c.chop);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, c.fbo);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+  }
+  for(let c=0;c<2;c++){
+    gl.useProgram(pEvolve);
+    gl.uniform1i(U.pEvolve.uH0, 0);
+    gl.uniform1f(U.pEvolve.uT, t);
+    gl.uniform1f(U.pEvolve.uL, c===0?L0:L1);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texH0[c]);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fboPing);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    const res = runFFT();
+    gl.useProgram(pDisp);
+    gl.uniform1i(U.pDisp.uSrc, 0);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, res);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fboDisp[c]);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindTexture(gl.TEXTURE_2D, texDisp[c]);
+    gl.generateMipmap(gl.TEXTURE_2D);
+  }
+  return w;
+}
+
+const ringArr = new Float32Array(MAXR*4);
+function render(){
+  const t = simT;
+  // occasional fish-touch ring, deterministic-ish cadence
+  if (!P.rain && t - lastFish > 11 + 8*Math.sin(t*0.37)){
+    lastFish = t;
+    const [cx, cz] = lookAtXZ();
+    const a = Math.sin(t*1.7)*3.1;
+    const d = (3 + P.camH*0.8 + 30*Math.abs(Math.sin(t*0.91)));
+    addRing(cx + Math.sin(a)*d, cz + Math.cos(a)*d, 0.0055);
+  }
+  const w = simulate(t);
+  const cel = celestial(skyT);
+  // 雲による鈍り: 直達光を落とし、曇天は露出をそっと持ち上げる
+  const cov = covCur;
+  const O = Math.min(Math.max((cov - 0.55)/0.4, 0), 1);
+  const dim = 1 - 0.85*Math.pow(cov, 1.6);
+  for(let i=0;i<3;i++){ cel.sunCol[i] *= dim; cel.moonCol[i] *= (1 - 0.75*cov); }
+  cel.exposure *= 1 + 0.6*O*(1 - cel.nightF);
+
+  // ---- camera ----
+  const B = camBasis();
+  camRot.set(B.right, 0); camRot.set(B.up, 3); camRot.set(B.fwd, 6);
+
+  // ---- scene ----
+  gl.bindFramebuffer(gl.FRAMEBUFFER, sceneFbo);
+  gl.viewport(0,0,W,Hh);
+  gl.useProgram(pScene);
+  gl.uniform2f(U.pScene.uRes, W, Hh);
+  gl.uniform1f(U.pScene.uTime, t);
+  gl.uniform3f(U.pScene.uCamPos, 0, P.camH, 0);
+  gl.uniformMatrix3fv(U.pScene.uCamRot, false, camRot);
+  gl.uniform1f(U.pScene.uTanHalf, tanHalfNow());
+  gl.uniform1i(U.pScene.uDisp0, 0);
+  gl.uniform1i(U.pScene.uDisp1, 1);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texDisp[0]);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, texDisp[1]);
+  gl.uniform3fv(U.pScene.uSunDir,  cel.sunDir);
+  gl.uniform3fv(U.pScene.uMoonDir, cel.moonDir);
+  gl.uniform3fv(U.pScene.uSunCol,  cel.sunCol);
+  gl.uniform3fv(U.pScene.uMoonCol, cel.moonCol);
+  gl.uniform1f(U.pScene.uDayF, cel.dayF);
+  gl.uniform1f(U.pScene.uDuskF, cel.duskF);
+  gl.uniform1f(U.pScene.uNightF, cel.nightF);
+  gl.uniform2f(U.pScene.uWindV, Math.sin(w.az)*w.U*0.42, Math.cos(w.az)*w.U*0.42);
+  gl.uniform1f(U.pScene.uWindU, w.U);
+  gl.uniform1f(U.pScene.uCloudCov, cov);
+  gl.uniform1f(U.pScene.uCloudType, ctCur);
+  gl.uniform1f(U.pScene.uOvercast, O);
+  gl.uniform1f(U.pScene.uRainF, rainCur);
+  gl.uniform1f(U.pScene.uDayHi, cel.dayHi);
+  const kasumi = Math.max(0, 1 - Math.abs(ctCur - 6));
+  gl.uniform1f(U.pScene.uHaze, Math.min(scur.haze + 0.5*kasumi*cov, 1));
+  gl.uniform1f(U.pScene.uCrisp, scur.crisp);
+  gl.uniform3fv(U.pScene.uWaterTint, scur.water);
+  gl.uniform1f(U.pScene.uSigScale, 2.2 - 1.7*P.waterTex);
+  gl.uniform1f(U.pScene.uDistSig, 1.35 - 0.90*P.waterTex);
+  gl.uniform1f(U.pScene.uSlick, P.slick);
+  const live = rings.filter(r => t - r.t0 < 14 && t >= r.t0);
+  ringArr.fill(0);
+  live.slice(0, MAXR).forEach((r,i)=>{ ringArr[i*4]=r.x; ringArr[i*4+1]=r.z; ringArr[i*4+2]=r.t0; ringArr[i*4+3]=r.amp; });
+  gl.uniform1i(U.pScene.uRingN, Math.min(live.length, MAXR));
+  gl.uniform4fv(U.pScene.uRings, ringArr);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // ---- bloom ----
+  gl.useProgram(pDown);
+  gl.uniform1i(U.pDown.uSrc, 0);
+  let srcT = sceneTex, sw = W, shh = Hh;
+  for(let i=0;i<5;i++){
+    const dw = Math.max(sw>>1,4), dh = Math.max(shh>>1,4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, bloomF[i]);
+    gl.viewport(0,0,dw,dh);
+    gl.uniform2f(U.pDown.uDstRes, dw, dh);
+    gl.uniform2f(U.pDown.uSrcTexel, 1/sw, 1/shh);
+    gl.uniform1i(U.pDown.uFirst, i===0?1:0);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, srcT);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    srcT = bloomT[i]; sw = dw; shh = dh;
+  }
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.useProgram(pUp);
+  gl.uniform1i(U.pUp.uSrc, 0);
+  for(let i=4;i>=1;i--){
+    const dw = Math.max(W>>i,4), dh = Math.max(Hh>>i,4);
+    const swp = Math.max(W>>(i+1),4), shp = Math.max(Hh>>(i+1),4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, bloomF[i-1]);
+    gl.viewport(0,0,dw,dh);
+    gl.uniform2f(U.pUp.uDstRes, dw, dh);
+    gl.uniform2f(U.pUp.uSrcTexel, 1/swp, 1/shp);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, bloomT[i]);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  gl.disable(gl.BLEND);
+
+  // ---- post → screen ----
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0,0,canvas.width,canvas.height);
+  gl.useProgram(pPost);
+  gl.uniform1i(U.pPost.uScene, 0);
+  gl.uniform1i(U.pPost.uBloom, 1);
+  gl.uniform2f(U.pPost.uRes, canvas.width, canvas.height);
+  gl.uniform1f(U.pPost.uExposure, cel.exposure);
+  gl.uniform1f(U.pPost.uTime, t);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, sceneTex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, bloomT[0]);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+/* ---------- adaptive resolution (presented-frame dt EMA) ---------- */
+let emaDt = 16.7, lastNow = 0, frameI = 0, adaptOn = true;
+function spawnRainRing(){
+  const [cx, cz] = lookAtXZ();
+  const a = Math.random()*6.28318;
+  const rr = 2 + (8 + P.camH*1.2 + 30)*Math.random()*Math.random();
+  addRing(cx + Math.sin(a)*rr, cz + Math.cos(a)*rr, 0.0028 + Math.random()*0.0042);
+}
+function tick(nowMs){
+  requestAnimationFrame(tick);
+  const now = nowMs/1000;
+  let dt = now - lastNow; lastNow = now;
+  if (!(dt > 0)) dt = 0;
+  const dtMs = dt*1000;
+  if (dtMs > 0 && dtMs < 80) emaDt = emaDt*0.94 + dtMs*0.06;   // exclude throttled frames
+  const dtC = Math.min(dt, 0.25);
+  const ts = Math.pow(2, P.flowLog);
+  simT += dtC*ts;
+  if (P.dayRun) skyT += dtC*ts;
+  // wind eases toward its target (auto drift or the slider)
+  const tgt = windTarget(simT);
+  wCur.U  += (tgt.U  - wCur.U )*Math.min(1, dtC*0.9);
+  wCur.az += (tgt.az - wCur.az)*Math.min(1, dtC*0.5);
+  // clouds drift on their own until touched（季節の基準量のまわりで）
+  const SS = SEASONS[P.season];
+  if (P.cloudAuto) P.cloudCov = Math.min(Math.max(
+    SS.cov + 0.22*Math.sin(skyT*0.009+1.2) + 0.12*Math.sin(skyT*0.0023+0.4), 0.02), 0.92);
+  covCur  += (P.cloudCov - covCur)*Math.min(1, dtC*0.7);
+  // 季節の空気はゆっくり入れ替わる
+  const ke = Math.min(1, dtC*0.4);
+  scur.eNoon += (SS.eNoon - scur.eNoon)*ke;
+  scur.crisp += (SS.crisp - scur.crisp)*ke;
+  scur.haze  += (SS.haze  - scur.haze )*ke;
+  for(let i=0;i<3;i++) scur.water[i] += (SS.water[i] - scur.water[i])*ke;
+  ctCur   += (P.cloudType - ctCur)*Math.min(1, dtC*1.2);
+  rainCur += ((P.rain?1:0) - rainCur)*Math.min(1, dtC*0.7);
+  if (rainCur > 0.05){
+    rainAcc += dtC*ts*7.0*rainCur;
+    while (rainAcc >= 1){ rainAcc -= 1; spawnRainRing(); }
+  }
+  frameI++;
+  if (adaptOn && frameI % 45 === 20){
+    if (emaDt > 19.5 && renderScale > 0.55){ renderScale = Math.max(0.55, renderScale - 0.12); allocScreen(); }
+    else if (emaDt < 17.2 && renderScale < 1.0){ renderScale = Math.min(1.0, renderScale + 0.08); allocScreen(); }
+  }
+  render();
+  if (frameI % 12 === 0) uiTick();
+}
+requestAnimationFrame(t=>{ lastNow = t/1000; requestAnimationFrame(tick); });
+
+/* ---------- overlays (wall-clock, robust to hidden tabs) ---------- */
+const elT = document.getElementById('title'), elH = document.getElementById('hint');
+setTimeout(()=>{ elT.style.opacity = 1; }, 600);
+setTimeout(()=>{ elT.style.opacity = 0; }, 7200);
+setTimeout(()=>{ elH.style.opacity = 0.8; }, 9000);
+setTimeout(()=>{ elH.style.opacity = 0; }, 21000);
+
+/* ---------- 調パネル ---------- */
+const $id = s => document.getElementById(s);
+const panel = $id('panel');
+$id('pToggle').addEventListener('click', ()=> panel.classList.toggle('open'));
+let skyScrubbing = false;
+function windWord(u){ return u<0.45?'凪':u<1.5?'そよかぜ':u<2.8?'かぜ':u<4.4?'つよめ':'はやて'; }
+function skyWord(s){
+  const phi = 2*Math.PI*(((s%300)+300)%300)/300;
+  const eMax = scur.eNoon*Math.PI/180, eMin = -20*Math.PI/180;
+  const e = (eMax-eMin)/2*Math.cos(phi) + (eMax+eMin)/2;
+  const pm = Math.sin(phi) > 0;
+  if (e > 0.42) return 'まひる';
+  if (e > 0.10) return pm ? 'ひるさがり' : 'あさ';
+  if (e > -0.02) return pm ? 'ゆうべ' : 'あかつき';
+  if (e > -0.12) return pm ? 'よい' : 'しののめ';
+  return 'よる';
+}
+function syncUI(){
+  $id('sWind').value = P.windAuto ? wCur.U : P.windU;
+  $id('sFlow').value = P.flowLog;
+  $id('sCam').value = Math.log10(P.camH);
+  $id('sZoom').value = P.fov;
+  $id('sCov').value = P.cloudAuto ? covCur : P.cloudCov;
+  $id('sTex').value = P.waterTex;
+  $id('sSwell').value = P.swell;
+  $id('sSlick').value = P.slick;
+  $id('cDay').checked = P.dayRun;
+  $id('cRain').checked = P.rain;
+  cloudBtns.forEach(b => b.classList.toggle('on', +b.dataset.t === P.cloudType));
+  [...$id('segSeason').children].forEach(b => b.classList.toggle('on', b.dataset.s === P.season));
+  uiTick(true);
+}
+function uiTick(force){
+  if (!panel.classList.contains('open') && !force) return;
+  const u = P.windAuto ? wCur.U : P.windU;
+  $id('vWind').textContent = windWord(u) + (P.windAuto ? '（おまかせ）' : ` ${u.toFixed(1)}m/s`);
+  const ts = Math.pow(2, P.flowLog);
+  $id('vFlow').textContent = (ts>=1? '×'+(Math.round(ts*10)/10) : '×'+ts.toFixed(2));
+  $id('vSky').textContent = skyWord(skyT) + (P.dayRun?'':'（とまり）');
+  if (!skyScrubbing) $id('sSky').value = ((skyT%300)+300)%300;
+  $id('vCam').textContent = (P.camH < 3 ? 'みずぎわ' : P.camH < 9 ? 'さんばし' : P.camH < 30 ? 'おかのうえ' : 'とりのめ') + ` ${P.camH < 10 ? P.camH.toFixed(1) : Math.round(P.camH)}m`;
+  $id('vZoom').textContent = '×' + (52/P.fov).toFixed(1);
+  const tx = P.waterTex;
+  $id('vTex').textContent = tx<0.2?'きぬ':tx<0.4?'しなやか':tx<0.62?'ふつう':tx<0.82?'くっきり':'硝子';
+  $id('vSwell').textContent = P.swell<0.05?'なし':P.swell<0.5?'かすか':'うねる';
+  $id('vSlick').textContent = P.slick<0.05?'なし':P.slick<0.5?'ところどころ':'帯';
+  $id('vCov').textContent = P.cloudAuto ? 'おまかせ' : (covCur<0.15?'快晴':covCur<0.45?'ところどころ':covCur<0.8?'くもりがち':'くもり');
+}
+$id('sWind').addEventListener('input', e=>{ P.windAuto = false; P.windU = +e.target.value; uiTick(true); });
+$id('sFlow').addEventListener('input', e=>{ P.flowLog = +e.target.value; uiTick(true); });
+$id('sSky').addEventListener('pointerdown', ()=> skyScrubbing = true);
+$id('sSky').addEventListener('input', e=>{ skyT = +e.target.value; uiTick(true); });
+$id('sSky').addEventListener('change', ()=> skyScrubbing = false);
+$id('cDay').addEventListener('change', e=>{ P.dayRun = e.target.checked; uiTick(true); });
+$id('sCam').addEventListener('input', e=>{ P.camH = Math.pow(10, +e.target.value); uiTick(true); });
+$id('sZoom').addEventListener('input', e=>{ P.fov = Math.min(Math.max(+e.target.value, 15), 75); uiTick(true); });
+$id('sCov').addEventListener('input', e=>{ P.cloudAuto = false; P.cloudCov = +e.target.value; uiTick(true); });
+const cloudBtns = [...document.querySelectorAll('#segCloud button, #segCloud2 button')];
+cloudBtns.forEach(b => b.addEventListener('click', ()=>{
+  P.cloudType = +b.dataset.t;
+  cloudBtns.forEach(x=>x.classList.toggle('on', x===b));
+  uiTick(true);
+}));
+[...$id('segSeason').children].forEach(b => b.addEventListener('click', ()=>{
+  applySeason(b.dataset.s, false);
+  syncUI();
+}));
+$id('sTex').addEventListener('input', e=>{ P.waterTex = +e.target.value; uiTick(true); });
+$id('sSwell').addEventListener('input', e=>{ P.swell = +e.target.value; uiTick(true); });
+$id('sSlick').addEventListener('input', e=>{ P.slick = +e.target.value; uiTick(true); });
+$id('cRain').addEventListener('change', e=>{ P.rain = e.target.checked; uiTick(true); });
+const PRESETS = {
+  kagami:    {season:'aki',   windU:0.30, cov:0.10, type:0, rain:false, sky:212, tex:0.35, yaw:-0.69},
+  michi:     {season:'aki',   windU:2.20, cov:0.30, type:0, rain:false, sky:90,  slick:0.35, yaw:0.90},
+  nibi:      {season:'fuyu',  windU:3.40, cov:0.97, type:5, rain:false, sky:35},
+  shigure:   {season:'natsu', windU:1.10, cov:0.92, type:5, rain:true,  sky:97},
+  tsukinagi: {season:'aki',   windU:0.50, cov:0.08, type:0, rain:false, sky:150},
+  mahiru:    {season:'natsu', windU:2.40, cov:0.34, type:3, rain:false, sky:0,   tex:0.70},
+  iwashi:    {season:'aki',   windU:1.50, cov:0.55, type:1, rain:false, sky:30,  tex:0.45},
+  namari:    {season:'fuyu',  windU:3.40, cov:0.97, type:5, rain:false, sky:55},
+  nyudo:     {season:'natsu', windU:2.00, cov:0.42, type:4, rain:false, sky:25,  tex:0.65},
+};
+function applyPreset(p){
+  if (p.season) applySeason(p.season, false);
+  P.windAuto = false; P.windU = p.windU;
+  P.cloudAuto = false; P.cloudCov = p.cov; P.cloudType = p.type;
+  P.rain = p.rain; skyT = p.sky; P.camH = p.camH || 2.1;
+  P.waterTex = p.tex != null ? p.tex : 0.5;
+  P.swell = p.swell || 0;
+  P.slick = p.slick || 0;
+  P.pitch = -0.115; P.yaw = p.yaw != null ? p.yaw : 0; P.fov = 52;   // その日の定番の構図
+}
+document.querySelectorAll('#panel .presets button').forEach(b => b.addEventListener('click', ()=>{
+  const p = PRESETS[b.dataset.p]; if (!p) return;
+  applyPreset(p);
+  syncUI();
+}));
+$id('bAuto').addEventListener('click', ()=>{
+  P.windAuto = true; P.flowLog = 0; P.dayRun = true;
+  P.camH = 2.1; P.pitch = -0.115; P.yaw = 0; P.fov = 52;
+  P.cloudAuto = true; P.rain = false;
+  P.waterTex = 0.5; P.swell = 0; P.slick = 0;
+  applySeason(seasonByMonth(), false);
+  syncUI();
+});
+
+/* 季節と「きょう」の初期値。URL: ?s=haru|natsu|aki|fuyu / ?p=プリセット名（緩和なしで即時） */
+applySeason(Q.get('s') && SEASONS[Q.get('s')] ? Q.get('s') : seasonByMonth(), true);
+const urlPreset = PRESETS[Q.get('p')];
+if (urlPreset){
+  const p = urlPreset;
+  applyPreset(p);
+  if (p.season) applySeason(p.season, true);
+  P.cloudType = p.type;
+  wCur.U = p.windU; covCur = p.cov; ctCur = p.type; rainCur = p.rain ? 1 : 0;
+  if (p.rain){ for(let i=0;i<20;i++){
+    const a = (Math.random()-0.5)*1.1, d = 3 + 55*Math.random()*Math.random();
+    rings.push({x:Math.sin(a)*d, z:Math.cos(a)*d, t0: simT - Math.random()*5, amp: 0.0028+Math.random()*0.0042});
+  }}
+}
+/* デバッグ/検証/構図の共有: ?cam=高さm,俯角deg,向きdeg[,画角deg] */
+if (Q.get('cam')){
+  const [h, pd, yd, fd] = Q.get('cam').split(',').map(Number);
+  if (isFinite(h)) P.camH = Math.min(Math.max(h, 1.2), 80);
+  if (isFinite(pd)) P.pitch = Math.min(Math.max(pd*Math.PI/180, -1.55), 0.85);
+  if (isFinite(yd)){ let y = yd*Math.PI/180; y = Math.atan2(Math.sin(y), Math.cos(y)); P.yaw = y; }
+  if (isFinite(fd)) P.fov = Math.min(Math.max(fd, 15), 75);
+}
+syncUI();
+
+/* ---------- debug hooks ---------- */
+window.__seek = s => { simT = s; skyT = s; };
+window.__step = (nFrames, fps) => {
+  adaptOn = false;
+  const dt = 1/(fps||60);
+  for(let i=0;i<nFrames;i++){ simT += dt; if (P.dayRun) skyT += dt; render(); }
+};
+window.__ring = (x,z,a) => addRing(x||3, z||14, a||0.005);
+window.__P = P;
+</script>
+</body>
+</html>
