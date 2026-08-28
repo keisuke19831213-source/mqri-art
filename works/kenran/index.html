@@ -429,9 +429,17 @@ void main(){
 
 /* ---------- FBOs ---------- */
 let W=2,H=2,sceneF=null,bloomF=[],bloomUpF=[];
+let cssW=0,cssH=0;
 const DPR_CAP=1.6;
+/* 実寸はcanvasの実測から取る。resizeイベントは取りこぼすことがある
+   （ペインの再レイアウト・非表示タブのinnerWidth=0）ので毎フレーム照合する */
+function measure(){
+  return [Math.max(canvas.clientWidth||window.innerWidth||0,64),
+          Math.max(canvas.clientHeight||window.innerHeight||0,64)];
+}
 function allocate(){
-  const iw=Math.max(window.innerWidth,64), ih=Math.max(window.innerHeight,64);
+  const [iw,ih]=measure();
+  cssW=iw; cssH=ih;
   const dpr=Math.min(window.devicePixelRatio||1,DPR_CAP);
   W=Math.max(Math.round(iw*dpr),64); H=Math.max(Math.round(ih*dpr),64);
   canvas.width=W; canvas.height=H;
@@ -446,6 +454,8 @@ function allocate(){
 }
 allocate();
 addEventListener('resize',allocate);
+addEventListener('orientationchange',allocate);
+if(window.ResizeObserver) new ResizeObserver(()=>{ const [w,h]=measure(); if(w!==cssW||h!==cssH) allocate(); }).observe(canvas);
 
 /* ---------- 状態 / 一生の環 ---------- */
 let simTime=0, beatPhase=0, cycleIdx=-1;
@@ -718,6 +728,8 @@ let last=performance.now();
 function frame(now){
   let dt=(now-last)/1000; last=now;
   if(dt>0.05)dt=0.05;               // 非表示タブの巨大dtを封じる
+  const [mw,mh]=measure();          // 取りこぼしたリサイズをここで拾う
+  if(mw!==cssW||mh!==cssH) allocate();
   lampAmp+=(lampTarget-lampAmp)*Math.min(1,dt*9);
   zoom+=(zoomTarget-zoom)*Math.min(1,dt*6);
   curDist+=(baseDist()*zoom-curDist)*Math.min(1,dt*6);
