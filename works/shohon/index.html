@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>正本 — Shōhon</title>
+<style>
+  html,body{margin:0;height:100%;background:#0b0c0e;overflow:hidden;font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;color:#cfd3d8}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  #ui{position:fixed;left:18px;bottom:16px;pointer-events:none;user-select:none;opacity:.86;transition:opacity 2s}
+  #ui.fade{opacity:0}
+  #title{font-size:15px;letter-spacing:.35em;color:#e8e6df}
+  #title span{display:block;margin-top:5px;font-size:10.5px;letter-spacing:.12em;color:#9aa0a8}
+  #hint{margin-top:10px;font-size:10px;letter-spacing:.06em;color:#6f7680;line-height:1.7}
+  #ref{position:fixed;right:16px;top:14px;font-size:10px;letter-spacing:.14em;color:#ff5a3c;pointer-events:none;display:none}
+  #ref.on{display:block}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="title">正本<span>Shōhon — 生命の花を硝子に浮き彫り、光で読む</span></div>
+  <div id="hint">ドラッグ＝視点　Shift＋ドラッグ／二本指＝太陽　ホイール／ピンチ＝寄る<br>Space＝太陽を止める　R＝正本を重ねる</div>
+</div>
+<div id="ref">正本（reference/flower-of-life.svg）を重ねています</div>
+
+<!-- ===== 正本：reference/flower-of-life.svg（単一の真実の源）をそのまま同梱 ===== -->
+<script id="shohon" type="text/plain">
+<svg id="_レイヤー_2" data-name="レイヤー 2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 477.23 477.23">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: none;
+        stroke: #231815;
+        stroke-linejoin: round;
+        stroke-width: 3px;
+      }
+    </style>
+  </defs>
+  <g id="_レイヤー_1-2" data-name="レイヤー 1">
+    <g>
+      <g>
+        <circle class="cls-1" cx="238.62" cy="238.62" r="68.03"/>
+        <circle class="cls-1" cx="238.62" cy="170.59" r="68.03"/>
+        <circle class="cls-1" cx="238.62" cy="306.65" r="68.03"/>
+        <circle class="cls-1" cx="179.66" cy="272.63" r="68.03"/>
+        <circle class="cls-1" cx="179.66" cy="204.6" r="68.03"/>
+        <circle class="cls-1" cx="297.58" cy="204.6" r="68.03"/>
+        <path class="cls-1" d="M306.65,102.55c0,12.37-3.3,23.97-9.07,33.96-.01.02-.02.04-.03.05-11.76,20.33-33.73,34.01-58.9,34.02h-.06c-25.17-.01-47.14-13.69-58.9-34.02,0-.02-.02-.03-.03-.05-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96h0s.02-.04.03-.05h0c11.76-20.33,33.73-34,58.9-34.02h.06c25.17.01,47.14,13.69,58.9,34.02h0s.02.04.03.05c5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M247.69,136.57c0,12.37-3.3,23.97-9.07,33.96,0,.02-.02.03-.03.05h0c-11.76,20.33-33.73,34-58.9,34.02h-.06c-25.17-.01-47.14-13.69-58.9-34.02h0s-.02-.03-.03-.05c-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c0-.02.02-.04.03-.05,11.76-20.33,33.73-34.01,58.9-34.02h.06c25.17.01,47.14,13.69,58.9,34.02,0,.02.02.03.03.05,5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M365.61,136.57c0,12.37-3.3,23.97-9.07,33.96,0,.02-.02.03-.03.05h0c-11.76,20.33-33.73,34-58.9,34.02h-.06c-25.17-.01-47.14-13.69-58.9-34.02h0s-.02-.03-.03-.05c-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c0-.02.02-.04.03-.05,11.76-20.33,33.73-34,58.9-34.02h.06c25.17.01,47.14,13.69,58.9,34.02.01.02.02.03.03.05,5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M297.55,68.54c-11.76,20.33-33.73,34.01-58.9,34.02h-.06c-25.17-.01-47.14-13.69-58.9-34.02,11.76-20.33,33.73-34,58.9-34.02h0s.02-.03.03-.05c0,.02.02.04.03.05h0c25.17.01,47.14,13.69,58.9,34.02Z"/>
+        <path class="cls-1" d="M247.69,68.54c0,12.37-3.3,23.97-9.07,33.96,0,.02-.02.03-.03.05h0c-11.76,20.33-33.73,34-58.9,34.01h-.06c-25.17-.01-47.14-13.69-58.9-34.01h0c11.76-20.33,33.73-34.01,58.9-34.02h0s.02-.04.03-.05c0,.02.02.04.03.05h0c11.76-20.33,33.73-34,58.9-34.02h0s.02.04.03.05c5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M356.51,102.55h0c-11.76,20.33-33.73,34-58.9,34.01h-.06c-25.17-.01-47.14-13.69-58.9-34.01h0s-.02-.04-.03-.05c-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c0-.02.02-.04.03-.05h0c25.17.01,47.14,13.69,58.9,34.02h0s.02-.03.03-.05c.01.02.02.03.03.05h0c25.17.01,47.14,13.69,58.9,34.02Z"/>
+        <path class="cls-1" d="M179.66,68.48s.02.04.03.05h-.06s.02-.04.03-.05Z"/>
+        <path class="cls-1" d="M238.59,34.52c-11.76,20.33-33.73,34-58.9,34.02,11.76-20.33,33.73-34,58.9-34.02Z"/>
+        <path class="cls-1" d="M297.55,68.54c-25.17-.01-47.14-13.69-58.9-34.02,25.17.01,47.14,13.69,58.9,34.02Z"/>
+        <path class="cls-1" d="M297.58,68.49s.02.03.03.05h-.06s.02-.03.03-.05Z"/>
+        <circle class="cls-1" cx="297.58" cy="272.63" r="68.03"/>
+        <path class="cls-1" d="M306.65,374.68c0,12.37-3.3,23.97-9.07,33.96-.01.02-.02.04-.03.05h0c-11.76,20.33-33.73,34.01-58.9,34.02h-.06c-25.17-.01-47.14-13.69-58.9-34.02h0s-.02-.04-.03-.05c-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c0-.02.02-.04.03-.05,11.76-20.33,33.73-34,58.9-34.02h.06c25.17.01,47.14,13.69,58.9,34.02.01.02.02.04.03.05,5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M247.69,340.66c0,12.37-3.3,23.97-9.07,33.96,0,.02-.02.04-.03.05h0c-11.76,20.33-33.73,34-58.9,34.02h-.06c-25.17-.01-47.14-13.69-58.9-34.01h0s-.02-.04-.03-.05c-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c0-.02.02-.03.03-.05h0c11.76-20.33,33.73-34,58.9-34.02h.06c25.17.01,47.14,13.69,58.9,34.02h0s.02.03.03.05c5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M365.61,340.66c0,12.37-3.3,23.97-9.07,33.96,0,.02-.02.04-.03.05-11.76,20.33-33.73,34-58.9,34.02h-.06c-25.17-.01-47.14-13.69-58.9-34.02,0-.02-.02-.03-.03-.05-5.77-10-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c0-.02.02-.03.03-.05h0c11.76-20.33,33.73-34,58.9-34.02h.06c25.17.01,47.14,13.69,58.9,34.02h0s.02.03.03.05c5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M297.55,408.7c-11.76,20.33-33.73,34.01-58.9,34.02h0s-.02.03-.03.05c0-.02-.02-.03-.03-.05h0c-25.17-.01-47.14-13.69-58.9-34.02,11.76-20.33,33.73-34,58.9-34.02h.06c25.17.01,47.14,13.69,58.9,34.02Z"/>
+        <path class="cls-1" d="M247.69,408.7c0,12.37-3.3,23.97-9.07,33.96,0,.02-.02.03-.03.05h0c-25.17-.01-47.14-13.69-58.9-34.02h0s-.02.04-.03.05c-.01-.02-.02-.04-.03-.05h0c-25.17-.01-47.14-13.69-58.9-34.01h0s0,0,0,0c11.76-20.33,33.73-34,58.9-34.02h.06c25.17.01,47.14,13.69,58.9,34.02h0s.02.04.03.05c5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M356.51,374.68c-11.76,20.33-33.73,34-58.9,34.02h0s-.02.04-.03.05c-.01-.02-.02-.04-.03-.05h0c-11.76,20.33-33.73,34.01-58.9,34.02h0s-.02-.03-.03-.05c-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c0-.02.02-.03.03-.05h0c11.76-20.33,33.73-34,58.9-34.02h.06c25.17.01,47.14,13.69,58.9,34.02h0Z"/>
+        <path class="cls-1" d="M179.69,408.7s-.02.04-.03.05c-.01-.02-.02-.04-.03-.05h.06Z"/>
+        <path class="cls-1" d="M238.59,442.71c-25.17-.01-47.14-13.69-58.9-34.02,25.17.01,47.14,13.69,58.9,34.02Z"/>
+        <path class="cls-1" d="M188.73,238.62c0,12.37-3.3,23.97-9.07,33.96-.01.02-.02.04-.03.05-11.76,20.33-33.73,34-58.9,34.02h-.06c-25.17-.01-47.14-13.69-58.9-34.02,0-.02-.02-.03-.03-.05-5.77-10-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c.01-.02.02-.03.03-.05,11.76-20.33,33.73-34.01,58.9-34.02h.06c25.17.01,47.14,13.69,58.9,34.02h0s.02.04.03.05c5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M188.73,170.59c0,12.37-3.3,23.97-9.07,33.96h0s-.02.04-.03.05h0c-11.76,20.33-33.73,34-58.9,34.02h-.06c-25.17-.01-47.14-13.69-58.9-34.02-.01-.02-.02-.04-.03-.05-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c.01-.02.02-.03.03-.05h0c11.76-20.33,33.73-34,58.9-34.01h.06c25.17.01,47.14,13.69,58.9,34.01h0s.02.04.03.05h0c5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M188.73,306.65c0,12.37-3.3,23.97-9.07,33.96h0s-.02.04-.03.05h0c-11.76,20.33-33.73,34-58.9,34.02h-.06c-25.17-.01-47.14-13.69-58.9-34.02h0s-.02-.03-.03-.05c-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c.01-.02.02-.03.03-.05h0c11.76-20.33,33.73-34,58.9-34.02h.06c25.17.01,47.14,13.69,58.9,34.02h0s.02.03.03.05h0c5.77,10,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M129.77,272.63c0,12.37-3.3,23.97-9.07,33.96-.01.02-.02.04-.03.05h0c-11.76,20.33-33.73,34-58.9,34.02h-.06s.02-.03.03-.05c-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c0-.02-.02-.03-.03-.05,0-.02.02-.03.03-.05-5.77-10-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c0-.02-.02-.03-.03-.05h.06c25.17.01,47.14,13.69,58.9,34.02.01.02.02.03.03.05,5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M129.77,204.6c0,12.37-3.3,23.97-9.07,33.96-.01.02-.02.04-.03.05h0c-11.76,20.33-33.73,34-58.9,34.02h-.06s.02-.03.03-.05c-5.77-10-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c0-.02-.02-.03-.03-.05,0-.02.02-.04.03-.05-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c0-.02-.02-.03-.03-.05h.06c25.17.01,47.14,13.69,58.9,34.02h0s.02.03.03.05c5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M188.73,102.55c0,12.37-3.3,23.97-9.07,33.96-.01.02-.02.04-.03.05-11.76,20.33-33.73,34.01-58.9,34.02h-.06c-25.17-.01-47.14-13.69-58.9-34.02h0c11.76-20.33,33.73-34,58.9-34.01h0s.02-.04.03-.05c0,.02.02.03.03.05,11.76-20.33,33.73-34.01,58.9-34.02h0s.02.04.03.05h0c5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M129.77,136.57c0,12.37-3.3,23.97-9.07,33.96-.01.02-.02.03-.03.05h0c-11.76,20.33-33.73,34-58.9,34.02h-.06s.02-.04.03-.05c-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c0-.02-.02-.03-.03-.05,0-.02.02-.03.03-.05.01.02.02.04.03.05h0c11.76-20.33,33.73-34,58.9-34.01h0s.02.03.03.05c5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M120.7,102.5s.02.03.03.05h-.06s.02-.04.03-.05Z"/>
+        <path class="cls-1" d="M179.62,68.54c-11.76,20.33-33.73,34.01-58.9,34.02h0c11.76-20.33,33.73-34.01,58.9-34.02Z"/>
+        <path class="cls-1" d="M61.73,136.52s.02.04.03.05h-.06s.02-.03.03-.05Z"/>
+        <path class="cls-1" d="M120.66,102.55c-11.76,20.33-33.73,34-58.9,34.01,11.76-20.33,33.73-34,58.9-34.01Z"/>
+        <path class="cls-1" d="M188.73,374.68c0,12.37-3.3,23.97-9.07,33.96-.01.02-.02.04-.03.05h0c-25.17-.01-47.14-13.69-58.9-34.01-.01.02-.02.03-.03.05-.01-.02-.02-.03-.03-.05h0s0,0,0,0c-25.17-.01-47.14-13.69-58.9-34.02h0c11.76-20.33,33.73-34,58.9-34.02h.06c25.17.01,47.14,13.69,58.9,34.02,0,.02.02.04.03.05,5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M129.77,340.66c0,12.37-3.3,23.97-9.07,33.96-.01.02-.02.04-.03.05h0c-25.17-.01-47.14-13.69-58.9-34.02h0s-.02.03-.03.05c0-.02-.02-.04-.03-.05,0-.02.02-.03.03-.05-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c0-.02-.02-.03-.03-.05h.06c25.17.01,47.14,13.69,58.9,34.02h0s.02.03.03.05c5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M179.62,408.7c-25.17-.01-47.14-13.69-58.9-34.01-.01.02-.02.03-.03.05-.01-.02-.02-.03-.03-.05h0s.06,0,.06,0c25.17.01,47.14,13.69,58.9,34.02Z"/>
+        <path class="cls-1" d="M61.73,340.72s-.02-.04-.03-.05h.06s-.02.03-.03.05Z"/>
+        <path class="cls-1" d="M120.66,374.68c-25.17-.01-47.14-13.69-58.9-34.02,25.17.01,47.14,13.69,58.9,34.02Z"/>
+        <path class="cls-1" d="M70.81,238.62c0,12.37-3.3,23.97-9.07,33.96-5.77-10-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M70.81,170.59c0,12.37-3.3,23.97-9.07,33.96-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M70.81,306.65c0,12.37-3.3,23.97-9.07,33.96-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M297.55,408.7c-11.76,20.33-33.73,34.01-58.9,34.02,11.76-20.33,33.73-34,58.9-34.02Z"/>
+        <path class="cls-1" d="M297.58,408.75s-.02-.04-.03-.05h.06s-.02.04-.03.05Z"/>
+        <path class="cls-1" d="M424.57,238.62c0,12.37-3.3,23.97-9.07,33.96-.01.02-.02.03-.03.05-11.76,20.33-33.73,34-58.9,34.02h-.06c-25.17-.01-47.14-13.69-58.9-34.02,0-.02-.02-.04-.03-.05-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c.01-.02.02-.04.03-.05h0c11.76-20.33,33.73-34.01,58.9-34.02h.06c25.17.01,47.14,13.69,58.9,34.02.01.02.02.03.03.05,5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M424.57,170.59c0,12.37-3.3,23.97-9.07,33.96-.01.02-.02.03-.03.05-11.76,20.33-33.73,34-58.9,34.02h-.06c-25.17-.01-47.14-13.69-58.9-34.02h0s-.02-.04-.03-.05c-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c.01-.02.02-.04.03-.05h0c11.76-20.33,33.73-34,58.9-34.01h.06c25.17.01,47.14,13.69,58.9,34.01h0s.02.04.03.05c5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M424.57,306.65c0,12.37-3.3,23.97-9.07,33.96-.01.02-.02.03-.03.05h0c-11.76,20.33-33.73,34-58.9,34.02h-.06c-25.17-.01-47.14-13.69-58.9-34.02h0s-.02-.04-.03-.05c-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c.01-.02.02-.04.03-.05h0c11.76-20.33,33.73-34,58.9-34.02h.06c25.17.01,47.14,13.69,58.9,34.02h0s.02.03.03.05c5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M424.57,238.62c0,12.37-3.3,23.97-9.07,33.96,0,.02.02.03.03.05h-.06c-25.17-.01-47.14-13.69-58.9-34.02h0s-.02-.03-.03-.05c-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c.01-.02.02-.03.03-.05h0c11.76-20.33,33.73-34,58.9-34.02h.06s-.02.04-.03.05c5.77,9.99,9.07,21.59,9.07,33.96s-3.3,23.97-9.07,33.96c0,.02.02.03.03.05,0,.02-.02.03-.03.05,5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M415.47,136.57c-11.76,20.33-33.73,34.01-58.9,34.02h-.06c-25.17-.01-47.14-13.69-58.9-34.02,0-.02-.02-.03-.03-.05-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c.01-.02.02-.04.03-.05h0c25.17.01,47.14,13.69,58.9,34.02.01-.02.02-.04.03-.05.01.02.02.03.03.05h0c25.17.01,47.14,13.69,58.9,34.01h0Z"/>
+        <path class="cls-1" d="M415.5,204.55s.02.03.03.05h-.06c-25.17-.01-47.14-13.69-58.9-34.02h0s-.02-.03-.03-.05c-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c.01-.02.02-.04.03-.05h0c25.17.01,47.14,13.69,58.9,34.01h0s.02-.03.03-.05c0,.02.02.04.03.05,0,.02-.02.04-.03.05,5.77,9.99,9.07,21.59,9.07,33.96s-3.3,23.97-9.07,33.96Z"/>
+        <path class="cls-1" d="M356.51,102.55h0c-25.17-.01-47.14-13.69-58.9-34.02,25.17.01,47.14,13.69,58.9,34.02Z"/>
+        <path class="cls-1" d="M356.54,102.5s.02.03.03.05h-.06s.02-.04.03-.05Z"/>
+        <path class="cls-1" d="M415.47,136.57c-25.17-.01-47.14-13.69-58.9-34.01,25.17.01,47.14,13.69,58.9,34.01Z"/>
+        <path class="cls-1" d="M415.5,136.52s.02.04.03.05h-.06s.02-.03.03-.05Z"/>
+        <path class="cls-1" d="M424.57,306.65c0,12.37-3.3,23.97-9.07,33.96,0,.02.02.03.03.05h-.06c-25.17-.01-47.14-13.69-58.9-34.02h0s-.02-.03-.03-.05c-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c.01-.02.02-.04.03-.05,11.76-20.33,33.73-34,58.9-34.02h.06s-.02.03-.03.05c5.77,9.99,9.07,21.59,9.07,33.96s-3.3,23.97-9.07,33.96c0,.02.02.03.03.05,0,.02-.02.03-.03.05,5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M415.47,340.66h0c-11.76,20.33-33.73,34-58.9,34.02h0s-.02.03-.03.05c0-.02-.02-.03-.03-.05-11.76,20.33-33.73,34-58.9,34.02h0s-.02-.03-.03-.05h0c-5.77-10-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c.01-.02.02-.04.03-.05,11.76-20.33,33.73-34,58.9-34.02h.06c25.17.01,47.14,13.69,58.9,34.02Z"/>
+        <path class="cls-1" d="M415.5,340.61s.02.03.03.05c0,.02-.02.03-.03.05-.01-.02-.02-.04-.03-.05h0c-11.76,20.33-33.73,34-58.9,34.02h0s-.02-.03-.03-.05c-5.77-10-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c.01-.02.02-.03.03-.05h0c11.76-20.33,33.73-34,58.9-34.02h.06s-.02.03-.03.05c5.77,9.99,9.07,21.59,9.07,33.96s-3.3,23.97-9.07,33.96Z"/>
+        <path class="cls-1" d="M356.51,374.68h0c-11.76,20.33-33.73,34-58.9,34.02,11.76-20.33,33.73-34,58.9-34.02Z"/>
+        <path class="cls-1" d="M356.51,374.68h.06s-.02.03-.03.05c0-.02-.02-.03-.03-.05Z"/>
+        <path class="cls-1" d="M415.47,340.66c-11.76,20.33-33.73,34-58.9,34.02,11.76-20.33,33.73-34,58.9-34.02Z"/>
+        <path class="cls-1" d="M415.5,340.72s-.02-.04-.03-.05h.06s-.02.03-.03.05Z"/>
+        <path class="cls-1" d="M424.57,238.62c0,12.37-3.3,23.97-9.07,33.96-5.77-10-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M424.57,170.59c0,12.37-3.3,23.97-9.07,33.96-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+        <path class="cls-1" d="M424.57,306.65c0,12.37-3.3,23.97-9.07,33.96-5.77-9.99-9.07-21.59-9.07-33.96s3.3-23.97,9.07-33.96c5.77,9.99,9.07,21.59,9.07,33.96Z"/>
+      </g>
+      <circle class="cls-1" cx="238.62" cy="238.62" r="204.09"/>
+      <circle class="cls-1" cx="238.62" cy="238.62" r="237.12"/>
+    </g>
+  </g>
+</svg>
+</script>
+
+<script>
+'use strict';
+// ============================================================
+//  正本 — Shōhon   (2026-09-04 / ccf5 art)
+//  生命の花の正本（六方格子の円55＋環2）を光学ガラスの円盤に刻み、
+//  太陽光の屈折コースティクスと煌めきをパストレースで読む。
+// ============================================================
+const Q = new URLSearchParams(location.search);
+const num = (k, d) => (Q.has(k) && isFinite(parseFloat(Q.get(k)))) ? parseFloat(Q.get(k)) : d;
+
+// ---------- 正本の幾何（reference/flower-of-life.svg から数値で確定）----------
+// 単位＝円の半径（SVG 68.03px）。格子基底 (0,1),(√3/2,1/2)。
+// |c|≤2 の19円は全円、|c|=√7,3,2√3,√13 の36円は「19円の和集合の内側」の弧のみ
+// （span はそれぞれ 180°,120°,60°,60°）。環 r=3.0 と r=237.12/68.03=3.4855。
+const ELEMENTS = [[0.0,0.0,-1.570796,6.283185,1.0,0],[-0.866025,-0.5,0.523599,6.283185,1.0,1],[0.0,-1.0,1.570796,6.283185,1.0,1],[0.866025,-0.5,2.617994,6.283185,1.0,1],[0.866025,0.5,-2.617994,6.283185,1.0,1],[0.0,1.0,-1.570796,6.283185,1.0,1],[-0.866025,0.5,-0.523599,6.283185,1.0,1],[-0.866025,-1.5,1.047198,6.283185,1.0,2],[0.866025,-1.5,2.094395,6.283185,1.0,2],[1.732051,0.0,-3.141593,6.283185,1.0,2],[0.866025,1.5,-2.094395,6.283185,1.0,2],[-0.866025,1.5,-1.047198,6.283185,1.0,2],[-1.732051,0.0,-0.0,6.283185,1.0,2],[-1.732051,-1.0,0.523599,6.283185,1.0,3],[0.0,-2.0,1.570796,6.283185,1.0,3],[1.732051,-1.0,2.617994,6.283185,1.0,3],[1.732051,1.0,-2.617994,6.283185,1.0,3],[0.0,2.0,-1.570796,6.283185,1.0,3],[-1.732051,1.0,-0.523599,6.283185,1.0,3],[-2.598076,-0.5,4.712389,3.142465,1.0,4],[-1.732051,-2.0,5.759587,3.142465,1.0,4],[-0.866025,-2.5,5.759587,3.142465,1.0,4],[0.866025,-2.5,0.523599,3.142465,1.0,4],[1.732051,-2.0,0.523599,3.142465,1.0,4],[2.598076,-0.5,1.570796,3.142465,1.0,4],[2.598076,0.5,1.570796,3.142465,1.0,4],[1.732051,2.0,2.617994,3.142465,1.0,4],[0.866025,2.5,2.617994,3.142465,1.0,4],[-0.866025,2.5,3.665191,3.142465,1.0,4],[-1.732051,2.0,3.665191,3.142465,1.0,4],[-2.598076,0.5,4.712389,3.142465,1.0,4],[-2.598076,-1.5,5.759587,2.095268,1.0,5],[0.0,-3.0,0.523599,2.095268,1.0,5],[2.598076,-1.5,1.570796,2.095268,1.0,5],[2.598076,1.5,2.617994,2.095268,1.0,5],[0.0,3.0,3.665191,2.095268,1.0,5],[-2.598076,1.5,4.712389,2.095268,1.0,5],[-1.732051,-3.0,0.522726,1.049816,1.0,6],[1.732051,-3.0,1.569924,1.049816,1.0,6],[3.464102,0.0,2.617121,1.049816,1.0,6],[1.732051,3.0,3.664319,1.049816,1.0,6],[-1.732051,3.0,4.711516,1.049816,1.0,6],[-3.464102,0.0,5.758714,1.049816,1.0,6],[-3.464102,-1.0,5.759587,1.048943,1.0,7],[-2.598076,-2.5,0.522726,1.048943,1.0,7],[-0.866025,-3.5,0.523599,1.048943,1.0,7],[0.866025,-3.5,1.569924,1.048943,1.0,7],[2.598076,-2.5,1.570796,1.048943,1.0,7],[3.464102,-1.0,2.617121,1.048943,1.0,7],[3.464102,1.0,2.617994,1.048943,1.0,7],[2.598076,2.5,3.664319,1.048943,1.0,7],[0.866025,3.5,3.665191,1.048943,1.0,7],[-0.866025,3.5,4.711516,1.048943,1.0,7],[-2.598076,2.5,4.712389,1.048943,1.0,7],[-3.464102,1.0,5.758714,1.048943,1.0,7],[0,0,-1.570796,6.283185,3.0,8],[0,0,-1.570796,6.283185,3.485521,9]];
+const NEL = ELEMENTS.length; // 57
+
+// ---------- 物理・造形の定数 ----------
+const CFG = {
+  T: 0.32,                    // 円盤の厚み（単位＝円の半径）
+  Rd: 3.62,                   // 円盤の半径（外環3.4855の少し外）
+  Re: 0.055,                  // 縁の丸み
+  w: num('w', 0.035),         // 線の半幅（正本の線幅3px/68.03≒0.044 の1.6倍。集光量＝線の輝きはこの幅で決まる）
+  D: num('D', 0.0056),        // 線の高さ。凸レンズの像側焦点 f'=n·ρ/(n-1) を床までの厚み0.32に揃える（ρ=w²/2D=0.109）
+  n: 1.52, disp: num('disp', 0.02),   // 屈折率と分散（R:n-disp / G:n / B:n+disp・フリントガラス寄りに強調）
+  sig: [0.28, 0.08, 0.20],    // 吸収係数（ソーダ石灰ガラスの緑）
+  rough: num('rough', 0.03),  // 線の研磨残り（法線の揺らぎ rad・Beckmann σ）
+  L: 4.9,                     // コースティクス写像の半幅
+  mapRes: num('map', 2048),
+  photons: Math.round(num('ph', 640)) ** 2,
+  photonsB: 256 * 256,
+  sunAng: 0.5 * Math.PI / 180,   // 太陽の視半径
+  exposure: num('exp', 4.0),
+  bloom: num('bloom', 0.055),
+};
+
+// ============================================================
+//  GLSL
+// ============================================================
+const GLSL_COMMON = `
+#define NEL ${NEL}
+#define PI 3.14159265358979
+uniform vec4 uEl[NEL];      // cx, cy, a0, span
+uniform vec2 uEl2[NEL];     // radius, sweep(0..1)
+uniform float uT, uRd, uRe, uW, uD, uN, uDisp, uRough, uL;
+uniform vec3 uSig, uSun, uSunCol;
+uniform float uSunCosA, uSunEh, uFrame;
+
+uvec3 pcg3d(uvec3 v){ v = v*1664525u + 1013904223u; v.x += v.y*v.z; v.y += v.z*v.x; v.z += v.x*v.y; v ^= v >> 16u; v.x += v.y*v.z; v.y += v.z*v.x; v.z += v.x*v.y; return v; }
+vec3 rnd3(uvec3 s){ return vec3(pcg3d(s)) * (1.0/4294967296.0); }
+
+vec3 sampleSun(vec2 u){
+  float cz = 1.0 - u.x*(1.0-uSunCosA); float sz = sqrt(max(0.0,1.0-cz*cz)); float ph = 6.2831853*u.y;
+  vec3 w = uSun; vec3 a = abs(w.z)<0.9 ? vec3(0,0,1) : vec3(1,0,0);
+  vec3 t1 = normalize(cross(a,w)); vec3 t2 = cross(w,t1);
+  return normalize(t1*(sz*cos(ph)) + t2*(sz*sin(ph)) + w*cz);
+}
+float fresnel(float cosi, float eta){ // eta = n_t/n_i
+  cosi = clamp(cosi, 0.0, 1.0); float s2 = (1.0 - cosi*cosi)/(eta*eta); if (s2 >= 1.0) return 1.0;
+  float ct = sqrt(1.0 - s2); float rs = (cosi - eta*ct)/(cosi + eta*ct); float rp = (eta*cosi - ct)/(eta*cosi + ct);
+  return 0.5*(rs*rs + rp*rp);
+}
+// ---- 溝の場（正本の弧の集合）：高さ h≤0 と勾配、帯に含まれる本数 ----
+float gprof(float d){ float x = d/uW; return x < 1.0 ? uD*(1.0 - x*x) : 0.0; } // 浮き彫り（凸）：円弧断面の凸レンズ
+float groove(vec2 p, out vec2 grad, out int cnt){
+  float h = 0.0; grad = vec2(0.0); cnt = 0;
+  for (int i = 0; i < NEL; i++){
+    vec4 e = uEl[i]; vec2 e2 = uEl2[i];
+    float sw = e2.y; if (sw <= 0.0) continue;
+    vec2 q = p - e.xy; float l = length(q); float dr = l - e2.x;
+    if (abs(dr) > uW) continue;
+    vec2 dir = q / max(l, 1e-9);
+    float d = abs(dr); vec2 gd = dir * (dr >= 0.0 ? 1.0 : -1.0);
+    float span = e.w * sw;
+    if (span < 6.2831853 - 1e-4){
+      float a = atan(q.y, q.x) - e.z; a -= floor(a/6.2831853)*6.2831853;
+      if (a > span){
+        float ae = (a - span < 6.2831853 - a) ? e.z + span : e.z;
+        vec2 ep = e.xy + e2.x*vec2(cos(ae), sin(ae));
+        vec2 v = p - ep; d = length(v); if (d > uW) continue; gd = v/max(d,1e-9);
+      }
+    }
+    cnt++;
+    float hh = gprof(d);
+    if (hh > h){ h = hh; grad = (-2.0*uD*d/(uW*uW)) * gd; }
+  }
+  return h;
+}
+// ---- 円盤（角の丸い円柱）----
+float sdDisc(vec3 p){
+  vec2 q = vec2(length(p.xy) - (uRd - uRe), abs(p.z - 0.5*uT) - (0.5*uT - uRe));
+  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - uRe;
+}
+vec3 nDisc(vec3 p){
+  const vec2 e = vec2(1e-4, 0.0);
+  return normalize(vec3(sdDisc(p+e.xyy)-sdDisc(p-e.xyy), sdDisc(p+e.yxy)-sdDisc(p-e.yxy), sdDisc(p+e.yyx)-sdDisc(p-e.yyx)));
+}
+// 外からの交差。上面は解析＋ニュートン（溝なし部分は平面と一致＝差分フォトンが厳密に相殺する）
+bool hitDisc(vec3 o, vec3 d, vec2 rr, out vec3 p, out vec3 n, out bool top, out float hOut){
+  top = false; hOut = 0.0;
+  if (d.z < 0.0 && o.z > uT){
+    float t0 = (uT - o.z)/d.z; vec2 xy = o.xy + t0*d.xy;
+    if (length(xy) <= uRd - uRe){
+      float t = t0; vec2 g = vec2(0.0); int c; float h = 0.0;
+      for (int k = 0; k < 3; k++){
+        vec3 q = o + t*d; h = groove(q.xy, g, c);
+        float f = q.z - (uT + h); float fp = d.z - dot(g, d.xy); t -= f/fp;
+      }
+      p = o + t*d; n = normalize(vec3(-g, 1.0)); top = true; hOut = h;
+      if (h > 0.0 && uRough > 0.0){ // 研磨残り：法線を小さく揺らす
+        float m = uRough*sqrt(-2.0*log(max(rr.x,1e-6))); float ph = 6.2831853*rr.y;
+        vec3 t1 = normalize(cross(abs(n.z)<0.99 ? vec3(0,0,1) : vec3(1,0,0), n)); vec3 t2 = cross(n, t1);
+        n = normalize(n + m*(cos(ph)*t1 + sin(ph)*t2));
+      }
+      return true;
+    }
+  }
+  // 包絡円柱で枝刈り
+  float A = dot(d.xy, d.xy); float B = 2.0*dot(o.xy, d.xy); float C = dot(o.xy, o.xy) - (uRd+0.02)*(uRd+0.02);
+  float t0 = 0.0, t1 = 40.0;
+  if (A > 1e-9){ float disc = B*B - 4.0*A*C; if (disc < 0.0) return false; float s = sqrt(disc); t0 = max(0.0, (-B - s)/(2.0*A)); t1 = (-B + s)/(2.0*A); if (t1 < 0.0) return false; }
+  else if (C > 0.0) return false;
+  float t = t0;
+  for (int k = 0; k < 72; k++){
+    vec3 q = o + t*d; float ds = sdDisc(q);
+    if (ds < 1e-4){ p = q; n = nDisc(q); return true; }
+    t += ds; if (t > t1 + 0.1) break;
+  }
+  return false;
+}
+// 内側から出口を探す（下面＝床に接触 / 側面・縁）
+// 戻り値: 0=下面(床) 1=側面・縁・上面から屈折して外へ  2=消失
+int exitDisc(inout vec3 p, inout vec3 d, out float plen, out vec3 nOut){
+  plen = 0.0; nOut = vec3(0,0,1);
+  if (d.z < 0.0){ float t = -p.z/d.z; vec2 q = p.xy + d.xy*t; if (length(q) < uRd - uRe){ p = vec3(q, 0.0); plen = t; return 0; } }
+  float t = 2e-4;
+  for (int k = 0; k < 64; k++){
+    vec3 q = p + d*t; float ds = -sdDisc(q);
+    if (ds < 1e-4){ p = q; plen = t; nOut = nDisc(q); return 1; }
+    t += ds; if (t > 12.0) break;
+  }
+  return 2;
+}
+`;
+
+// ---------- フォトン（差分フォトン写像：真の着地に＋、平板モデルの着地に−）----------
+const VS_PHOTON = `#version 300 es
+precision highp float; precision highp int;
+${GLSL_COMMON}
+uniform int uNa, uNb; uniform float uCum[NEL]; uniform float uLtot; uniform float uAnnR0, uAnnR1; uniform float uTexel; uniform int uMask;
+out vec3 vCol;
+void main(){
+  int id = gl_VertexID >> 1; bool neg = (gl_VertexID & 1) == 1;
+  uvec3 s = uvec3(uint(id), uint(uFrame), 0x9E37u);
+  vec3 r1 = rnd3(s), r2 = rnd3(s + uvec3(11u,7u,3u)), r3 = rnd3(s + uvec3(5u,13u,17u)), r4 = rnd3(s + uvec3(23u,29u,31u));
+  int ch = min(int(r3.x*3.0), 2); float nc = uN + uDisp*float(ch-1);
+  vec3 chw = vec3(ch==0 ? 3.0 : 0.0, ch==1 ? 3.0 : 0.0, ch==2 ? 3.0 : 0.0);
+  float sig = uSig[ch];
+  vec3 ws = sampleSun(r2.xy); vec3 ld = -ws;
+  vec2 P; float wA;
+  if (id < uNb){
+    float rr = sqrt(mix(uAnnR0*uAnnR0, uAnnR1*uAnnR1, r1.x)); float ph = 6.2831853*r1.y;
+    P = rr*vec2(cos(ph), sin(ph)); wA = PI*(uAnnR1*uAnnR1 - uAnnR0*uAnnR0)/float(uNb);
+  } else {
+    int i = 0; for (int k = 0; k < NEL; k++){ if (r1.x > uCum[k]) i = k+1; } i = min(i, NEL-1);
+    vec4 e = uEl[i]; vec2 e2 = uEl2[i];
+    float th = e.z + e.w*e2.y*r1.y; float rho = (2.0*r1.z - 1.0)*uW;
+    P = e.xy + (e2.x + rho)*vec2(cos(th), sin(th));
+    vec2 g; int cnt; groove(P, g, cnt); cnt = max(cnt, 1);
+    float pdf = float(cnt)*e2.x/(uLtot*2.0*uW*(e2.x + rho));
+    wA = 1.0/(float(uNa)*pdf);
+  }
+  vec3 o = vec3(P, uT) - ld*1.0;
+  // --- 平板モデル ---
+  vec2 fl = vec2(0.0); float fw = 0.0; bool fHas = false;
+  float t0 = (uT - o.z)/ld.z; vec3 p0 = o + t0*ld;
+  bool inTop = length(p0.xy) < uRd;
+  if (inTop){
+    vec3 g0 = refract(ld, vec3(0,0,1), 1.0/nc); float sF = uT/(-g0.z); vec2 q0 = p0.xy + g0.xy*sF;
+    if (length(q0) < uRd - uRe){ fl = q0; fw = (1.0 - fresnel(-ld.z, nc))*exp(-sig*sF); fHas = true; }
+  } else {
+    // 平らな円柱に遮られるか（線分 p0 → 床 の原点距離）
+    float tf = -o.z/ld.z; vec2 qf = o.xy + ld.xy*tf;
+    vec2 a = p0.xy, b = qf; vec2 ab = b - a; float tt = clamp(-dot(a, ab)/max(dot(ab,ab),1e-9), 0.0, 1.0);
+    float md = length(a + ab*tt);
+    if (md >= uRd){ fl = qf; fw = 1.0; fHas = true; }
+  }
+  // --- 真のモデル ---
+  vec2 tl = vec2(0.0); float tw = 0.0; bool tHas = false;
+  vec3 hp, hn; bool top; float hh;
+  if (hitDisc(o, ld, r4.xy, hp, hn, top, hh)){
+    float cosi = -dot(ld, hn); float Tf = 1.0 - fresnel(cosi, nc);
+    vec3 d = refract(ld, hn, 1.0/nc);
+    if (dot(d,d) > 0.0){
+      float w = Tf; vec3 p = hp;
+      for (int b = 0; b < 4; b++){
+        float plen; vec3 nn; int k = exitDisc(p, d, plen, nn);
+        w *= exp(-sig*plen);
+        if (k == 0){ tl = p.xy; tw = w; tHas = true; break; }
+        if (k == 2) break;
+        float F = fresnel(dot(d, nn), 1.0/nc);
+        vec3 rb = rnd3(s + uvec3(uint(41 + b*7), 3u, 9u));
+        if (rb.x < F){ d = reflect(d, nn); p -= nn*2e-4; continue; }
+        vec3 od = refract(d, -nn, nc); p += nn*2e-4;
+        if (od.z < 0.0){ float t2 = -p.z/od.z; tl = p.xy + od.xy*t2; tw = w; tHas = true; }
+        break;
+      }
+    }
+  } else {
+    float tf = -o.z/ld.z; tl = o.xy + ld.xy*tf; tw = 1.0; tHas = true;
+    if (fHas && fw == 1.0){ fHas = false; tHas = false; } // 平板でも真でも素通り＝相殺
+  }
+  vec2 land = vec2(0.0); float wgt = 0.0;
+  if (neg){ if (fHas && uMask != 1){ land = fl; wgt = -fw; } }
+  else    { if (tHas && uMask != 2){ land = tl; wgt = tw; } }
+  if (wgt == 0.0 || abs(land.x) > uL || abs(land.y) > uL){ gl_Position = vec4(4.0, 4.0, 0.0, 1.0); gl_PointSize = 1.0; vCol = vec3(0.0); return; }
+  float val = wgt * uSunEh * wA / (uTexel*uTexel);
+  vCol = val * chw;
+  gl_Position = vec4(land/uL, 0.0, 1.0); gl_PointSize = 3.0;
+}`;
+const FS_PHOTON = `#version 300 es
+precision highp float; in vec3 vCol; out vec4 o;
+void main(){ vec2 c = (gl_PointCoord - 0.5)*3.0; float k = exp(-dot(c,c)/(2.0*0.6*0.6)); o = vec4(vCol*k/2.25, 0.0); }`;
+
+// ---------- カメラ（1サンプル/画素/フレームのパストレース）----------
+const FS_MAIN = `#version 300 es
+precision highp float; precision highp int;
+${GLSL_COMMON}
+uniform vec2 uRes; uniform vec3 uCamPos; uniform mat3 uCam; uniform float uTanHalf;
+uniform sampler2D uMap, uRef, uPrev; uniform float uRefOn, uAlpha;
+uniform vec3 uZenith, uHorizon, uAmb; uniform float uSunRad;
+out vec4 fragColor;
+
+vec3 skyRadNoSun(vec3 w){ float t = clamp(w.z, 0.0, 1.0); return mix(uHorizon, uZenith, pow(t, 0.45)); }
+vec3 skyRad(vec3 w){
+  float t = clamp(w.z, 0.0, 1.0); vec3 s = mix(uHorizon, uZenith, pow(t, 0.45));
+  float c = dot(w, uSun);
+  if (c > uSunCosA) s += uSunCol * uSunRad * smoothstep(uSunCosA, mix(uSunCosA, 1.0, 0.15), c);
+  return s;
+}
+float hash21(vec2 p){ p = fract(p*vec2(233.34, 851.73)); p += dot(p, p + 23.45); return fract(p.x*p.y); }
+float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+  return mix(mix(hash21(i), hash21(i+vec2(1,0)), f.x), mix(hash21(i+vec2(0,1)), hash21(i+vec2(1,1)), f.x), f.y); }
+vec3 floorAlbedo(vec2 p){
+  // 磨いた玄武岩：ほぼ一様、細かい粒と、ごく薄い層の流れ
+  float n = 0.0, a = 0.5; vec2 q = p*vec2(9.0, 4.0) + vec2(0.0, 0.35*vnoise(p*1.5));
+  for (int i = 0; i < 4; i++){ n += a*vnoise(q); q = q*2.17 + 11.7; a *= 0.5; }
+  float grain = hash21(floor(p*520.0));
+  float v = 0.90 + 0.12*n + 0.05*grain;
+  vec3 base = vec3(0.050, 0.052, 0.058);
+  return base*v;
+}
+// 床の放射輝度。E_flat（平板モデル・解析）＋Δ（差分フォトン）
+vec3 shadeFloor(vec2 p, vec3 ws, vec3 d){
+  vec3 E = vec3(0.0); float r = length(p);
+  bool under = r < uRd - uRe;
+  if (under){
+    vec3 ld = -ws;
+    for (int ch = 0; ch < 3; ch++){
+      float nc = uN + uDisp*float(ch-1);
+      vec3 g0 = refract(ld, vec3(0,0,1), 1.0/nc); float sF = uT/(-g0.z);
+      vec2 e = p - g0.xy*sF;
+      if (length(e) < uRd) E[ch] = uSunEh*(1.0 - fresnel(ws.z, nc))*exp(-uSig[ch]*sF);
+    }
+  } else {
+    float tt = uT/ws.z; vec2 a = p, ab = ws.xy*tt; float s = clamp(-dot(a, ab)/max(dot(ab,ab),1e-9), 0.0, 1.0);
+    float md = length(a + ab*s);
+    E = vec3(md >= uRd ? uSunEh : 0.0);
+  }
+  if (abs(p.x) < uL && abs(p.y) < uL) E += texture(uMap, p/(2.0*uL) + 0.5).rgb;
+  E = max(E, vec3(0.0));
+  vec3 alb = floorAlbedo(p);
+  vec3 amb = uAmb * (under ? 0.78 : (r < uRd + 0.6 ? mix(0.82, 1.0, (r - uRd)/0.6) : 1.0));
+  vec3 L = alb*(E*uSunCol + amb)/PI;
+  if (!under){ // 石の艶
+    vec3 V = -d; vec3 h = normalize(V + ws); float nh = max(h.z, 0.0); float a2 = 0.45*0.45;
+    float Dg = a2/(PI*pow(nh*nh*(a2-1.0)+1.0, 2.0));
+    L += uSunCol*E*0.04*Dg*0.25;
+  }
+  return L;
+}
+vec3 traceInside(vec3 p, vec3 d, float nc, vec3 ws, uvec3 s){
+  vec3 thr = vec3(1.0);
+  for (int b = 0; b < 4; b++){
+    float plen; vec3 nn; int k = exitDisc(p, d, plen, nn);
+    thr *= exp(-uSig*plen);
+    if (k == 0) return thr*shadeFloor(p.xy, ws, d);
+    if (k == 2) return vec3(0.0);
+    float F = fresnel(dot(d, nn), 1.0/nc);
+    vec3 rb = rnd3(s + uvec3(uint(61 + b*5), 17u, 23u));
+    if (rb.x < F){ d = reflect(d, nn); p -= nn*2e-4; continue; }
+    vec3 od = refract(d, -nn, nc); p += nn*2e-4;
+    if (od.z < 0.0){ float t2 = -p.z/od.z; return thr*shadeFloor(p.xy + od.xy*t2, ws, od); }
+    return thr*skyRad(od);
+  }
+  return vec3(0.0);
+}
+void main(){
+  uvec3 s = uvec3(uvec2(gl_FragCoord.xy), uint(uFrame));
+  vec3 r1 = rnd3(s), r2 = rnd3(s + uvec3(7u,3u,11u)), r3 = rnd3(s + uvec3(19u,5u,2u));
+  vec2 uv = ((gl_FragCoord.xy + r1.xy - 0.5)/uRes)*2.0 - 1.0; uv.x *= uRes.x/uRes.y;
+  vec3 d = normalize(uCam*vec3(uv*uTanHalf, 1.0)); vec3 o = uCamPos;
+  vec3 ws = sampleSun(r2.xy);
+  vec3 col;
+  vec3 p, n; bool top; float hh;
+  if (hitDisc(o, d, vec2(1.0, 0.0), p, n, top, hh)){
+    float cosi = -dot(d, n); float F = fresnel(cosi, uN);
+    vec3 rd = reflect(d, n);
+    vec3 Lr;
+    if (top && hh > 0.0){
+      // 浮き彫りの線：研磨残り σ の Beckmann で太陽のハイライトを解析的に（蛍を出さない）
+      vec3 hv = normalize(ws - d); float nh = max(dot(n, hv), 1e-4); float a2 = max(uRough, 0.005); a2 *= a2;
+      float t2 = (1.0 - nh*nh)/(nh*nh); float Dk = exp(-t2/a2)/(PI*a2*nh*nh*nh*nh);
+      float Fh = fresnel(max(dot(hv, -d), 0.0), uN);
+      vec3 spec = uSunCol * (uSunEh/max(uSun.z, 0.05)) * Dk * Fh / (4.0*max(cosi, 0.02)) * step(0.0, dot(n, ws));
+      Lr = skyRadNoSun(rd) + spec/max(F, 1e-4);
+    } else Lr = rd.z > 0.0 ? skyRad(rd) : shadeFloor(p.xy + rd.xy*(-p.z/rd.z), ws, rd);
+    vec3 td = refract(d, n, 1.0/uN); vec3 Lt = vec3(0.0);
+    if (dot(td,td) > 0.0) Lt = traceInside(p, td, uN, ws, s);
+    col = F*Lr + (1.0 - F)*Lt;
+    if (uRefOn > 0.5 && top){
+      vec2 uvr = (vec2(238.62) + p.xy*68.03)/477.23;
+      float sref = texture(uRef, uvr).r;
+      col = mix(col, vec3(1.0, 0.16, 0.06)*1.6, sref*0.9);
+    }
+  } else if (d.z < 0.0){
+    col = shadeFloor(o.xy + d.xy*(-o.z/d.z), ws, d);
+  } else col = skyRad(d);
+  col = max(col, vec3(0.0));
+  vec3 prev = texelFetch(uPrev, ivec2(gl_FragCoord.xy), 0).rgb;
+  fragColor = vec4(mix(prev, col, uAlpha), 1.0);
+}`;
+
+const VS_QUAD = `#version 300 es
+void main(){ vec2 v = vec2((gl_VertexID<<1)&2, gl_VertexID&2); gl_Position = vec4(v*2.0-1.0, 0.0, 1.0); }`;
+const FS_MIX = `#version 300 es
+precision highp float; uniform sampler2D uA, uB; uniform float uAlpha; out vec4 o;
+void main(){ ivec2 c = ivec2(gl_FragCoord.xy); o = mix(texelFetch(uA, c, 0), texelFetch(uB, c, 0), uAlpha); }`;
+const FS_DOWN = `#version 300 es
+precision highp float; uniform sampler2D uS; uniform vec2 uDst; out vec4 o;
+void main(){ vec2 uv = gl_FragCoord.xy/uDst; vec2 px = 1.0/uDst;
+  vec3 c = texture(uS, uv + px*vec2(-0.5,-0.5)).rgb + texture(uS, uv + px*vec2(0.5,-0.5)).rgb + texture(uS, uv + px*vec2(-0.5,0.5)).rgb + texture(uS, uv + px*vec2(0.5,0.5)).rgb;
+  o = vec4(c*0.25, 1.0); }`;
+const FS_POST = `#version 300 es
+precision highp float; uniform sampler2D uAcc, uB1, uB2, uB3, uB4, uB5, uDbgMap; uniform vec2 uRes; uniform float uExposure, uBloom, uFade, uDbg;
+out vec4 o;
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0); }
+void main(){ vec2 uv = gl_FragCoord.xy/uRes;
+  if (uDbg > 0.5){ vec2 m = (uv - 0.5)*vec2(uRes.x/uRes.y, 1.0)*1.05 + 0.5; vec3 v = texture(uDbgMap, m).rgb; o = vec4(pow(clamp(max(v,0.0)*0.25, 0.0, 1.0), vec3(1.0/2.2)) + vec3(0.0, 0.0, 1.0)*clamp(-v.g*0.5, 0.0, 1.0), 1.0); return; }
+  vec3 c = texture(uAcc, uv).rgb;
+  vec3 b = texture(uB1, uv).rgb*0.32 + texture(uB2, uv).rgb*0.26 + texture(uB3, uv).rgb*0.20 + texture(uB4, uv).rgb*0.14 + texture(uB5, uv).rgb*0.08;
+  c = (c + b*uBloom)*uExposure;
+  vec2 q = uv*2.0-1.0; float vig = 1.0 - 0.22*dot(q,q)*dot(q,q);
+  c = aces(c*vig)*uFade;
+  c = pow(c, vec3(1.0/2.2));
+  float dth = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898,78.233)))*43758.5453);
+  o = vec4(c + (dth-0.5)/255.0, 1.0); }`;
+
+// ============================================================
+//  WebGL セットアップ
+// ============================================================
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, preserveDrawingBuffer: false, powerPreference: 'high-performance' });
+if (!gl) throw new Error('WebGL2 が必要です');
+if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('EXT_color_buffer_float が必要です');
+gl.getExtension('OES_texture_float_linear');
+
+function compile(type, src){ const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)){ const log = gl.getShaderInfoLog(s); console.error(log); throw new Error(log); } return s; }
+function program(vs, fs){ const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++){ const info = gl.getActiveUniform(p, i); const name = info.name.replace(/\[0\]$/, ''); u[name] = gl.getUniformLocation(p, info.name); }
+  return { p, u }; }
+const P_PHOTON = program(VS_PHOTON, FS_PHOTON);
+const P_MAIN = program(VS_QUAD, FS_MAIN);
+const P_MIX = program(VS_QUAD, FS_MIX);
+const P_DOWN = program(VS_QUAD, FS_DOWN);
+const P_POST = program(VS_QUAD, FS_POST);
+const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+
+function makeTex(w, h, internal, filter){ const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, internal, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return t; }
+function makeFBO(tex){ const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0); return f; }
+
+// コースティクス写像（フレーム蓄積＋EMA）
+const MR = CFG.mapRes;
+const mapFrame = { t: makeTex(MR, MR, gl.RGBA16F, gl.LINEAR) }; mapFrame.f = makeFBO(mapFrame.t);
+const mapAcc = [0, 1].map(() => { const t = makeTex(MR, MR, gl.RGBA16F, gl.LINEAR); return { t, f: makeFBO(t) }; });
+let mapCur = 0, mapN = 0;
+
+// 画面側バッファ
+let W = 0, H = 0, scale = 1.0;
+let acc = null, bloom = null;
+function allocScreen(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const cw = Math.max(64, Math.round(canvas.clientWidth || window.innerWidth || 640));
+  const chh = Math.max(64, Math.round(canvas.clientHeight || window.innerHeight || 480));
+  let s = dpr*scale; const maxPix = 2.4e6; if (cw*chh*s*s > maxPix) s = Math.sqrt(maxPix/(cw*chh));
+  const w = Math.max(64, Math.round(cw*s)), h = Math.max(64, Math.round(chh*s));
+  if (w === W && h === H) return false;
+  W = w; H = h; canvas.width = W; canvas.height = H;
+  if (acc) { acc.forEach(a => { gl.deleteTexture(a.t); gl.deleteFramebuffer(a.f); }); bloom.forEach(b => { gl.deleteTexture(b.t); gl.deleteFramebuffer(b.f); }); }
+  acc = [0, 1].map(() => { const t = makeTex(W, H, gl.RGBA32F, gl.NEAREST); return { t, f: makeFBO(t) }; });
+  bloom = []; let bw = W, bh = H;
+  for (let i = 0; i < 5; i++){ bw = Math.max(1, bw >> 1); bh = Math.max(1, bh >> 1); const t = makeTex(bw, bh, gl.RGBA16F, gl.LINEAR); bloom.push({ t, f: makeFBO(t), w: bw, h: bh }); }
+  accN = 0; return true;
+}
+let accCur = 0, accN = 0;
+
+// 正本の重ね描き用テクスチャ（同梱SVGの線を白にして描画）
+const refTex = makeTex(2048, 2048, gl.RGBA8, gl.LINEAR);
+(function loadRef(){
+  const svgText = document.getElementById('shohon').textContent.trim().replace(/#231815/g, '#ffffff').replace(/stroke-width:\s*3px/g, 'stroke-width: 2.2px');
+  const img = new Image();
+  img.onload = () => { const cv = document.createElement('canvas'); cv.width = cv.height = 2048; const cx = cv.getContext('2d'); cx.fillStyle = '#000'; cx.fillRect(0, 0, 2048, 2048); cx.drawImage(img, 0, 0, 2048, 2048);
+    gl.bindTexture(gl.TEXTURE_2D, refTex); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, cv); };
+  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgText);
+})();
+
+// ============================================================
+//  状態
+// ============================================================
+const state = {
+  t: num('warm', 0),           // 作品時間（秒）
+  yaw: num('yaw', -0.55), pitch: num('pitch', 1.05), zoom: num('zoom', 1.0),
+  sunAuto: !Q.has('sun'), sunEl: 41 * Math.PI/180, sunAz: -31 * Math.PI/180, paused: false,
+  manualEl: 0, manualAz: 0, resumeAt: -1,
+  ref: Q.get('ref') === '1',
+  moved: true, frame: 0,
+};
+if (Q.has('sun')){ const v = Q.get('sun').split(',').map(parseFloat); state.sunEl = (v[0] || 60)*Math.PI/180; state.sunAz = (v[1] || -60)*Math.PI/180; state.paused = true; }
+document.getElementById('ref').classList.toggle('on', state.ref);
+
+// 太陽の道：視線の方向を中心にした8の字。視線と太陽が揃う（＝床の光線がレンズ越しに眼へ戻る）瞬間が120秒ごとに来る
+const SUN_PERIOD = 240, SUN_FIRST = 40;
+let anchorYaw = 0, anchorPitch = 0;
+function anchorSun(){ anchorYaw = state.yaw; anchorPitch = state.pitch; }
+function sunPath(t){
+  const th = 2*Math.PI*(t - SUN_FIRST)/SUN_PERIOD;
+  const el = Math.max(12*Math.PI/180, Math.min(85*Math.PI/180, anchorPitch + (26*Math.PI/180)*Math.sin(th)));
+  const az = anchorYaw + (50*Math.PI/180)*Math.sin(2*th);
+  return [el, az];
+}
+// 刻印の進み：要素順に 0.35s ずらし、1本 0.7s
+const DRAW_START = 1.5, DRAW_STAGGER = 0.35, DRAW_DUR = 0.7;
+const sweep = new Float32Array(NEL);
+function updateSweep(t){
+  let changed = false;
+  for (let i = 0; i < NEL; i++){
+    let x = (t - DRAW_START - i*DRAW_STAGGER)/DRAW_DUR; x = Math.max(0, Math.min(1, x)); x = x*x*(3 - 2*x);
+    if (sweep[i] !== x){ sweep[i] = x; changed = true; }
+  }
+  return changed;
+}
+
+// ---------- 要素の uniform ----------
+const elData = new Float32Array(NEL*4), el2Data = new Float32Array(NEL*2), cumData = new Float32Array(NEL);
+ELEMENTS.forEach((e, i) => { elData[i*4] = e[0]; elData[i*4+1] = e[1]; elData[i*4+2] = e[2]; elData[i*4+3] = e[3]; el2Data[i*2] = e[4]; });
+let Ltot = 1;
+function updateElementUniforms(){
+  let acc = 0; for (let i = 0; i < NEL; i++){ el2Data[i*2+1] = sweep[i]; acc += ELEMENTS[i][4]*ELEMENTS[i][3]*sweep[i]; }
+  Ltot = Math.max(acc, 1e-6); let c = 0; for (let i = 0; i < NEL; i++){ c += ELEMENTS[i][4]*ELEMENTS[i][3]*sweep[i]/Ltot; cumData[i] = c; }
+}
+function setCommon(pr, sun, sunCol, Eh){
+  const u = pr.u;
+  gl.uniform4fv(u.uEl, elData); gl.uniform2fv(u.uEl2, el2Data);
+  gl.uniform1f(u.uT, CFG.T); gl.uniform1f(u.uRd, CFG.Rd); gl.uniform1f(u.uRe, CFG.Re); gl.uniform1f(u.uW, CFG.w); gl.uniform1f(u.uD, CFG.D);
+  gl.uniform1f(u.uN, CFG.n); gl.uniform1f(u.uDisp, CFG.disp); gl.uniform1f(u.uRough, CFG.rough); gl.uniform1f(u.uL, CFG.L);
+  gl.uniform3fv(u.uSig, CFG.sig); gl.uniform3fv(u.uSun, sun); gl.uniform3fv(u.uSunCol, sunCol);
+  gl.uniform1f(u.uSunCosA, Math.cos(CFG.sunAng)); gl.uniform1f(u.uSunEh, Eh); gl.uniform1f(u.uFrame, state.frame);
+}
+function sunColor(el){ // 簡易大気：低い太陽ほど暖かい
+  const s = Math.max(Math.sin(el), 0.05); const beta = [0.05, 0.09, 0.18];
+  return [1.0*Math.exp(-beta[0]/s), 0.94*Math.exp(-beta[1]/s), 0.86*Math.exp(-beta[2]/s)];
+}
+
+// ============================================================
+//  描画
+// ============================================================
+const ZENITH = [0.040, 0.058, 0.095], HORIZON = [0.095, 0.10, 0.115];   // 暗い室内の天窓（藍）
+const AMB = [0.046, 0.053, 0.068];
+const sunRad = 1.0/(2*Math.PI*(1 - Math.cos(CFG.sunAng)));
+
+function camera(){
+  const aspect = W/H; const fov = 26*Math.PI/180; const tanHalf = Math.tan(fov/2);
+  const fit = 3.62/(0.80*tanHalf); const dist = (aspect < 1 ? fit/aspect : fit)/state.zoom;
+  const cp = Math.cos(state.pitch), sp = Math.sin(state.pitch);
+  const pos = [dist*cp*Math.cos(state.yaw), dist*cp*Math.sin(state.yaw), dist*sp + CFG.T*0.5];
+  const tgt = [0, 0, CFG.T*0.5];
+  let f = [tgt[0]-pos[0], tgt[1]-pos[1], tgt[2]-pos[2]]; const fl = Math.hypot(...f); f = f.map(v => v/fl);
+  let r = [f[1], -f[0], 0]; const rl = Math.hypot(...r); r = r.map(v => v/rl);
+  const up = [r[1]*f[2]-r[2]*f[1], r[2]*f[0]-r[0]*f[2], r[0]*f[1]-r[1]*f[0]];
+  return { pos, basis: new Float32Array([r[0], r[1], r[2], up[0], up[1], up[2], f[0], f[1], f[2]]), tanHalf };
+}
+
+function render(dt){
+  state.frame++;
+  const t = state.t;
+  // 太陽
+  let el, az;
+  if (state.sunAuto){ [el, az] = sunPath(t);
+    if (state.resumeAt >= 0){ const k = Math.min(1, (t - state.resumeAt)/3); const e = k*k*(3-2*k); el = state.manualEl + (el - state.manualEl)*e; az = state.manualAz + (az - state.manualAz)*e; if (k >= 1) state.resumeAt = -1; }
+    state.sunEl = el; state.sunAz = az; }
+  else { el = state.sunEl; az = state.sunAz; }
+  const sun = [Math.cos(el)*Math.cos(az), Math.cos(el)*Math.sin(az), Math.sin(el)];
+  const sunCol = sunColor(el); const Eh = Math.max(Math.sin(el), 0);
+  const drawChanged = updateSweep(t); updateElementUniforms();
+  const sunMoving = state.sunAuto && !state.paused;
+
+  // ---- 1) フォトン → mapFrame ----
+  gl.bindFramebuffer(gl.FRAMEBUFFER, mapFrame.f); gl.viewport(0, 0, MR, MR);
+  gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.useProgram(P_PHOTON.p); setCommon(P_PHOTON, sun, sunCol, Eh);
+  const u = P_PHOTON.u;
+  gl.uniform1i(u.uNa, CFG.photons); gl.uniform1i(u.uNb, CFG.photonsB); gl.uniform1fv(u.uCum, cumData); gl.uniform1f(u.uLtot, Ltot);
+  const zen = Math.max(1e-3, Math.PI/2 - el);
+  gl.uniform1f(u.uAnnR0, CFG.Rd - CFG.Re - 0.01); gl.uniform1f(u.uAnnR1, CFG.Rd + CFG.T*Math.tan(Math.min(zen, 1.45)) + 0.03);
+  gl.uniform1f(u.uTexel, 2*CFG.L/MR); gl.uniform1i(u.uMask, Math.round(num('mask', 0)));
+  gl.drawArrays(gl.POINTS, 0, 2*(CFG.photons + CFG.photonsB));
+  gl.disable(gl.BLEND);
+  // ---- 2) map EMA ----
+  const mapK = drawChanged ? 24 : (sunMoving ? 40 : 900);
+  if (state.sunJumped){ mapN = 0; state.sunJumped = false; }
+  const mAlpha = 1/Math.min(mapN + 1, mapK); mapN++;
+  const mNext = 1 - mapCur;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, mapAcc[mNext].f); gl.viewport(0, 0, MR, MR);
+  gl.useProgram(P_MIX.p); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, mapAcc[mapCur].t); gl.uniform1i(P_MIX.u.uA, 0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, mapFrame.t); gl.uniform1i(P_MIX.u.uB, 1); gl.uniform1f(P_MIX.u.uAlpha, mAlpha);
+  gl.drawArrays(gl.TRIANGLES, 0, 3); mapCur = mNext;
+  if (Q.get('probe') === '1' && (state.frame % 30) === 0){ const N = 96; const buf = new Float32Array(N*N*4); gl.readPixels((MR>>1) - (N>>1), (MR>>1) - (N>>1), N, N, gl.RGBA, gl.FLOAT, buf); let pos = 0, negv = 0, mx = -1e9, mn = 1e9, cntP = 0, cntN = 0; for (let i = 0; i < N*N; i++){ const g = buf[i*4+1]; if (g > 0){ pos += g; cntP++; } else if (g < 0){ negv += g; cntN++; } mx = Math.max(mx, g); mn = Math.min(mn, g); } const el = document.getElementById('ref'); el.classList.add('on'); el.textContent = `dt=${dtEma.toFixed(1)}ms scale=${scale.toFixed(2)} ph=${CFG.photons} probe center ${N}x${N}: sum+=${pos.toFixed(2)} (${cntP}) sum-=${negv.toFixed(2)} (${cntN}) max=${mx.toFixed(3)} min=${mn.toFixed(3)} err=${gl.getError()}`; }
+
+  // ---- 3) カメラ → acc ----
+  if (state.moved){ accN = 0; state.moved = false; }
+  const accK = drawChanged ? 12 : (sunMoving ? 32 : 1200);
+  const aAlpha = 1/Math.min(accN + 1, accK); accN++;
+  const cam = camera(); const aNext = 1 - accCur;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, acc[aNext].f); gl.viewport(0, 0, W, H);
+  gl.useProgram(P_MAIN.p); setCommon(P_MAIN, sun, sunCol, Eh);
+  const m = P_MAIN.u;
+  gl.uniform2f(m.uRes, W, H); gl.uniform3fv(m.uCamPos, cam.pos); gl.uniformMatrix3fv(m.uCam, false, cam.basis); gl.uniform1f(m.uTanHalf, cam.tanHalf);
+  gl.uniform3fv(m.uZenith, ZENITH); gl.uniform3fv(m.uHorizon, HORIZON); gl.uniform3fv(m.uAmb, AMB); gl.uniform1f(m.uSunRad, sunRad);
+  gl.uniform1f(m.uRefOn, state.ref ? 1 : 0); gl.uniform1f(m.uAlpha, aAlpha);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, mapAcc[mapCur].t); gl.uniform1i(m.uMap, 0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, refTex); gl.uniform1i(m.uRef, 1);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, acc[accCur].t); gl.uniform1i(m.uPrev, 2);
+  gl.drawArrays(gl.TRIANGLES, 0, 3); accCur = aNext;
+
+  // ---- 4) bloom chain ----
+  gl.useProgram(P_DOWN.p); gl.uniform1i(P_DOWN.u.uS, 0); gl.activeTexture(gl.TEXTURE0);
+  let src = acc[accCur].t;
+  for (let i = 0; i < bloom.length; i++){ const b = bloom[i]; gl.bindFramebuffer(gl.FRAMEBUFFER, b.f); gl.viewport(0, 0, b.w, b.h); gl.bindTexture(gl.TEXTURE_2D, src); gl.uniform2f(P_DOWN.u.uDst, b.w, b.h); gl.drawArrays(gl.TRIANGLES, 0, 3); src = b.t; }
+
+  // ---- 5) post → screen ----
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H);
+  gl.useProgram(P_POST.p); const q = P_POST.u;
+  gl.uniform2f(q.uRes, W, H); gl.uniform1f(q.uExposure, CFG.exposure); gl.uniform1f(q.uBloom, CFG.bloom);
+  gl.uniform1f(q.uFade, Math.min(1, Math.max(0, (t - 0.2)/2.2))); gl.uniform1f(q.uDbg, Q.get('dbg') === 'map' ? 1 : 0);
+  gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, mapAcc[mapCur].t); gl.uniform1i(q.uDbgMap, 6);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, acc[accCur].t); gl.uniform1i(q.uAcc, 0);
+  for (let i = 0; i < 5; i++){ gl.activeTexture(gl.TEXTURE1 + i); gl.bindTexture(gl.TEXTURE_2D, bloom[i].t); gl.uniform1i(q['uB' + (i+1)], 1 + i); }
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+// ============================================================
+//  入力
+// ============================================================
+const ptrs = new Map(); let lastPinch = 0, lastMid = null, uiTimer = 0;
+const ui = document.getElementById('ui');
+function wake(){ ui.classList.remove('fade'); clearTimeout(uiTimer); uiTimer = setTimeout(() => ui.classList.add('fade'), 6000); }
+wake();
+canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, shift: e.shiftKey || e.button === 2 }); wake();
+  if (ptrs.size === 2){ const a = [...ptrs.values()]; lastPinch = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); lastMid = [(a[0].x + a[1].x)/2, (a[0].y + a[1].y)/2]; } });
+canvas.addEventListener('pointermove', e => {
+  const p = ptrs.get(e.pointerId); if (!p) return;
+  const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+  if (ptrs.size === 1){
+    if (p.shift){ moveSun(dx, dy); }
+    else { state.yaw -= dx*0.006; state.pitch = Math.max(0.12, Math.min(1.50, state.pitch + dy*0.006)); state.moved = true; }
+  } else if (ptrs.size === 2){
+    const a = [...ptrs.values()]; const d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); const mid = [(a[0].x + a[1].x)/2, (a[0].y + a[1].y)/2];
+    if (lastPinch > 0){ state.zoom = Math.max(0.5, Math.min(6, state.zoom*(d/lastPinch))); state.moved = true; }
+    if (lastMid){ moveSun(mid[0] - lastMid[0], mid[1] - lastMid[1]); }
+    lastPinch = d; lastMid = mid;
+  }
+});
+function endPtr(e){ ptrs.delete(e.pointerId); lastPinch = 0; lastMid = null; }
+canvas.addEventListener('pointerup', endPtr); canvas.addEventListener('pointercancel', endPtr);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('wheel', e => { e.preventDefault(); state.zoom = Math.max(0.5, Math.min(6, state.zoom*Math.exp(-e.deltaY*0.0015))); state.moved = true; wake(); }, { passive: false });
+function moveSun(dx, dy){
+  if (state.sunAuto){ state.sunAuto = false; }
+  state.sunAz -= dx*0.005; state.sunEl = Math.max(10*Math.PI/180, Math.min(89*Math.PI/180, state.sunEl + dy*0.004));
+  state.sunJumped = true; state.moved = true;
+}
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space'){ e.preventDefault();
+    if (!state.sunAuto){ state.manualEl = state.sunEl; state.manualAz = state.sunAz; state.sunAuto = true; state.resumeAt = state.t; state.paused = false; anchorSun(); }
+    else state.paused = !state.paused; wake(); }
+  if (e.key === 'r' || e.key === 'R'){ state.ref = !state.ref; document.getElementById('ref').classList.toggle('on', state.ref); state.moved = true; }
+  if (e.key === 'ArrowLeft') moveSun(-12, 0); if (e.key === 'ArrowRight') moveSun(12, 0);
+  if (e.key === 'ArrowUp') moveSun(0, 12); if (e.key === 'ArrowDown') moveSun(0, -12);
+});
+new ResizeObserver(() => { if (allocScreen()) state.moved = true; }).observe(canvas);
+window.addEventListener('resize', () => { if (allocScreen()) state.moved = true; });
+
+// ============================================================
+//  ループ（?warm=N で N 秒の状態から収束させて開始）
+// ============================================================
+allocScreen(); anchorSun();
+let last = performance.now(), dtEma = 16, slowFrames = 0;
+if (Q.has('warm')){ for (let i = 0; i < 64; i++) render(1/60); }
+function loop(now){
+  let dt = (now - last)/1000; last = now; if (dt > 0.08) dt = 0.08;
+  if (!state.paused) state.t += dt;
+  if (allocScreen()) state.moved = true;
+  render(dt);
+  // 適応解像度（提示間隔基準）
+  const ms = dt*1000; if (ms < 79) dtEma = dtEma*0.9 + ms*0.1;
+  if (dtEma > 30 && (scale > 0.5 || CFG.photons > 300*300)){ if (++slowFrames > 40){ if (CFG.photons > 300*300) CFG.photons = Math.round(Math.sqrt(CFG.photons)*0.8)**2; else { scale = Math.max(0.5, scale*0.85); allocScreen(); state.moved = true; } slowFrames = 0; } } else slowFrames = 0;
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

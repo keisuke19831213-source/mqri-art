@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>須弥 — Shumi</title>
+<style>
+  html,body{margin:0;height:100%;background:#e9e6e0;overflow:hidden;font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;color:#3a3733}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  #ui{position:fixed;left:18px;bottom:16px;pointer-events:none;user-select:none;opacity:.9;transition:opacity 2s}
+  #ui.fade{opacity:0}
+  #title{font-size:15px;letter-spacing:.35em;color:#2b2926}
+  #title span{display:block;margin-top:5px;font-size:10.5px;letter-spacing:.12em;color:#6d6862}
+  #hint{margin-top:10px;font-size:10px;letter-spacing:.06em;color:#8a847c;line-height:1.7}
+  #res{position:fixed;right:16px;top:14px;font-size:10px;letter-spacing:.14em;color:#8a847c;pointer-events:none;text-align:right;line-height:1.7}
+  #res b{color:#b3412a;font-weight:500}
+  #ctl{position:fixed;right:16px;bottom:16px;display:flex;gap:6px;user-select:none}
+  #ctl button{appearance:none;border:1px solid rgba(60,55,50,.25);background:rgba(255,255,255,.35);color:#4a4540;border-radius:999px;padding:6px 11px;font-size:11px;letter-spacing:.2em;cursor:pointer;backdrop-filter:blur(6px);font-family:inherit}
+  #ctl button.on{background:rgba(60,55,50,.75);color:#f3efe8;border-color:transparent}
+  body.dark{color:#cfc9bf} body.dark #title{color:#e8e2d6} body.dark #title span,body.dark #hint,body.dark #res{color:#9a948a} body.dark #res b{color:#e2a04a}
+  body.dark #ctl button{border-color:rgba(255,255,255,.22);background:rgba(0,0,0,.3);color:#cfc9bf} body.dark #ctl button.on{background:rgba(240,232,220,.85);color:#2a2622}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="title">須弥<span>Shumi — 九つの三角が厳密に交わったまま、四つの自由度で呼吸する</span></div>
+  <div id="hint">金の点を叩く＝光が線を走る　三角に触れる＝浮かぶ　軸の四つの輪をドラッグ＝底辺を動かす（交わりは保たれる）<br>1〜5＝彩　C＝色を巡る　M＝須弥山（高さ）　X＝以前の作図と比べる　R＝族を散策　Space＝呼吸　Shift＋ドラッグ＝光</div>
+</div>
+<div id="res"></div>
+<div id="ctl">
+  <button data-k="pal">彩</button><button data-k="drift">巡</button><button data-k="relief">山</button><button data-k="walk">散策</button><button data-k="cmp">比</button><button data-k="breath" class="on">息</button>
+</div>
+
+<script>
+'use strict';
+// ============================================================
+//  須弥 — Shumi   (2026-09-04 / ccf5 art)
+//  Śrī Yantra の九つの三角形を Chiodo (C. R. Math. 2021) の並行条件
+//  (i)(ii)(iii) で厳密に解き（ニュートン法・残差1e-16）、
+//  重なりの数＝九層の高さを紙に浮き彫りにする。四つの自由度で呼吸する。
+// ============================================================
+const Q = new URLSearchParams(location.search);
+const num = (k, d) => (Q.has(k) && isFinite(parseFloat(Q.get(k)))) ? parseFloat(Q.get(k)) : d;
+
+// ---------- 幾何：条件 ----------
+// t1..t9 は底辺の高さ順（上から）。i≤5 は下向き、i≥6 は上向き。各三角形は (apex y, base y, half width)
+// (ii) 頂点＝底辺の中点: (t',t'') で apex(t') = base(t'')
+const II = [[8,1],[6,2],[9,3],[1,6],[5,7],[4,8],[2,9]];
+// (iii) 下向き t' の脚・上向き t''' の脚・t'' の底辺が一点で交わる
+const III = [[1,2,7],[2,3,7],[1,3,8],[1,4,6],[1,5,9],[4,6,9],[2,7,9],[3,7,8],[3,8,9],[4,4,8],[5,5,6],[2,6,6]];
+// (i) t3 と t7 は外接円（単位円）に内接：apex=∓1・底辺の端が円上
+// 四つの自由度＝ t3, t6, t7, t9 の底辺の高さ（伝統：直径48分割の 17, 27, 30, 42）
+const PARAM0 = [1 - 2*17/48, 1 - 2*27/48, 1 - 2*30/48, 1 - 2*42/48];
+const AMP = [0.028, 0.020, 0.018, 0.022], PER = [41, 59, 73, 97];
+
+function legx(t, y){ return t[2]*(y - t[0])/(t[1] - t[0]); }
+function build(x, prm){
+  const T = []; let k = 0;
+  for (let i = 0; i < 9; i++){ const t = [0,0,0];
+    for (let j = 0; j < 3; j++){
+      let f = null;
+      if (i === 2) f = [-1, prm[0], Math.sqrt(1 - prm[0]*prm[0])][j];
+      else if (i === 6) f = [1, prm[2], Math.sqrt(1 - prm[2]*prm[2])][j];
+      else if (i === 5 && j === 1) f = prm[1];
+      else if (i === 8 && j === 1) f = prm[3];
+      t[j] = (f === null) ? x[k++] : f;
+    } T.push(t); }
+  return T;
+}
+function residuals(T){
+  const r = [];
+  for (const [a, b] of II) r.push(T[a-1][0] - T[b-1][1]);
+  for (const [a, b, c] of III){ const y = T[b-1][1]; r.push(legx(T[a-1], y) - legx(T[c-1], y)); }
+  return r;
+}
+function solveLinear(A, b){ // Gaussian elimination with partial pivoting
+  const n = b.length; const M = A.map((row, i) => [...row, b[i]]);
+  for (let c = 0; c < n; c++){
+    let p = c; for (let r = c+1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    [M[c], M[p]] = [M[p], M[c]];
+    const d = M[c][c]; if (Math.abs(d) < 1e-14) return null;
+    for (let r = 0; r < n; r++){ if (r === c) continue; const f = M[r][c]/d; if (f === 0) continue; for (let k = c; k <= n; k++) M[r][k] -= f*M[c][k]; }
+  }
+  return M.map((row, i) => row[n]/row[i]);
+}
+function newton(x, prm, iters){
+  let res = 1;
+  for (let it = 0; it < iters; it++){
+    const T = build(x, prm); const f = residuals(T); res = Math.max(...f.map(Math.abs));
+    if (res < 1e-15) break;
+    const n = x.length; const J = []; const h = 1e-7;
+    for (let i = 0; i < f.length; i++) J.push(new Array(n).fill(0));
+    for (let j = 0; j < n; j++){ const xp = x.slice(); xp[j] += h; const fp = residuals(build(xp, prm)); for (let i = 0; i < f.length; i++) J[i][j] = (fp[i] - f[i])/h; }
+    const dx = solveLinear(J, f); if (!dx) return { x, res: 1 };
+    x = x.map((v, i) => v - dx[i]);
+  }
+  const f = residuals(build(x, prm)); res = Math.max(...f.map(Math.abs));
+  return { x, res };
+}
+function valid(T){
+  for (let i = 0; i < 9; i++){ const [a, b, w] = T[i]; if (!(w > 0.02) || !isFinite(a) || !isFinite(b)) return false; if (Math.abs(a) > 1.001 || Math.abs(b) > 1.001) return false;
+    if (i < 5 && !(a < b)) return false; if (i >= 5 && !(a > b)) return false; }
+  for (let i = 1; i < 9; i++) if (!(T[i][1] < T[i-1][1])) return false;
+  return true;
+}
+// 初期値：texample.net の並行配置（Chiodo の条件をほぼ満たす）→ 伝統パラメータへニュートンで移す
+const X0 = [-0.106601,0.723151,0.601117, -0.700383,0.467423,0.689361, -0.479232,0.155939,0.338113, -0.242466,0.051573,0.253927, 0.467423,0.350511, 0.723151,-0.479232,0.716736, 0.267949,0.512818];
+let xSol = X0.slice(); let prm = PARAM0.slice();
+{ const s = newton(xSol, prm, 12); xSol = s.x; }
+let TRI = build(xSol, prm);
+
+// 以前の作図（2026-03-26 の p5 版）：正三角形を大きさ違いに重ねただけ（下向き5・上向き4）
+function oldTriangles(){
+  const up = [0.3, 0.5, 0.7, 0.9].map(s => [s, -0.5*s, 0.866*s]);
+  const dn = [0.2, 0.35, 0.5, 0.65, 0.85].map(s => [-s, 0.5*s, 0.866*s]);
+  const all = [...dn.map(t => ({ t, d: true })), ...up.map(t => ({ t, d: false }))];
+  // 底辺の高さ順に並べ、向きの並び（下5→上4）に合わせる
+  const dnS = dn.sort((p, q) => q[1] - p[1]); const upS = up.sort((p, q) => q[1] - p[1]);
+  return [...dnS, ...upS].map(t => t.map(v => v*1.05));
+}
+const OLD = oldTriangles();
+
+// 交点の対（右側）：(iii) は 脚(t')∩底辺(t'') と 脚(t''')∩底辺(t'')、(ii) は apex(t') と base(t'')
+function marmaPairs(T){
+  const out = [];
+  for (const [a, b, c] of III){ const y = T[b-1][1]; out.push([legx(T[a-1], y), y, legx(T[c-1], y), y]); }
+  for (const [a, b] of II) out.push([0, T[a-1][0], 0, T[b-1][1]]);
+  return out; // 19 pairs
+}
+
+// ============================================================
+//  GLSL
+// ============================================================
+const VS = `#version 300 es
+void main(){ vec2 v = vec2((gl_VertexID<<1)&2, gl_VertexID&2); gl_Position = vec4(v*2.0-1.0, 0.0, 1.0); }`;
+const FS = `#version 300 es
+precision highp float;
+uniform vec2 uRes; uniform float uScale, uTime, uFrame, uAlpha, uFill, uPetal, uOuter, uMarma, uRelief;
+uniform vec3 uTri[9]; uniform float uDraw[9]; uniform vec4 uPair[19]; uniform vec3 uLight;
+uniform vec3 uPig[10]; uniform vec3 uInk, uPaperCol, uPetalA, uPetalB, uBhu; uniform float uDark;
+uniform vec3 uPulse[8]; uniform int uHover; uniform vec2 uPtr; uniform float uHandle[4]; uniform float uHandleY[4]; uniform float uMountain;
+uniform sampler2D uPrev;
+out vec4 fragColor;
+#define PI 3.14159265358979
+
+float hash21(vec2 p){ p = fract(p*vec2(233.34, 851.73)); p += dot(p, p + 23.45); return fract(p.x*p.y); }
+float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+  return mix(mix(hash21(i), hash21(i+vec2(1,0)), f.x), mix(hash21(i+vec2(0,1)), hash21(i+vec2(1,1)), f.x), f.y); }
+float fbm(vec2 p){ float n = 0.0, a = 0.5; for (int i = 0; i < 5; i++){ n += a*vnoise(p); p = p*2.03 + 7.1; a *= 0.5; } return n; }
+
+float sdSeg(vec2 p, vec2 a, vec2 b){ vec2 pa = p - a, ba = b - a; float h = clamp(dot(pa, ba)/dot(ba, ba), 0.0, 1.0); return length(pa - ba*h); }
+// 部分的に描かれた線分（0..f）
+float sdSegPart(vec2 p, vec2 a, vec2 b, float f){ if (f <= 0.0) return 1e9; return sdSeg(p, a, mix(a, b, clamp(f, 0.0, 1.0))); }
+float sdTri(vec2 p, vec2 p0, vec2 p1, vec2 p2){
+  vec2 e0 = p1-p0, e1 = p2-p1, e2 = p0-p2; vec2 v0 = p-p0, v1 = p-p1, v2 = p-p2;
+  vec2 pq0 = v0 - e0*clamp(dot(v0,e0)/dot(e0,e0), 0.0, 1.0);
+  vec2 pq1 = v1 - e1*clamp(dot(v1,e1)/dot(e1,e1), 0.0, 1.0);
+  vec2 pq2 = v2 - e2*clamp(dot(v2,e2)/dot(e2,e2), 0.0, 1.0);
+  float s = sign(e0.x*e2.y - e0.y*e2.x);
+  vec2 d = min(min(vec2(dot(pq0,pq0), s*(v0.x*e0.y-v0.y*e0.x)), vec2(dot(pq1,pq1), s*(v1.x*e1.y-v1.y*e1.x))), vec2(dot(pq2,pq2), s*(v2.x*e2.y-v2.y*e2.x)));
+  return -sqrt(d.x)*sign(d.y);
+}
+// 重なりの数（浮き彫りの高さ）
+float height(vec2 p){
+  float h = 0.0; float beta = 0.016;
+  for (int i = 0; i < 9; i++){ vec3 t = uTri[i]; float sd = sdTri(p, vec2(0.0, t.x), vec2(t.z, t.y), vec2(-t.z, t.y)); h += smoothstep(beta, -beta, sd)*uDraw[i]; }
+  return h;
+}
+// 花弁（蓮）：半径 r0..r1 の間に n 枚。戻り値 x=距離（近似）, y=花弁内なら1
+vec2 petal(vec2 p, float n, float r0, float r1, float phase){
+  float r = length(p); float th = atan(p.y, p.x);
+  float k = floor((th + phase)/(2.0*PI/n) + 0.5); float c = k*2.0*PI/n - phase;
+  float dth = th - c; dth -= floor(dth/(2.0*PI) + 0.5)*2.0*PI;
+  float u = (r - r0)/(r1 - r0);
+  float wmax = 0.5*(2.0*PI/n)*0.86;
+  float w = wmax*pow(sin(clamp(u, 0.0, 1.0)*PI), 0.62);
+  float dtan = (abs(dth) - w)*r;  // 接線方向の距離（近似）
+  float drad = max(r0 - r, r - r1);
+  float d = max(dtan, drad);
+  return vec2(d, d < 0.0 ? 1.0 : 0.0);
+}
+// 三重の方形（bhupura）と四つの門
+float sdBhupura(vec2 p, float s){
+  vec2 q = abs(p);
+  float dsq = max(q.x, q.y) - s;               // 正方形
+  // 門：各辺の中央に幅 gw の張り出し
+  float gw = 0.34, gd = 0.12;
+  vec2 g = vec2(min(q.x, q.y), max(q.x, q.y));  // g.y が辺に垂直な方向
+  float dg = max(g.x - gw, g.y - (s + gd));
+  float dg2 = max(g.x - gw*0.62, g.y - (s + gd*1.9));
+  float inside = min(dsq, min(dg, dg2));
+  return inside;
+}
+void main(){
+  vec2 jit = vec2(hash21(gl_FragCoord.xy + uFrame*0.37), hash21(gl_FragCoord.yx + uFrame*0.91)) - 0.5;
+  vec2 p = (gl_FragCoord.xy + jit - 0.5*uRes)/uScale;
+  float px = 1.0/uScale;
+  // ---- 紙 ----
+  vec2 fp = p*3.0;
+  float fiber = fbm(vec2(fp.x*1.0, fp.y*7.0))*0.5 + fbm(vec2(fp.x*7.0, fp.y*1.0))*0.5;
+  float grain = hash21(floor(gl_FragCoord.xy*0.5));
+  vec3 paper = uPaperCol*(0.965 + 0.05*fiber + 0.02*grain);
+  // ---- 高さ（浮き彫り）と法線 ----
+  float h0 = height(p); float e = 1.4*px;
+  float hx = (height(p + vec2(e, 0.0)) - height(p - vec2(e, 0.0)))/(2.0*e);
+  float hy = (height(p + vec2(0.0, e)) - height(p - vec2(0.0, e)))/(2.0*e);
+  float k = (0.055 + 0.22*uMountain)*uRelief;
+  vec3 n = normalize(vec3(-hx*k, -hy*k, 1.0));
+  float ndl = dot(n, normalize(uLight));
+  float shade = mix(0.80 + 0.26*ndl, 0.55 + 0.62*max(ndl, 0.0) + 0.08, uMountain);   // 紙は環境光が主。須弥山は影が深い
+  // ---- 塗り（顔料）：層ごとに色 ----
+  int cnt = 0; float dl = 1e9; float dIn = 1e9; float dHover = 1e9; bool inHover = false;
+  for (int i = 0; i < 9; i++){
+    vec3 t = uTri[i]; vec2 A = vec2(0.0, t.x), B = vec2(t.z, t.y), C = vec2(-t.z, t.y);
+    float sd = sdTri(p, A, B, C);
+    if (sd < 0.0 && uDraw[i] > 0.999){ cnt++; dIn = min(dIn, -sd); }
+    if (i == uHover){ dHover = abs(sd); inHover = sd < 0.0; }
+    // 線：apex→右→左→apex を進む
+    float L1 = length(B - A), L2 = 2.0*t.z, Ltot = 2.0*L1 + L2; float s = uDraw[i]*Ltot;
+    float d1 = sdSegPart(p, A, B, s/L1); float d2 = sdSegPart(p, B, C, (s - L1)/L2); float d3 = sdSegPart(p, C, A, (s - L1 - L2)/L1);
+    dl = min(dl, min(d1, min(d2, d3)));
+  }
+  vec3 col = paper;
+  if (cnt > 0){
+    vec3 c = uPig[cnt];
+    if (inHover) c = mix(c, vec3(1.0, 0.92, 0.7), 0.18);
+    float gran = 0.92 + 0.10*vnoise(p*140.0) + 0.04*vnoise(p*37.0);   // 顔料の粒
+    float pool = 1.0 - 0.18*exp(-dIn/(3.0*px));                       // 縁に溜まる
+    c *= gran*pool;
+    float fillA = clamp((uFill - float(cnt-1)/9.0)*9.0, 0.0, 1.0);    // 層ごとに順に塗る
+    col = mix(paper, c, fillA*0.93);
+  }
+  // ---- 蓮の花弁 ----
+  vec2 p8 = petal(p, 8.0, 1.03, 1.26, PI/8.0), p16 = petal(p, 16.0, 1.30, 1.58, 0.0);
+  if (uPetal > 0.0){
+    float a8 = smoothstep(px, -px, p8.x)*clamp(uPetal*2.0, 0.0, 1.0);
+    float a16 = smoothstep(px, -px, p16.x)*clamp(uPetal*2.0 - 0.7, 0.0, 1.0);
+    vec3 c8 = uPetalA*(0.93 + 0.07*vnoise(p*120.0)); vec3 c16 = uPetalB*(0.93 + 0.07*vnoise(p*120.0));
+    col = mix(col, c8, a8*0.85); col = mix(col, c16, a16*0.8);
+    dl = min(dl, abs(p8.x) + (a8 > 0.0 ? 0.0 : 1e9)); dl = min(dl, abs(p16.x) + (a16 > 0.0 ? 0.0 : 1e9));
+    // 花弁の中筋
+    float r = length(p);
+    if (p8.y > 0.5 && r > 1.06 && r < 1.22){ float th = atan(p.y, p.x); float kk = floor((th + PI/8.0)/(PI/4.0) + 0.5); float c0 = kk*PI/4.0 - PI/8.0; float dv = abs(sin(th - c0))*r; dl = min(dl, dv + 0.4*px); }
+  }
+  // ---- 円と方形 ----
+  float r = length(p);
+  float dc = min(abs(r - 1.0), 1e9);
+  if (uOuter > 0.0){
+    float o1 = clamp(uOuter*3.0, 0.0, 1.0), o2 = clamp(uOuter*3.0 - 1.0, 0.0, 1.0), o3 = clamp(uOuter*3.0 - 2.0, 0.0, 1.0);
+    float th = atan(p.y, p.x); float ang = (th + PI)/(2.0*PI);
+    if (ang < o1) dc = min(dc, abs(r - 1.62)); if (ang < o2) dc = min(dc, abs(r - 1.675)); if (ang < o3) dc = min(dc, abs(r - 1.73));
+    float sq = abs(sdBhupura(p, 1.90)); float sq2 = abs(sdBhupura(p, 1.97)); float sq3 = abs(sdBhupura(p, 2.04));
+    float bs = clamp(uOuter*1.5 - 0.5, 0.0, 1.0);
+    if (bs > 0.0){ float fade = 1.0 - bs; dc = min(dc, sq + fade*0.3); dc = min(dc, sq2 + fade*0.4); dc = min(dc, sq3 + fade*0.5); }
+    // 方形の内側を薄い黄土で
+    float inb = smoothstep(px, -px, sdBhupura(p, 1.90)) - smoothstep(px, -px, r - 1.76);
+    col = mix(col, uBhu*(0.95 + 0.05*vnoise(p*90.0)), clamp(inb, 0.0, 1.0)*0.55*bs);
+  }
+  // ---- 墨線 ----
+  float ink = smoothstep(1.3*px, 0.2*px, dl);
+  float inkC = smoothstep(1.1*px, 0.2*px, dc);
+  ink = max(ink, inkC*0.9);
+  vec3 sumi = uInk;
+  col = mix(col, sumi, ink*0.9);
+  // 触れた三角形：縁が金に浮かぶ
+  if (uHover >= 0){ float hg = smoothstep(3.0*px, 0.0, dHover); col = mix(col, vec3(0.95, 0.78, 0.35), hg*0.9); }
+  // ---- 浮き彫りの陰影 ----
+  col *= shade;
+  // ---- 急所を叩いた光：線の上だけを走る ----
+  float lineMask = max(smoothstep(2.2*px, 0.3*px, dl), inkC);
+  for (int i = 0; i < 8; i++){
+    vec3 q = uPulse[i]; if (q.z < 0.0) continue;
+    float rr = q.z*1.35; float dd = length(p - q.xy) - rr;
+    float ring = exp(-dd*dd/(0.0018 + 0.004*q.z)); float fade = exp(-q.z*0.9);
+    vec3 glow = mix(vec3(1.0, 0.82, 0.45), vec3(1.0, 0.95, 0.85), uDark);
+    col += glow*ring*fade*(1.1*lineMask + 0.10);
+    // 金の点を通る瞬間の火花
+    for (int j = 0; j < 19; j++){ vec4 pr = uPair[j]; vec2 m = vec2(pr.x, pr.y);
+      for (int sg = 0; sg < 2; sg++){ if (j >= 12 && sg == 1) continue; vec2 mm = vec2(sg == 0 ? m.x : -m.x, m.y);
+        float on = exp(-pow((length(mm - q.xy) - rr)/0.03, 2.0)); float d = length(p - mm);
+        col += glow*on*fade*exp(-d*d/(0.0006))*1.6; } }
+  }
+  // ---- 急所（marma）：交点の対。重なれば金、離れていれば朱の二点 ----
+  if (uMarma > 0.0){
+    for (int i = 0; i < 19; i++){
+      vec4 q = uPair[i];
+      for (int sgn = 0; sgn < 2; sgn++){
+        float sx = sgn == 0 ? 1.0 : -1.0; if (i >= 12 && sgn == 1) continue;
+        vec2 a = vec2(sx*q.x, q.y), b = vec2(sx*q.z, q.w);
+        float gap = length(a - b);
+        float rad = max(2.6*px, 0.0105);
+        if (gap < 0.5*px){
+          float d = length(p - a) - rad;
+          float glint = pow(max(0.0, 1.0 - length(p - a - vec2(-0.8, 0.8)*px)/(2.0*rad)), 2.0);
+          vec3 gold = vec3(0.86, 0.66, 0.25) + vec3(0.3)*glint;
+          gold *= 0.85 + 0.25*dot(normalize(vec3(uLight.xy, 1.0)), vec3(0,0,1));
+          col = mix(col, gold, smoothstep(px, -px*0.3, d)*uMarma);
+        } else {
+          float d = min(length(p - a), length(p - b)) - rad*0.7;
+          col = mix(col, vec3(0.75, 0.18, 0.12), smoothstep(px, -px*0.3, d)*uMarma);
+          float dseg = sdSeg(p, a, b); col = mix(col, vec3(0.75, 0.18, 0.12), smoothstep(px, 0.0, dseg)*0.5*uMarma);
+        }
+      }
+    }
+  }
+  // ---- 軸上の四つの取っ手（t3, t6, t7, t9 の底辺）----
+  for (int i = 0; i < 4; i++){
+    float ha = uHandle[i]; if (ha <= 0.001) continue;
+    float d = length(p - vec2(0.0, uHandleY[i]));
+    float ringk = smoothstep(1.2*px, 0.0, abs(d - 0.032)); float disc = smoothstep(px, -px, d - 0.032);
+    vec3 hc = mix(uInk, vec3(0.95, 0.78, 0.35), clamp(ha - 1.0, 0.0, 1.0));
+    col = mix(col, hc, ringk*min(ha, 1.0)*0.9); col = mix(col, vec3(0.95, 0.78, 0.35), disc*clamp(ha - 1.0, 0.0, 1.0)*0.5);
+  }
+  // ---- 中心の点（bindu）----
+  float db = length(p) - 0.018; col = mix(col, vec3(0.72, 0.16, 0.10), smoothstep(px, -px, db)*clamp(uDraw[0]*2.0, 0.0, 1.0));
+  // ---- 蓄積 ----
+  vec3 prev = texelFetch(uPrev, ivec2(gl_FragCoord.xy), 0).rgb;
+  fragColor = vec4(mix(prev, col, uAlpha), 1.0);
+}`;
+const FS_OUT = `#version 300 es
+precision highp float; uniform sampler2D uAcc; uniform vec2 uRes; out vec4 o;
+void main(){ vec2 uv = gl_FragCoord.xy/uRes; vec3 c = texture(uAcc, uv).rgb; vec2 q = uv*2.0-1.0; c *= 1.0 - 0.10*dot(q,q)*dot(q,q);
+  float dth = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898,78.233)))*43758.5453); o = vec4(c + (dth-0.5)/255.0, 1.0); }`;
+
+// ============================================================
+//  WebGL
+// ============================================================
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' });
+if (!gl) throw new Error('WebGL2 が必要です');
+if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('EXT_color_buffer_float が必要です');
+function compile(type, src){ const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function program(vs, fs){ const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); for (let i = 0; i < n; i++){ const info = gl.getActiveUniform(p, i); u[info.name.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, info.name); } return { p, u }; }
+const P_MAIN = program(VS, FS), P_OUT = program(VS, FS_OUT);
+gl.bindVertexArray(gl.createVertexArray());
+function makeTex(w, h){ const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return t; }
+let W = 0, H = 0, acc = null, cur = 0, accN = 0;
+function alloc(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const cw = Math.max(64, Math.round(canvas.clientWidth || window.innerWidth || 640)), ch = Math.max(64, Math.round(canvas.clientHeight || window.innerHeight || 480));
+  let s = dpr; if (cw*ch*s*s > 3.2e6) s = Math.sqrt(3.2e6/(cw*ch));
+  const w = Math.round(cw*s), h = Math.round(ch*s); if (w === W && h === H) return false;
+  W = w; H = h; canvas.width = W; canvas.height = H;
+  if (acc) acc.forEach(a => { gl.deleteTexture(a.t); gl.deleteFramebuffer(a.f); });
+  acc = [0, 1].map(() => { const t = makeTex(W, H); const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0); return { t, f }; });
+  accN = 0; return true;
+}
+
+// ============================================================
+//  状態・時間
+// ============================================================
+const state = { t: num('warm', 0), frame: 0, breathe: !Q.has('still'), lightOn: true, compare: 0, compareTarget: 0, drag: -1, residual: 0, moved: true,
+  pal: Math.round(num('pal', 0)), drift: Q.get('drift') === '1', mountain: 0, mountainT: Q.get('mt') === '1' ? 1 : 0, walk: false, hover: -1, ptr: [99, 99], handleA: [0,0,0,0], pulses: [] };
+// ---------- 彩：顔料の組み合わせ ----------
+// [name, dark, paper, ink, petalA, petalB, bhupura, pig1..pig9]
+const PALETTES = [
+  ['伝統', 0, [0.925,0.915,0.885], [0.13,0.11,0.10], [0.92,0.62,0.55], [0.86,0.72,0.60], [0.90,0.80,0.62],
+    [0.34,0.42,0.60],[0.80,0.36,0.26],[0.26,0.34,0.55],[0.86,0.45,0.30],[0.22,0.30,0.50],[0.90,0.55,0.36],[0.40,0.30,0.48],[0.93,0.66,0.42],[0.97,0.93,0.84]],
+  ['夜', 1, [0.075,0.075,0.095], [0.88,0.80,0.62], [0.36,0.20,0.26], [0.26,0.20,0.30], [0.14,0.13,0.17],
+    [0.12,0.16,0.30],[0.48,0.16,0.14],[0.16,0.22,0.40],[0.62,0.26,0.16],[0.20,0.30,0.52],[0.78,0.40,0.20],[0.36,0.22,0.46],[0.90,0.62,0.28],[0.98,0.92,0.72]],
+  ['水', 0, [0.90,0.92,0.91], [0.10,0.14,0.15], [0.62,0.80,0.78], [0.72,0.84,0.80], [0.80,0.86,0.82],
+    [0.25,0.45,0.55],[0.36,0.62,0.60],[0.18,0.36,0.50],[0.46,0.72,0.66],[0.14,0.30,0.46],[0.58,0.80,0.72],[0.30,0.44,0.60],[0.72,0.86,0.78],[0.96,0.98,0.94]],
+  ['朱', 0, [0.93,0.90,0.86], [0.18,0.08,0.06], [0.92,0.70,0.60], [0.94,0.80,0.70], [0.92,0.84,0.72],
+    [0.94,0.78,0.66],[0.86,0.46,0.34],[0.90,0.66,0.52],[0.80,0.32,0.22],[0.86,0.56,0.42],[0.70,0.22,0.16],[0.82,0.44,0.30],[0.60,0.14,0.12],[0.98,0.92,0.82]],
+  ['翠', 1, [0.06,0.08,0.07], [0.80,0.86,0.70], [0.20,0.30,0.22], [0.16,0.24,0.20], [0.10,0.13,0.11],
+    [0.10,0.24,0.20],[0.22,0.44,0.28],[0.12,0.32,0.30],[0.34,0.58,0.30],[0.10,0.40,0.38],[0.52,0.72,0.34],[0.24,0.50,0.46],[0.78,0.86,0.42],[0.94,0.98,0.80]],
+];
+const palCur = PALETTES[0].slice(2).map(c => c.slice());   // 補間中の値
+let palTarget = 0;
+function lerpPal(dt){ const tgt = PALETTES[palTarget].slice(2); const k = Math.min(1, dt*1.6); for (let i = 0; i < palCur.length; i++) for (let j = 0; j < 3; j++) palCur[i][j] += (tgt[i][j] - palCur[i][j])*k; }
+function setPal(i, snap){ palTarget = ((i % PALETTES.length) + PALETTES.length) % PALETTES.length; state.pal = palTarget; document.body.classList.toggle('dark', PALETTES[palTarget][1] === 1);
+  if (snap){ const tgt = PALETTES[palTarget].slice(2); for (let a = 0; a < palCur.length; a++) for (let j = 0; j < 3; j++) palCur[a][j] = tgt[a][j]; } }
+setPal(state.pal, true); state.mountain = state.mountainT;
+// 族の散策：四つの底辺を Ornstein–Uhlenbeck で歩く
+const walkV = [0,0,0,0];
+const DRAW0 = 1.0, DRAW_EACH = 0.9, DRAW_STAG = 0.55;   // 線を引く
+const FILL0 = DRAW0 + 8*DRAW_STAG + DRAW_EACH + 0.3;     // 塗り始め ≈ 6.6
+const MARMA0 = FILL0 + 3.0, PETAL0 = FILL0 + 4.0, OUTER0 = FILL0 + 5.5, BREATH0 = OUTER0 + 4.0;
+function segD(p, a, b){ const abx = b[0]-a[0], aby = b[1]-a[1]; const t = Math.max(0, Math.min(1, ((p[0]-a[0])*abx + (p[1]-a[1])*aby)/(abx*abx + aby*aby))); return Math.hypot(p[0] - a[0] - abx*t, p[1] - a[1] - aby*t); }
+function ease(x){ x = Math.max(0, Math.min(1, x)); return x*x*(3 - 2*x); }
+const resEl = document.getElementById('res');
+
+function update(dt){
+  const t = state.t;
+  // 呼吸：四つの底辺を Lissajous で揺らす（交わりは毎フレーム解き直す）
+  const breath = state.breathe ? ease((t - BREATH0)/6) : 0;
+  if (state.walk){ for (let i = 0; i < 4; i++){ walkV[i] += (-0.9*state.manual[i]*0.4 - 0.5*walkV[i])*dt + (Math.random() - 0.5)*0.05*Math.sqrt(dt); state.manual[i] = Math.max(-0.10, Math.min(0.10, state.manual[i] + walkV[i]*dt*1.2)); } }
+  lerpPal(dt);
+  if (state.drift) { state.driftT = (state.driftT || 0) + dt; if (state.driftT > 24){ state.driftT = 0; setPal(palTarget + 1); } }
+  state.mountain += (state.mountainT - state.mountain)*Math.min(1, dt*1.5);
+  for (let i = 0; i < 4; i++){ const near = Math.abs(state.ptr[0]) < 0.22 && Math.abs(state.ptr[1] - prm[i]) < 0.12; const tgt = state.drag === i ? 2 : (near ? 1 : (Math.abs(state.ptr[0]) < 0.35 ? 0.35 : 0.12)); state.handleA[i] += (tgt - state.handleA[i])*Math.min(1, dt*8); }
+  state.pulses = state.pulses.filter(q => (q[2] += dt) < 4.5);
+  const target = PARAM0.map((v, i) => v + state.manual[i] + breath*AMP[i]*Math.sin(2*Math.PI*(t - BREATH0)/PER[i] + i*1.7));
+  const s = newton(xSol, target, 4);
+  const T = build(s.x, target);
+  if (s.res < 1e-9 && valid(T)){ xSol = s.x; prm = target; TRI = T; state.residual = s.res; }
+  // 以前の作図との比較（X）
+  state.compare += (state.compareTarget - state.compare)*Math.min(1, dt*2.2);
+  const c = ease(state.compare);
+  const shown = TRI.map((tr, i) => tr.map((v, j) => v*(1 - c) + OLD[i][j]*c));
+  const pairs = marmaPairs(shown);
+  // 触れている三角形（縁に最も近いもの）
+  { let best = -1, bd = 0.035; const [x, y] = state.ptr;
+    for (let i = 0; i < 9; i++){ const [a, b, w] = shown[i]; const A = [0, a], B = [w, b], C = [-w, b];
+      const d = Math.min(segD([x, y], A, B), segD([x, y], B, C), segD([x, y], C, A)); if (d < bd){ bd = d; best = i; } }
+    state.hover = best; }
+  resEl.innerHTML = c < 0.5
+    ? `並行条件 19 の残差 <b>${state.residual.toExponential(1)}</b><br>底辺 P Q R S ＝ ${prm.map(v => ((1 - v)/2*48).toFixed(2)).join(' · ')} ／48`
+    : `以前の作図（正三角形の重ね置き）<br>交わるべき 19 組のうち一致 <b>${pairs.filter(q => Math.hypot(q[0]-q[2], q[1]-q[3]) < 1e-6).length}</b>`;
+  return { shown, pairs };
+}
+const lightState = { az: 2.35, el: 0.95 };
+function render(dt){
+  state.frame++;
+  const t = state.t;
+  const { shown, pairs } = update(dt);
+  if (state.lightOn) lightState.az = 2.35 + 0.6*Math.sin(t*0.11);
+  const light = [Math.cos(lightState.el)*Math.cos(lightState.az), Math.cos(lightState.el)*Math.sin(lightState.az), Math.sin(lightState.el)];
+  const draw = new Float32Array(9); for (let i = 0; i < 9; i++) draw[i] = ease((t - DRAW0 - i*DRAW_STAG)/DRAW_EACH);
+  const scale = Math.min(W, H)/(2*2.28)*num('zoom', 1);
+  const next = 1 - cur;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, acc[next].f); gl.viewport(0, 0, W, H);
+  gl.useProgram(P_MAIN.p); const u = P_MAIN.u;
+  gl.uniform2f(u.uRes, W, H); gl.uniform1f(u.uScale, scale); gl.uniform1f(u.uTime, t); gl.uniform1f(u.uFrame, state.frame);
+  if (state.moved){ accN = 0; state.moved = false; }
+  const K = 6; const alpha = 1/Math.min(accN + 1, K); accN++;
+  gl.uniform1f(u.uAlpha, alpha);
+  gl.uniform1f(u.uFill, ease((t - FILL0)/3.2)); gl.uniform1f(u.uPetal, ease((t - PETAL0)/2.5)); gl.uniform1f(u.uOuter, ease((t - OUTER0)/3.0)); gl.uniform1f(u.uMarma, ease((t - MARMA0)/1.5)); gl.uniform1f(u.uRelief, ease((t - FILL0)/3.0));
+  gl.uniform3fv(u.uTri, new Float32Array(shown.flat())); gl.uniform1fv(u.uDraw, draw); gl.uniform4fv(u.uPair, new Float32Array(pairs.flat())); gl.uniform3fv(u.uLight, light);
+  const pigArr = new Float32Array(30); pigArr.set(palCur[0], 0); for (let i = 1; i <= 9; i++) pigArr.set(palCur[4 + i], i*3);
+  gl.uniform3fv(u.uPig, pigArr); gl.uniform3fv(u.uPaperCol, palCur[0]); gl.uniform3fv(u.uInk, palCur[1]); gl.uniform3fv(u.uPetalA, palCur[2]); gl.uniform3fv(u.uPetalB, palCur[3]); gl.uniform3fv(u.uBhu, palCur[4]);
+  gl.uniform1f(u.uDark, PALETTES[palTarget][1]); gl.uniform1f(u.uMountain, state.mountain);
+  const pul = new Float32Array(24).fill(-1); state.pulses.forEach((q, i) => { if (i < 8) pul.set(q, i*3); }); gl.uniform3fv(u.uPulse, pul);
+  gl.uniform1i(u.uHover, state.hover); gl.uniform2fv(u.uPtr, state.ptr); gl.uniform1fv(u.uHandle, new Float32Array(state.handleA)); gl.uniform1fv(u.uHandleY, new Float32Array(prm));
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, acc[cur].t); gl.uniform1i(u.uPrev, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3); cur = next;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H);
+  gl.useProgram(P_OUT.p); gl.uniform2f(P_OUT.u.uRes, W, H); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, acc[cur].t); gl.uniform1i(P_OUT.u.uAcc, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+// ============================================================
+//  入力：軸上の四点（t3, t6, t7, t9 の底辺）をドラッグ
+// ============================================================
+state.manual = [0, 0, 0, 0];
+const ui = document.getElementById('ui'); let uiTimer = 0;
+function wake(){ ui.classList.remove('fade'); clearTimeout(uiTimer); uiTimer = setTimeout(() => ui.classList.add('fade'), 7000); } wake();
+function toWorld(e){ const r = canvas.getBoundingClientRect(); const s = Math.min(r.width, r.height)/(2*2.28)*num('zoom', 1); return [(e.clientX - r.left - r.width/2)/s, -(e.clientY - r.top - r.height/2)/s]; }
+let lightDrag = null, lastTap = 0;
+canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); wake(); const [x, y] = toWorld(e); state.ptr = [x, y];
+  if (e.shiftKey || e.button === 2){ lightDrag = [e.clientX, e.clientY]; return; }
+  let best = -1, bd = 0.11; for (let i = 0; i < 4; i++){ const d = Math.hypot(x, y - prm[i]); if (d < bd){ bd = d; best = i; } }
+  state.drag = best; state.dragY = y; state.dragBase = state.manual.slice(); state.downAt = [x, y, performance.now()]; });
+canvas.addEventListener('pointermove', e => { const [x, y] = toWorld(e); state.ptr = [x, y];
+  if (lightDrag){ lightState.az -= (e.clientX - lightDrag[0])*0.01; lightState.el = Math.max(0.25, Math.min(1.45, lightState.el + (e.clientY - lightDrag[1])*0.008)); lightDrag = [e.clientX, e.clientY]; state.lightOn = false; return; }
+  if (state.drag < 0) return; const i = state.drag; state.walk = false; setBtn('walk', false);
+  const v = Math.max(-0.10, Math.min(0.10, state.dragBase[i] + (y - state.dragY))); state.manual[i] = v; });
+function endPtr(e){
+  if (lightDrag){ lightDrag = null; return; }
+  if (state.downAt){ const [x0, y0, t0] = state.downAt; const [x, y] = toWorld(e);
+    if (state.drag < 0 && Math.hypot(x - x0, y - y0) < 0.02 && performance.now() - t0 < 400){
+      const now = performance.now();
+      if (now - lastTap < 320){ toggleCompare(); lastTap = 0; }
+      else { lastTap = now; // 急所（または最寄りの線上の点）を叩く
+        const pairs = marmaPairs(TRI); let best = null, bd = 0.09;
+        for (const q of pairs){ for (const sx of [1, -1]){ const m = [sx*q[0], q[1]]; const d = Math.hypot(x - m[0], y - m[1]); if (d < bd){ bd = d; best = m; } } }
+        state.pulses.push(best ? [best[0], best[1], 0] : [x, y, 0]); if (state.pulses.length > 8) state.pulses.shift(); }
+    } state.downAt = null; }
+  state.drag = -1; }
+canvas.addEventListener('pointerup', endPtr); canvas.addEventListener('pointercancel', endPtr);
+canvas.addEventListener('pointerleave', () => { state.ptr = [99, 99]; });
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+function toggleCompare(){ state.compareTarget = 1 - state.compareTarget; setBtn('cmp', state.compareTarget === 1); wake(); }
+function randomWalkTarget(){ state.walk = !state.walk; setBtn('walk', state.walk); }
+function setBtn(k, on){ const b = document.querySelector(`#ctl button[data-k="${k}"]`); if (b) b.classList.toggle('on', !!on); }
+document.querySelectorAll('#ctl button').forEach(b => b.addEventListener('click', () => { wake(); const k = b.dataset.k;
+  if (k === 'pal') setPal(palTarget + 1);
+  if (k === 'drift'){ state.drift = !state.drift; setBtn('drift', state.drift); }
+  if (k === 'relief'){ state.mountainT = 1 - state.mountainT; setBtn('relief', state.mountainT === 1); }
+  if (k === 'walk') randomWalkTarget();
+  if (k === 'cmp') toggleCompare();
+  if (k === 'breath'){ state.breathe = !state.breathe; setBtn('breath', state.breathe); } }));
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space'){ e.preventDefault(); state.breathe = !state.breathe; setBtn('breath', state.breathe); wake(); }
+  if (e.key === 'x' || e.key === 'X') toggleCompare();
+  if (e.key === 'l' || e.key === 'L') state.lightOn = !state.lightOn;
+  if (e.key === 'm' || e.key === 'M'){ state.mountainT = 1 - state.mountainT; setBtn('relief', state.mountainT === 1); }
+  if (e.key === 'c' || e.key === 'C'){ state.drift = !state.drift; setBtn('drift', state.drift); }
+  if (e.key === 'r' || e.key === 'R') randomWalkTarget();
+  if (e.key === 't' || e.key === 'T'){ state.manual = [0,0,0,0]; state.walk = false; setBtn('walk', false); }
+  if (e.key >= '1' && e.key <= '5') setPal(parseInt(e.key) - 1);
+});
+setBtn('drift', state.drift); setBtn('relief', state.mountainT === 1);
+if (Q.get('old') === '1'){ state.compare = state.compareTarget = 1; }
+new ResizeObserver(() => { if (alloc()) state.moved = true; }).observe(canvas);
+
+// ============================================================
+//  ループ
+// ============================================================
+alloc();
+let last = performance.now();
+if (Q.has('warm')){ if (Q.has('ptr')){ const v = Q.get('ptr').split(',').map(parseFloat); state.ptr = [v[0] || 0, v[1] || 0]; } for (let i = 0; i < 64; i++) render(1/60); if (Q.has('pulse')){ state.pulses.push([0, TRI[4][0], parseFloat(Q.get('pulse')) || 0.5]); for (let i = 0; i < 4; i++) render(1/60); } }
+function loop(now){ let dt = (now - last)/1000; last = now; if (dt > 0.08) dt = 0.08; state.t += dt; if (alloc()) state.moved = true; render(dt); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
