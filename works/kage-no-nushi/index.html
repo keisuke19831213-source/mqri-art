@@ -23,10 +23,10 @@
 <canvas id="c"></canvas>
 <div id="ui">
   <div id="title">影の主<span>Kage no Nushi — メタトロンキューブは影である。その主を立ち上がらせる</span></div>
-  <div id="hint">ドラッグ＝視点　ホイール／ピンチ＝寄る　タップ＝止める／進める<br>1 立方体　2 正八面体　3 星（二つの正四面体）　4 正二十面体（円が黄金比へ滑る）　5 正十二面体（六と十二の環）　0 全部　C＝彩　Space＝自動</div>
+  <div id="hint">ドラッグ＝視点（全角度・真下からも）　上か下へ倒し切ると真俯瞰に吸い付き、辺が影とぴたり重なる（正射影）　ホイール／ピンチ＝寄る　タップ＝止める／進める<br>1 立方体　2 正八面体　3 星（二つの正四面体）　4 正二十面体（円が黄金比へ滑る）　5 正十二面体（六と十二の環）　0 三つ　V＝俯瞰へ　C＝彩　Space＝自動</div>
 </div>
 <div id="stage"></div>
-<div id="ctl"><button data-s="1">立方</button><button data-s="2">八面</button><button data-s="3">星</button><button data-s="4">二十面</button><button data-s="5">十二面</button><button data-s="0">全</button><button data-k="pal">彩</button><button data-k="auto" class="on">自動</button></div>
+<div id="ctl"><button data-s="1">立方</button><button data-s="2">八面</button><button data-s="3">星</button><button data-s="4">二十面</button><button data-s="5">十二面</button><button data-s="0">全</button><button data-k="top">俯瞰</button><button data-k="pal">彩</button><button data-k="auto" class="on">自動</button></div>
 
 <script>
 'use strict';
@@ -110,15 +110,17 @@ const FS_PLANE = `#version 300 es
 precision highp float;
 uniform vec2 uRes; uniform vec3 uCamPos; uniform mat3 uCam; uniform float uTanHalf, uTime, uROut, uLines, uCircles, uDodeca;
 uniform vec3 uInk, uBg; uniform float uFar;
-uniform vec4 uShadow[64]; uniform vec3 uShadowCol[64]; uniform int uNShadow;
+uniform vec4 uShadow[64]; uniform vec3 uShadowCol[64]; uniform int uNShadow; uniform float uAlign, uOrtho, uHalfH;
 out vec4 fragColor;
 float hash21(vec2 p){ p = fract(p*vec2(233.34, 851.73)); p += dot(p, p + 23.45); return fract(p.x*p.y); }
 float sdSeg(vec2 p, vec2 a, vec2 b){ vec2 pa = p - a, ba = b - a; float h = clamp(dot(pa, ba)/dot(ba, ba), 0.0, 1.0); return length(pa - ba*h); }
 void main(){
   vec2 uv = (gl_FragCoord.xy/uRes)*2.0 - 1.0; uv.x *= uRes.x/uRes.y;
   vec3 d = normalize(uCam*vec3(uv*uTanHalf, 1.0)); vec3 o = uCamPos;
-  if (d.z >= -1e-5 && o.z > 0.0){ fragColor = vec4(uBg, 1.0); gl_FragDepth = 1.0; return; }
-  float t = -o.z/d.z; vec3 P = o + d*t; vec2 p = P.xy;
+  if (abs(d.z) < 1e-6){ fragColor = vec4(uBg, 1.0); gl_FragDepth = 1.0; return; }
+  float t = -o.z/d.z;
+  if (t <= 0.0){ fragColor = vec4(uBg, 1.0); gl_FragDepth = 1.0; return; }
+  vec3 P = o + d*t; vec2 p = P.xy;
   float px = t*uTanHalf*2.0/uRes.y;          // 1画素の世界幅（近似）
   // 13点
   vec2 pts[13]; pts[0] = vec2(0.0);
@@ -141,12 +143,12 @@ void main(){
   // 立ち上がった主の影：その線だけが主の色で灯る
   vec3 glow = vec3(0.0);
   for (int i = 0; i < 64; i++){ if (i >= uNShadow) break; vec4 sg = uShadow[i]; float d = sdSeg(p, sg.xy, sg.zw);
-    glow += uShadowCol[i]*(smoothstep(2.2*px, 0.3*px, d)*0.9 + exp(-d*d/(0.004))*0.25); }
+    glow += uShadowCol[i]*(smoothstep(2.2*px, 0.3*px, d)*(0.9 + 0.9*uAlign) + exp(-d*d/(0.004))*0.25*(1.0 + uAlign)); }
   col = max(col + glow, vec3(0.0));
   col = mix(uBg, col, fog);
   fragColor = vec4(col, 1.0);
-  // 深度（線形をそのまま0..1に）
-  gl_FragDepth = clamp(t/uFar, 0.0, 0.9999);
+  // 深度（線形をそのまま0..1に）。下から見るときは硝子＝立体を隠さない
+  gl_FragDepth = o.z < 0.0 ? 0.9998 : clamp(t/uFar, 0.0, 0.9997);
 }`;
 // 辺：インスタンス化した板（カプセル風の陰影）。a,b: 端点。u: 0..1 沿い、v: -1..1 幅
 const VS_EDGE = `#version 300 es
@@ -264,7 +266,7 @@ const palCur = { bg: PALETTES[pal].bg.slice(), ink: PALETTES[pal].ink.slice(), g
 //  状態
 // ============================================================
 const state = { t: num('warm', 0), sceneIdx: Math.round(num('scene', 0)), sceneT: 0, auto: !Q.has('scene'), yaw: num('yaw', 0.7), pitch: num('pitch', 0.62), zoom: num('zoom', 1), moved: true, rOut: 4, rOutTarget: 4,
-  lift: {}, liftTarget: {}, frame: 0, lines: 0, circles: 0, dodeca: 0 };
+  lift: {}, liftTarget: {}, frame: 0, lines: 0, circles: 0, dodeca: 0, ortho: 0, orthoT: 0, align: 0, dragging: false };
 for (const k in GEO){ state.lift[k] = 0; state.liftTarget[k] = 0; }
 const LIFT_H = { cube: 3.2, octa: 2.2, tetA: 3.2, tetB: 3.2, icosa: 2.8, dodeca: 3.6 };
 function ease(x){ x = Math.max(0, Math.min(1, x)); return x*x*(3 - 2*x); }
@@ -281,26 +283,37 @@ function stepScene(dt){
   state.circles = ease((state.t - 0.5)/2.5); state.lines = ease((state.t - 2.5)/4.0);
   const solidsNames = cur.solids.map(k => GEO[k] ? (k === 'tetA' || k === 'tetB' ? '' : '') : '').join('');
   const rOutTxt = Math.abs(cur.rOut - 4) < 1e-6 ? '4（古典）' : (Math.abs(cur.rOut - 2*PHI) < 1e-6 ? '2φ ＝ 3.236（黄金）' : '2√2 ＝ 2.828');
-  stageEl.innerHTML = `<b>${cur.name}</b><br>${cur.en}<br>外環 ${rOutTxt}`;
+  stageEl.innerHTML = `<b>${cur.name}</b><br>${cur.en}<br>外環 ${rOutTxt}` + (state.align > 0.9 ? `<br><b>${state.pitch > 0 ? '真俯瞰' : '真下'} — 辺は影と一致（正射影）</b>` : (state.ortho > 0.05 ? '<br>正射影へ ' + Math.round(state.ortho*100) + '%' : ''));
 }
 function camera(){
-  const aspect = W/H; const fov = 30*Math.PI/180; const tanHalf = Math.tan(fov/2);
-  const fit = 5.2/(0.82*tanHalf); const dist = (aspect < 1 ? fit/aspect : fit)/state.zoom;
+  const aspect = W/H;
+  // 俯瞰に吸い付くほど望遠→正射影へ（ドリーズーム：対象面での画角の高さを保つ）
+  const k = state.ortho; const fov = (30*(1 - k) + 0.32*k)*Math.PI/180; const tanHalf = Math.tan(fov/2);
+  const tan30 = Math.tan(15*Math.PI/180);
+  const fit0 = 5.2/(0.82*tan30); const halfH = fit0*tan30*(aspect < 1 ? 1/aspect : 1)/state.zoom;   // 対象面での半高さ
+  const dist = halfH/tanHalf;
   const cp = Math.cos(state.pitch), sp = Math.sin(state.pitch);
-  const tgt = [0, 0, 0.9]; const pos = [dist*cp*Math.cos(state.yaw), dist*cp*Math.sin(state.yaw), dist*sp + tgt[2]];
+  const tgt = [0, 0, k > 0.5 ? 0.0 : 0.9*(1 - k)]; const pos = [dist*cp*Math.cos(state.yaw), dist*cp*Math.sin(state.yaw), dist*sp + tgt[2]];
   let f = [tgt[0]-pos[0], tgt[1]-pos[1], tgt[2]-pos[2]]; const fl = Math.hypot(...f); f = f.map(v => v/fl);
-  let r = [f[1], -f[0], 0]; const rl = Math.hypot(...r); r = r.map(v => v/rl);
+  const r = [-Math.sin(state.yaw), Math.cos(state.yaw), 0];
   const up = [r[1]*f[2]-r[2]*f[1], r[2]*f[0]-r[0]*f[2], r[0]*f[1]-r[1]*f[0]];
   const basis = new Float32Array([r[0], r[1], r[2], up[0], up[1], up[2], f[0], f[1], f[2]]);           // 列 = r, up, f
   const inv = new Float32Array([r[0], up[0], f[0], r[1], up[1], f[1], r[2], up[2], f[2]]);             // 転置
-  return { pos, basis, inv, tanHalf, dist };
+  return { pos, basis, inv, tanHalf, dist, halfH };
 }
-const FAR = 60;
+let FAR = 60;
 function render(dt){
   state.frame++; stepScene(dt);
   for (const k of ['bg', 'ink']) for (let j = 0; j < 3; j++) palCur[k][j] += (PALETTES[pal][k][j] - palCur[k][j])*Math.min(1, dt*2); palCur.glow += (PALETTES[pal].glow - palCur.glow)*Math.min(1, dt*2);
-  if (state.auto) state.yaw += dt*0.06;
-  const cam = camera();
+  if (state.auto){ state.yaw += dt*0.06; if (!state.dragging){ const ph = state.t*0.075; const target = 0.5 + 1.05*Math.sin(ph); state.pitch += (target - state.pitch)*Math.min(1, dt*0.8); } }
+  // 真俯瞰／真下への吸い付き：倒し切る（|pitch|>75°）と ±90° へ寄り、正射影へ
+  const lim = 75*Math.PI/180; const near = Math.abs(state.pitch) > lim && !state.dragging;
+  if (near){ const tgt = Math.sign(state.pitch)*Math.PI/2; state.pitch += (tgt - state.pitch)*Math.min(1, dt*3.0); }
+  state.orthoT = near ? 1 : 0; state.ortho += (state.orthoT - state.ortho)*Math.min(1, dt*(near ? 1.6 : 2.2));
+  if (state.pitch > Math.PI/2 - 1e-4) state.pitch = Math.PI/2 - 1e-4; if (state.pitch < -Math.PI/2 + 1e-4) state.pitch = -Math.PI/2 + 1e-4;
+  state.align = state.ortho*ease((Math.abs(state.pitch) - 1.45)/0.12);
+  const cam = camera(); FAR = cam.dist*2.0 + 30;
+  setBtn('top', state.align > 0.5);
   // ---- 1) 平面 ----
   gl.bindFramebuffer(gl.FRAMEBUFFER, scene.f); gl.viewport(0, 0, W, H);
   gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.BLEND);
@@ -313,6 +326,7 @@ function render(dt){
       const dk = PALETTES[pal].light ? -0.35 : 1.0;
       for (const [i, j] of G.E){ if (n >= 64) break; seg.push(G.P[i][0], G.P[i][1], G.P[j][0], G.P[j][1]); scol.push(G.col[0]*a*dk, G.col[1]*a*dk, G.col[2]*a*dk); n++; } }
     gl.uniform1i(u.uNShadow, n); if (n){ gl.uniform4fv(u.uShadow, new Float32Array(seg)); gl.uniform3fv(u.uShadowCol, new Float32Array(scol)); } }
+  gl.uniform1f(u.uAlign, state.align); gl.uniform1f(u.uOrtho, state.ortho); gl.uniform1f(u.uHalfH, cam.halfH);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   // ---- 2) 辺・糸・珠（加算）----
   const edges = [], threads = [], dots = [];
@@ -349,19 +363,20 @@ function wake(){ ui.classList.remove('fade'); clearTimeout(uiTimer); uiTimer = s
 canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now() }); wake();
   if (ptrs.size === 2){ const a = [...ptrs.values()]; lastPinch = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); } });
 canvas.addEventListener('pointermove', e => { const p = ptrs.get(e.pointerId); if (!p) return; const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
-  if (ptrs.size === 1){ state.yaw -= dx*0.006; state.pitch = Math.max(0.08, Math.min(1.45, state.pitch + dy*0.006)); }
+  if (ptrs.size === 1){ state.dragging = true; state.yaw -= dx*0.006; state.pitch = Math.max(-Math.PI/2 + 1e-3, Math.min(Math.PI/2 - 1e-3, state.pitch + dy*0.006)); }
   else if (ptrs.size === 2){ const a = [...ptrs.values()]; const d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); if (lastPinch > 0) state.zoom = Math.max(0.5, Math.min(5, state.zoom*(d/lastPinch))); lastPinch = d; } });
-function endPtr(e){ const p = ptrs.get(e.pointerId); ptrs.delete(e.pointerId); lastPinch = 0;
+function endPtr(e){ const p = ptrs.get(e.pointerId); ptrs.delete(e.pointerId); lastPinch = 0; if (ptrs.size === 0) state.dragging = false;
   if (p && ptrs.size === 0 && Math.hypot(p.x - p.x0, p.y - p.y0) < 6 && performance.now() - p.t0 < 350){ // タップ：自動なら止める、止まっていれば次へ
     if (state.auto){ state.auto = false; } else setScene(state.sceneIdx + 1); setBtn('auto', state.auto); } }
 canvas.addEventListener('pointerup', endPtr); canvas.addEventListener('pointercancel', endPtr);
 canvas.addEventListener('wheel', e => { e.preventDefault(); state.zoom = Math.max(0.5, Math.min(5, state.zoom*Math.exp(-e.deltaY*0.0015))); wake(); }, { passive: false });
+function goTop(){ state.auto = false; setBtn('auto', false); state.pitch = Math.abs(state.pitch) > 1e-3 && state.pitch < 0 ? -1.40 : 1.40; }
 function setBtn(k, on){ const b = document.querySelector(`#ctl button[data-k="${k}"]`); if (b) b.classList.toggle('on', !!on); }
 function pickScene(n){ const map = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 0: 6 }; state.auto = false; setBtn('auto', false); setScene(map[n]); state.sceneT = 1.2; }
-document.querySelectorAll('#ctl button').forEach(b => b.addEventListener('click', () => { wake(); if (b.dataset.s !== undefined) pickScene(parseInt(b.dataset.s)); if (b.dataset.k === 'pal') pal = (pal + 1) % PALETTES.length; if (b.dataset.k === 'auto'){ state.auto = !state.auto; setBtn('auto', state.auto); } }));
+document.querySelectorAll('#ctl button').forEach(b => b.addEventListener('click', () => { wake(); if (b.dataset.s !== undefined) pickScene(parseInt(b.dataset.s)); if (b.dataset.k === 'pal') pal = (pal + 1) % PALETTES.length; if (b.dataset.k === 'top') goTop(); if (b.dataset.k === 'auto'){ state.auto = !state.auto; setBtn('auto', state.auto); } }));
 document.querySelectorAll('#ctl button[data-s]').forEach(b => { const upd = () => b.classList.toggle('on', parseInt(b.dataset.s) === ({1:1,2:2,3:3,4:4,5:5,6:0})[state.sceneIdx]); setInterval(upd, 300); });
 window.addEventListener('keydown', e => { if (e.code === 'Space'){ e.preventDefault(); state.auto = !state.auto; setBtn('auto', state.auto); }
-  if (e.key >= '0' && e.key <= '5') pickScene(parseInt(e.key)); if (e.key === 'c' || e.key === 'C') pal = (pal + 1) % PALETTES.length; wake(); });
+  if (e.key >= '0' && e.key <= '5') pickScene(parseInt(e.key)); if (e.key === 'c' || e.key === 'C') pal = (pal + 1) % PALETTES.length; if (e.key === 'v' || e.key === 'V') goTop(); wake(); });
 new ResizeObserver(() => alloc()).observe(canvas);
 
 // ============================================================
