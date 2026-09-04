@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>影の主 — Kage no Nushi</title>
+<style>
+  html,body{margin:0;height:100%;background:#07080b;overflow:hidden;font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;color:#cfd3d8}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  #ui{position:fixed;left:18px;bottom:16px;pointer-events:none;user-select:none;opacity:.9;transition:opacity 2s}
+  #ui.fade{opacity:0}
+  #title{font-size:15px;letter-spacing:.35em;color:#e8e6df}
+  #title span{display:block;margin-top:5px;font-size:10.5px;letter-spacing:.12em;color:#9aa0a8}
+  #hint{margin-top:10px;font-size:10px;letter-spacing:.06em;color:#6f7680;line-height:1.7}
+  #stage{position:fixed;right:16px;top:14px;font-size:10px;letter-spacing:.16em;color:#8a8f96;pointer-events:none;text-align:right;line-height:1.8}
+  #stage b{color:#e2b45a;font-weight:500}
+  #ctl{position:fixed;right:16px;bottom:16px;display:flex;gap:6px;user-select:none;flex-wrap:wrap;justify-content:flex-end;max-width:60vw}
+  #ctl button{appearance:none;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.35);color:#c9cdd3;border-radius:999px;padding:6px 11px;font-size:11px;letter-spacing:.2em;cursor:pointer;backdrop-filter:blur(6px);font-family:inherit}
+  #ctl button.on{background:rgba(226,180,90,.9);color:#1a1712;border-color:transparent}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="title">影の主<span>Kage no Nushi — メタトロンキューブは影である。その主を立ち上がらせる</span></div>
+  <div id="hint">ドラッグ＝視点　ホイール／ピンチ＝寄る　タップ＝止める／進める<br>1 立方体　2 正八面体　3 星（二つの正四面体）　4 正二十面体（円が黄金比へ滑る）　5 正十二面体（六と十二の環）　0 全部　C＝彩　Space＝自動</div>
+</div>
+<div id="stage"></div>
+<div id="ctl"><button data-s="1">立方</button><button data-s="2">八面</button><button data-s="3">星</button><button data-s="4">二十面</button><button data-s="5">十二面</button><button data-s="0">全</button><button data-k="pal">彩</button><button data-k="auto" class="on">自動</button></div>
+
+<script>
+'use strict';
+// ============================================================
+//  影の主 — Kage no Nushi  (2026-09-04 / ccf5 art)
+//  フルーツ・オブ・ライフ13円 → メタトロンキューブ78線は「影」。
+//  三回対称軸に沿った正射影として厳密に住む立体：立方体・正八面体・正四面体（星）。
+//  正二十面体は外の六角形が 1:φ（2 → 2φ）に滑ったとき初めて住む。正十二面体は六と十二の環を要る。
+//  立体は面の平面と影の糸で描き、影は常に線の上に落ちる（射影は軸方向の持ち上げで不変）。
+// ============================================================
+const Q = new URLSearchParams(location.search);
+const num = (k, d) => (Q.has(k) && isFinite(parseFloat(Q.get(k)))) ? parseFloat(Q.get(k)) : d;
+const PHI = (1 + Math.sqrt(5))/2;
+
+// ---------- 幾何（世界座標：z が三回対称軸＝上）----------
+// 平面上の点：単位＝円の半径 r=1。内環 2、外環 4（古典）／2φ（黄金）
+function ringPoints(rad, rot){ const out = []; for (let i = 0; i < 6; i++){ const a = rot + i*Math.PI/3; out.push([rad*Math.cos(a), rad*Math.sin(a)]); } return out; }
+// 三回対称軸 n=(1,1,1)/√3 を z に送る回転。立体は「影＝環」に合うようスケールする
+const N3 = [1/Math.sqrt(3), 1/Math.sqrt(3), 1/Math.sqrt(3)];
+function basisFromAxis(){ const w = N3; let u = [1, -1, 0]; const ul = Math.hypot(...u); u = u.map(v => v/ul); const v = [w[1]*u[2]-w[2]*u[1], w[2]*u[0]-w[0]*u[2], w[0]*u[1]-w[1]*u[0]]; return { u, v, w }; }
+const B = basisFromAxis();
+function toWorld(p, s, rot){ // 3D点 p を軸座標へ：x=u·p, y=v·p, z=w·p、さらに平面内で rot 回転
+  const x = B.u[0]*p[0] + B.u[1]*p[1] + B.u[2]*p[2], y = B.v[0]*p[0] + B.v[1]*p[1] + B.v[2]*p[2], z = B.w[0]*p[0] + B.w[1]*p[1] + B.w[2]*p[2];
+  const c = Math.cos(rot), sn = Math.sin(rot); return [s*(x*c - y*sn), s*(x*sn + y*c), s*z]; }
+function edgesByLength(V, L){ const E = []; for (let i = 0; i < V.length; i++) for (let j = i+1; j < V.length; j++){ const d = Math.hypot(V[i][0]-V[j][0], V[i][1]-V[j][1], V[i][2]-V[j][2]); if (Math.abs(d - L) < 1e-6) E.push([i, j]); } return E; }
+function permsSigns(base){ const out = []; const seen = new Set(); const perms = [[0,1,2],[0,2,1],[1,0,2],[1,2,0],[2,0,1],[2,1,0]];
+  for (const pm of perms) for (let s = 0; s < 8; s++){ const v = [base[pm[0]]*((s&1)?-1:1), base[pm[1]]*((s&2)?-1:1), base[pm[2]]*((s&4)?-1:1)]; const k = v.map(x => x.toFixed(6)).join(','); if (!seen.has(k)){ seen.add(k); out.push(v); } } return out; }
+// 立体の定義。scale は「影の外環が指定半径に合う」ように後で決める
+const SOLIDS = {
+  cube:  { V: permsSigns([1,1,1]), L: 2, name: '立方体', en: 'CUBE' },
+  octa:  { V: permsSigns([1,0,0]), L: Math.sqrt(2), name: '正八面体', en: 'OCTAHEDRON' },
+  tetA:  { V: [[1,1,1],[1,-1,-1],[-1,1,-1],[-1,-1,1]], L: 2*Math.sqrt(2), name: '正四面体', en: 'TETRAHEDRON' },
+  tetB:  { V: [[-1,-1,-1],[-1,1,1],[1,-1,1],[1,1,-1]], L: 2*Math.sqrt(2), name: '正四面体', en: 'TETRAHEDRON' },
+  icosa: { V: permsSigns([0,1,PHI]).filter(v => { const k = [Math.abs(v[0]),Math.abs(v[1]),Math.abs(v[2])]; return (k[0]===0&&Math.abs(k[1]-1)<1e-9)||(k[1]===0&&Math.abs(k[2]-1)<1e-9)||(k[2]===0&&Math.abs(k[0]-1)<1e-9); }), L: 2, name: '正二十面体', en: 'ICOSAHEDRON' },
+  dodeca:{ V: [...permsSigns([1,1,1]), ...permsSigns([0,1/PHI,PHI]).filter(v => { const k = [Math.abs(v[0]),Math.abs(v[1]),Math.abs(v[2])]; return (k[0]===0&&Math.abs(k[1]-1/PHI)<1e-9)||(k[1]===0&&Math.abs(k[2]-1/PHI)<1e-9)||(k[2]===0&&Math.abs(k[0]-1/PHI)<1e-9); })], L: 2/PHI, name: '正十二面体', en: 'DODECAHEDRON' },
+};
+for (const k in SOLIDS){ const S = SOLIDS[k]; S.E = edgesByLength(S.V, S.L); }
+// 各立体を軸座標へ（スケール：影の環に合わせる）
+function projected(S, s, rot){ return S.V.map(p => toWorld(p, s, rot)); }
+function ringRadii(P){ const rs = P.map(p => Math.hypot(p[0], p[1])).map(v => +v.toFixed(4)); return [...new Set(rs)].sort((a, b) => a - b); }
+// スケール決定：立方体 外環=4 → s = 4/√(8/3)。八面体 内環=2 → s = 2/√(2/3)。四面体は立方体と同じ。
+const S_CUBE = 4/Math.sqrt(8/3), S_OCTA = 2/Math.sqrt(2/3);
+// 二十面体：内環（面の三角形）=2 に合わせると外環 = 2φ。十二面体：内環 1.155s'=2 → 外環 1.633s' = 2√2
+const S_ICO = 2/Math.sqrt(4/3), S_DOD = 2/Math.sqrt(4/3);
+// 平面内回転：立方体の外環が古典の外環（角度0,60..）に乗るよう合わせる
+function alignRot(S, s, targetRad){ const P = projected(S, s, 0); let best = 0, bd = 1e9; for (let k = 0; k < 360; k++){ const rot = k*Math.PI/180; const Pk = projected(S, s, rot); let err = 0;
+  for (const p of Pk){ const r = Math.hypot(p[0], p[1]); if (Math.abs(r - targetRad) < 1e-3){ const a = Math.atan2(p[1], p[0]); const m = a/(Math.PI/3); err += Math.abs(m - Math.round(m)); } }
+  if (err < bd){ bd = err; best = rot; } } return best; }
+const ROT_CUBE = alignRot(SOLIDS.cube, S_CUBE, 4), ROT_OCTA = alignRot(SOLIDS.octa, S_OCTA, 2), ROT_ICO = alignRot(SOLIDS.icosa, S_ICO, 2), ROT_DOD = alignRot(SOLIDS.dodeca, S_DOD, 2);
+const GEO = {
+  cube: { P: projected(SOLIDS.cube, S_CUBE, ROT_CUBE), E: SOLIDS.cube.E, col: [1.0, 0.80, 0.45] },
+  octa: { P: projected(SOLIDS.octa, S_OCTA, ROT_OCTA), E: SOLIDS.octa.E, col: [0.55, 0.80, 1.0] },
+  tetA: { P: projected(SOLIDS.tetA, S_CUBE, ROT_CUBE), E: SOLIDS.tetA.E, col: [1.0, 0.55, 0.45] },
+  tetB: { P: projected(SOLIDS.tetB, S_CUBE, ROT_CUBE), E: SOLIDS.tetB.E, col: [0.55, 0.95, 0.75] },
+  icosa:{ P: projected(SOLIDS.icosa, S_ICO, ROT_ICO), E: SOLIDS.icosa.E, col: [0.85, 0.65, 1.0] },
+  dodeca:{ P: projected(SOLIDS.dodeca, S_DOD, ROT_DOD), E: SOLIDS.dodeca.E, col: [1.0, 0.92, 0.70] },
+};
+// 検算：影の環の半径
+const CHECK = {}; for (const k in GEO) CHECK[k] = ringRadii(GEO[k].P);
+console.log('影の環', CHECK);
+
+// ---------- 場面 ----------
+// 各場面：外環の半径 rOut（4 or 2φ）、見せる立体、追加の環
+const SCENES = [
+  { id: 'plane', name: '影', en: 'THE SHADOW', rOut: 4, solids: [], dur: 14 },
+  { id: 'cube', name: '立方体', en: 'CUBE · exact', rOut: 4, solids: ['cube'], dur: 16 },
+  { id: 'octa', name: '正八面体', en: 'OCTAHEDRON · exact', rOut: 4, solids: ['octa'], dur: 16 },
+  { id: 'star', name: '星（二つの正四面体）', en: 'STAR TETRAHEDRON · exact', rOut: 4, solids: ['tetA', 'tetB'], dur: 16 },
+  { id: 'icosa', name: '正二十面体 — 外環が 2φ へ', en: 'ICOSAHEDRON · needs 1 : φ', rOut: 2*PHI, solids: ['icosa'], dur: 18 },
+  { id: 'dodeca', name: '正十二面体 — 六と十二の環', en: 'DODECAHEDRON · needs 6 + 12', rOut: 2*Math.sqrt(2), solids: ['dodeca'], dur: 18, dodeca: true },
+  { id: 'all', name: '古典に住む三つ（立方・八面・星）', en: 'THE EXACT THREE', rOut: 4, solids: ['cube', 'octa', 'tetA', 'tetB'], dur: 20 },
+];
+
+// ============================================================
+//  GLSL
+// ============================================================
+const VS_QUAD = `#version 300 es
+void main(){ vec2 v = vec2((gl_VertexID<<1)&2, gl_VertexID&2); gl_Position = vec4(v*2.0-1.0, 0.0, 1.0); }`;
+// 平面：13円・78線・影の糸の根本。深度も書く
+const FS_PLANE = `#version 300 es
+precision highp float;
+uniform vec2 uRes; uniform vec3 uCamPos; uniform mat3 uCam; uniform float uTanHalf, uTime, uROut, uLines, uCircles, uDodeca;
+uniform vec3 uInk, uBg; uniform float uFar;
+uniform vec4 uShadow[64]; uniform vec3 uShadowCol[64]; uniform int uNShadow;
+out vec4 fragColor;
+float hash21(vec2 p){ p = fract(p*vec2(233.34, 851.73)); p += dot(p, p + 23.45); return fract(p.x*p.y); }
+float sdSeg(vec2 p, vec2 a, vec2 b){ vec2 pa = p - a, ba = b - a; float h = clamp(dot(pa, ba)/dot(ba, ba), 0.0, 1.0); return length(pa - ba*h); }
+void main(){
+  vec2 uv = (gl_FragCoord.xy/uRes)*2.0 - 1.0; uv.x *= uRes.x/uRes.y;
+  vec3 d = normalize(uCam*vec3(uv*uTanHalf, 1.0)); vec3 o = uCamPos;
+  if (d.z >= -1e-5 && o.z > 0.0){ fragColor = vec4(uBg, 1.0); gl_FragDepth = 1.0; return; }
+  float t = -o.z/d.z; vec3 P = o + d*t; vec2 p = P.xy;
+  float px = t*uTanHalf*2.0/uRes.y;          // 1画素の世界幅（近似）
+  // 13点
+  vec2 pts[13]; pts[0] = vec2(0.0);
+  for (int i = 0; i < 6; i++){ float a = float(i)*3.14159265/3.0; pts[1+i] = 2.0*vec2(cos(a), sin(a)); pts[7+i] = uROut*vec2(cos(a), sin(a)); }
+  // 円
+  float dc = 1e9; for (int i = 0; i < 13; i++) dc = min(dc, abs(length(p - pts[i]) - 1.0));
+  // 78線（全対）
+  float dl = 1e9; for (int i = 0; i < 13; i++) for (int j = i+1; j < 13; j++) dl = min(dl, sdSeg(p, pts[i], pts[j]));
+  // 十二面体の環（六と十二）
+  float dr = 1e9;
+  if (uDodeca > 0.0){ dr = min(abs(length(p) - 2.0), abs(length(p) - 2.0*sqrt(2.0))); }
+  // 床：暗い石。遠くはフェード
+  float fog = exp(-t/uFar);
+  vec3 col = uBg*(0.9 + 0.1*hash21(floor(p*40.0)));
+  float ink = smoothstep(1.4*px, 0.2*px, dl)*uLines; float ring = smoothstep(1.6*px, 0.2*px, dc)*uCircles;
+  float rr = smoothstep(1.4*px, 0.2*px, dr)*uDodeca;
+  col = mix(col, uInk*0.55, ink); col = mix(col, uInk, ring); col = mix(col, vec3(0.9, 0.8, 0.5), rr*0.8);
+  // 点
+  float dp = 1e9; for (int i = 0; i < 13; i++) dp = min(dp, length(p - pts[i])); col = mix(col, uInk*1.3, smoothstep(2.5*px, 0.0, dp - 0.03)*uCircles);
+  // 立ち上がった主の影：その線だけが主の色で灯る
+  vec3 glow = vec3(0.0);
+  for (int i = 0; i < 64; i++){ if (i >= uNShadow) break; vec4 sg = uShadow[i]; float d = sdSeg(p, sg.xy, sg.zw);
+    glow += uShadowCol[i]*(smoothstep(2.2*px, 0.3*px, d)*0.9 + exp(-d*d/(0.004))*0.25); }
+  col = max(col + glow, vec3(0.0));
+  col = mix(uBg, col, fog);
+  fragColor = vec4(col, 1.0);
+  // 深度（線形をそのまま0..1に）
+  gl_FragDepth = clamp(t/uFar, 0.0, 0.9999);
+}`;
+// 辺：インスタンス化した板（カプセル風の陰影）。a,b: 端点。u: 0..1 沿い、v: -1..1 幅
+const VS_EDGE = `#version 300 es
+precision highp float;
+layout(location=0) in vec3 aA; layout(location=1) in vec3 aB; layout(location=2) in vec3 aCol; layout(location=3) in float aLift;
+uniform vec3 uCamPos; uniform mat3 uCamInv; uniform float uTanHalf; uniform vec2 uRes; uniform float uWidth, uFar;
+out vec3 vCol; out float vV; out float vDepth; out vec3 vPos; out float vU;
+void main(){
+  int id = gl_VertexID; vec2 q = vec2(float(id & 1), float((id >> 1) & 1)); // 0..1
+  vec3 A = aA + vec3(0.0, 0.0, aLift), Bp = aB + vec3(0.0, 0.0, aLift);
+  vec3 P = mix(A, Bp, q.x);
+  // 画面平行の幅方向
+  vec3 view = normalize(P - uCamPos); vec3 axis = normalize(Bp - A); vec3 side = normalize(cross(view, axis));
+  float w = uWidth*(1.0 + 0.0);
+  vec3 W = P + side*w*(q.y*2.0 - 1.0);
+  vec3 rel = W - uCamPos; vec3 c = uCamInv*rel;   // カメラ座標 (x right, y up, z fwd)
+  float z = max(c.z, 1e-3);
+  vec2 ndc = vec2(c.x/(z*uTanHalf)*(uRes.y/uRes.x), c.y/(z*uTanHalf));
+  gl_Position = vec4(ndc, 0.0, 1.0);
+  vCol = aCol; vV = q.y*2.0 - 1.0; vDepth = z/uFar; vPos = W; vU = q.x;
+}`;
+const FS_EDGE = `#version 300 es
+precision highp float;
+in vec3 vCol; in float vV; in float vDepth; in vec3 vPos; in float vU;
+uniform vec3 uLight; uniform float uGlow;
+out vec4 fragColor;
+void main(){
+  float r = abs(vV); float body = sqrt(max(0.0, 1.0 - r*r));
+  vec3 col = vCol*(0.55 + 0.75*body) + vec3(0.6)*pow(body, 8.0)*0.6;
+  float aa = smoothstep(1.0, 0.75, r);
+  fragColor = vec4(col*uGlow*aa, aa);
+  gl_FragDepth = clamp(vDepth, 0.0, 0.9999);
+}`;
+// 影の糸：頂点から真下の平面点へ（細く・淡い）
+const FS_THREAD = `#version 300 es
+precision highp float;
+in vec3 vCol; in float vV; in float vDepth; in vec3 vPos; in float vU;
+uniform vec3 uLight; uniform float uGlow;
+out vec4 fragColor;
+void main(){ float r = abs(vV); float aa = smoothstep(1.0, 0.4, r); float dash = 0.5 + 0.5*smoothstep(0.35, 0.65, fract(vPos.z*4.0));
+  fragColor = vec4(vCol*uGlow*0.35*aa*dash, aa*0.5); gl_FragDepth = clamp(vDepth, 0.0, 0.9999); }`;
+// 頂点の珠
+const VS_DOT = `#version 300 es
+precision highp float;
+layout(location=0) in vec3 aP; layout(location=1) in vec3 aCol; layout(location=2) in float aLift;
+uniform vec3 uCamPos; uniform mat3 uCamInv; uniform float uTanHalf; uniform vec2 uRes; uniform float uRad, uFar;
+out vec3 vCol; out vec2 vQ; out float vDepth;
+void main(){ int id = gl_VertexID; vec2 q = vec2(float(id & 1), float((id >> 1) & 1))*2.0 - 1.0;
+  vec3 P = aP + vec3(0.0, 0.0, aLift); vec3 rel = P - uCamPos; vec3 c = uCamInv*rel; float z = max(c.z, 1e-3);
+  vec2 ndc = vec2(c.x/(z*uTanHalf)*(uRes.y/uRes.x), c.y/(z*uTanHalf)); vec2 sz = vec2(uRad/(z*uTanHalf)*(uRes.y/uRes.x), uRad/(z*uTanHalf));
+  gl_Position = vec4(ndc + q*sz, 0.0, 1.0); vCol = aCol; vQ = q; vDepth = z/uFar; }`;
+const FS_DOT = `#version 300 es
+precision highp float; in vec3 vCol; in vec2 vQ; in float vDepth; uniform float uGlow; out vec4 fragColor;
+void main(){ float r = length(vQ); if (r > 1.0) discard; float body = sqrt(1.0 - r*r); vec3 n = vec3(vQ, body); float spec = pow(max(dot(n, normalize(vec3(-0.5, 0.6, 0.8))), 0.0), 14.0);
+  vec3 col = vCol*(0.5 + 0.6*body) + vec3(1.0)*spec*0.6; float aa = smoothstep(1.0, 0.85, r); fragColor = vec4(col*uGlow*aa, aa); gl_FragDepth = clamp(vDepth - 0.0002, 0.0, 0.9999); }`;
+const FS_DOWN = `#version 300 es
+precision highp float; uniform sampler2D uS; uniform vec2 uDst; out vec4 o;
+void main(){ vec2 uv = gl_FragCoord.xy/uDst; vec2 px = 1.0/uDst;
+  vec3 c = texture(uS, uv + px*vec2(-0.5,-0.5)).rgb + texture(uS, uv + px*vec2(0.5,-0.5)).rgb + texture(uS, uv + px*vec2(-0.5,0.5)).rgb + texture(uS, uv + px*vec2(0.5,0.5)).rgb; o = vec4(c*0.25, 1.0); }`;
+const FS_POST = `#version 300 es
+precision highp float; uniform sampler2D uAcc, uB1, uB2, uB3, uB4, uB5; uniform vec2 uRes; uniform float uBloom, uFade; out vec4 o;
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0); }
+void main(){ vec2 uv = gl_FragCoord.xy/uRes; vec3 c = texture(uAcc, uv).rgb;
+  vec3 b = texture(uB1, uv).rgb*0.30 + texture(uB2, uv).rgb*0.26 + texture(uB3, uv).rgb*0.20 + texture(uB4, uv).rgb*0.14 + texture(uB5, uv).rgb*0.10;
+  c = c + b*uBloom; vec2 q = uv*2.0-1.0; c *= 1.0 - 0.25*dot(q,q)*dot(q,q); c = aces(c)*uFade; c = pow(c, vec3(1.0/2.2));
+  float dth = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898,78.233)))*43758.5453); o = vec4(c + (dth-0.5)/255.0, 1.0); }`;
+
+// ============================================================
+//  WebGL
+// ============================================================
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' });
+if (!gl) throw new Error('WebGL2 が必要です');
+if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('EXT_color_buffer_float が必要です');
+function compile(type, src){ const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function program(vs, fs){ const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); for (let i = 0; i < n; i++){ const info = gl.getActiveUniform(p, i); u[info.name.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, info.name); } return { p, u }; }
+const P_PLANE = program(VS_QUAD, FS_PLANE), P_EDGE = program(VS_EDGE, FS_EDGE), P_THREAD = program(VS_EDGE, FS_THREAD), P_DOT = program(VS_DOT, FS_DOT), P_DOWN = program(VS_QUAD, FS_DOWN), P_POST = program(VS_QUAD, FS_POST);
+const vaoQuad = gl.createVertexArray();
+function makeTex(w, h, internal, filter){ const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texStorage2D(gl.TEXTURE_2D, 1, internal, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return t; }
+let W = 0, H = 0, scene = null, bloom = null, depthRB = null;
+function alloc(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const cw = Math.max(64, Math.round(canvas.clientWidth || window.innerWidth || 640)), ch = Math.max(64, Math.round(canvas.clientHeight || window.innerHeight || 480));
+  let s = dpr; if (cw*ch*s*s > 3.0e6) s = Math.sqrt(3.0e6/(cw*ch));
+  const w = Math.round(cw*s), h = Math.round(ch*s); if (w === W && h === H) return false; W = w; H = h; canvas.width = W; canvas.height = H;
+  if (scene){ gl.deleteTexture(scene.t); gl.deleteFramebuffer(scene.f); gl.deleteRenderbuffer(depthRB); bloom.forEach(b => { gl.deleteTexture(b.t); gl.deleteFramebuffer(b.f); }); }
+  const t = makeTex(W, H, gl.RGBA16F, gl.LINEAR); const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  depthRB = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, depthRB); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, W, H); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthRB);
+  scene = { t, f };
+  bloom = []; let bw = W, bh = H; for (let i = 0; i < 5; i++){ bw = Math.max(1, bw >> 1); bh = Math.max(1, bh >> 1); const tt = makeTex(bw, bh, gl.RGBA16F, gl.LINEAR); const ff = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, ff); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tt, 0); bloom.push({ t: tt, f: ff, w: bw, h: bh }); }
+  return true;
+}
+// インスタンス用バッファ
+const edgeBuf = gl.createBuffer(), dotBuf = gl.createBuffer();
+const vaoEdge = gl.createVertexArray(); gl.bindVertexArray(vaoEdge); gl.bindBuffer(gl.ARRAY_BUFFER, edgeBuf);
+[[0,3,0],[1,3,12],[2,3,24],[3,1,36]].forEach(([loc, size, off]) => { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 40, off); gl.vertexAttribDivisor(loc, 1); });
+const vaoDot = gl.createVertexArray(); gl.bindVertexArray(vaoDot); gl.bindBuffer(gl.ARRAY_BUFFER, dotBuf);
+[[0,3,0],[1,3,12],[2,1,24]].forEach(([loc, size, off]) => { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 28, off); gl.vertexAttribDivisor(loc, 1); });
+gl.bindVertexArray(null);
+
+// ============================================================
+//  彩
+// ============================================================
+const PALETTES = [
+  { name: '夜', bg: [0.035, 0.040, 0.055], ink: [0.62, 0.66, 0.74], glow: 1.0 },
+  { name: '墨', bg: [0.93, 0.92, 0.89], ink: [0.12, 0.11, 0.10], glow: 1.0, light: true },
+  { name: '藍', bg: [0.04, 0.07, 0.13], ink: [0.55, 0.72, 0.90], glow: 1.05 },
+];
+let pal = Math.round(num('pal', 0)) % PALETTES.length;
+const palCur = { bg: PALETTES[pal].bg.slice(), ink: PALETTES[pal].ink.slice(), glow: PALETTES[pal].glow };
+
+// ============================================================
+//  状態
+// ============================================================
+const state = { t: num('warm', 0), sceneIdx: Math.round(num('scene', 0)), sceneT: 0, auto: !Q.has('scene'), yaw: num('yaw', 0.7), pitch: num('pitch', 0.62), zoom: num('zoom', 1), moved: true, rOut: 4, rOutTarget: 4,
+  lift: {}, liftTarget: {}, frame: 0, lines: 0, circles: 0, dodeca: 0 };
+for (const k in GEO){ state.lift[k] = 0; state.liftTarget[k] = 0; }
+const LIFT_H = { cube: 3.2, octa: 2.2, tetA: 3.2, tetB: 3.2, icosa: 2.8, dodeca: 3.6 };
+function ease(x){ x = Math.max(0, Math.min(1, x)); return x*x*(3 - 2*x); }
+const stageEl = document.getElementById('stage');
+function setScene(i){ state.sceneIdx = ((i % SCENES.length) + SCENES.length) % SCENES.length; state.sceneT = 0; }
+function stepScene(dt){
+  const sc = SCENES[state.sceneIdx]; state.sceneT += dt;
+  if (state.auto && state.sceneT > sc.dur && state.t > 6) setScene(state.sceneIdx + 1);
+  const cur = SCENES[state.sceneIdx];
+  state.rOutTarget = cur.rOut; state.rOut += (state.rOutTarget - state.rOut)*Math.min(1, dt*1.4);
+  for (const k in GEO){ const on = cur.solids.includes(k) && state.sceneT > 1.2; state.liftTarget[k] = on ? 1 : 0; state.lift[k] += (state.liftTarget[k] - state.lift[k])*Math.min(1, dt*(on ? 0.9 : 1.6)); }
+  state.dodeca += ((cur.dodeca ? 1 : 0) - state.dodeca)*Math.min(1, dt*1.5);
+  // 導入：円→線
+  state.circles = ease((state.t - 0.5)/2.5); state.lines = ease((state.t - 2.5)/4.0);
+  const solidsNames = cur.solids.map(k => GEO[k] ? (k === 'tetA' || k === 'tetB' ? '' : '') : '').join('');
+  const rOutTxt = Math.abs(cur.rOut - 4) < 1e-6 ? '4（古典）' : (Math.abs(cur.rOut - 2*PHI) < 1e-6 ? '2φ ＝ 3.236（黄金）' : '2√2 ＝ 2.828');
+  stageEl.innerHTML = `<b>${cur.name}</b><br>${cur.en}<br>外環 ${rOutTxt}`;
+}
+function camera(){
+  const aspect = W/H; const fov = 30*Math.PI/180; const tanHalf = Math.tan(fov/2);
+  const fit = 5.2/(0.82*tanHalf); const dist = (aspect < 1 ? fit/aspect : fit)/state.zoom;
+  const cp = Math.cos(state.pitch), sp = Math.sin(state.pitch);
+  const tgt = [0, 0, 0.9]; const pos = [dist*cp*Math.cos(state.yaw), dist*cp*Math.sin(state.yaw), dist*sp + tgt[2]];
+  let f = [tgt[0]-pos[0], tgt[1]-pos[1], tgt[2]-pos[2]]; const fl = Math.hypot(...f); f = f.map(v => v/fl);
+  let r = [f[1], -f[0], 0]; const rl = Math.hypot(...r); r = r.map(v => v/rl);
+  const up = [r[1]*f[2]-r[2]*f[1], r[2]*f[0]-r[0]*f[2], r[0]*f[1]-r[1]*f[0]];
+  const basis = new Float32Array([r[0], r[1], r[2], up[0], up[1], up[2], f[0], f[1], f[2]]);           // 列 = r, up, f
+  const inv = new Float32Array([r[0], up[0], f[0], r[1], up[1], f[1], r[2], up[2], f[2]]);             // 転置
+  return { pos, basis, inv, tanHalf, dist };
+}
+const FAR = 60;
+function render(dt){
+  state.frame++; stepScene(dt);
+  for (const k of ['bg', 'ink']) for (let j = 0; j < 3; j++) palCur[k][j] += (PALETTES[pal][k][j] - palCur[k][j])*Math.min(1, dt*2); palCur.glow += (PALETTES[pal].glow - palCur.glow)*Math.min(1, dt*2);
+  if (state.auto) state.yaw += dt*0.06;
+  const cam = camera();
+  // ---- 1) 平面 ----
+  gl.bindFramebuffer(gl.FRAMEBUFFER, scene.f); gl.viewport(0, 0, W, H);
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.BLEND);
+  gl.clearColor(palCur.bg[0], palCur.bg[1], palCur.bg[2], 1); gl.clearDepth(1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.useProgram(P_PLANE.p); const u = P_PLANE.u; gl.bindVertexArray(vaoQuad);
+  gl.uniform2f(u.uRes, W, H); gl.uniform3fv(u.uCamPos, cam.pos); gl.uniformMatrix3fv(u.uCam, false, cam.basis); gl.uniform1f(u.uTanHalf, cam.tanHalf); gl.uniform1f(u.uTime, state.t);
+  gl.uniform1f(u.uROut, state.rOut); gl.uniform1f(u.uLines, state.lines); gl.uniform1f(u.uCircles, state.circles); gl.uniform1f(u.uDodeca, state.dodeca); gl.uniform3fv(u.uInk, palCur.ink); gl.uniform3fv(u.uBg, palCur.bg); gl.uniform1f(u.uFar, FAR);
+  { const seg = [], scol = []; let n = 0;
+    for (const k in GEO){ const L = state.lift[k]; if (L < 0.003) continue; const G = GEO[k]; const a = Math.min(1, L*2.0)*0.9;
+      const dk = PALETTES[pal].light ? -0.35 : 1.0;
+      for (const [i, j] of G.E){ if (n >= 64) break; seg.push(G.P[i][0], G.P[i][1], G.P[j][0], G.P[j][1]); scol.push(G.col[0]*a*dk, G.col[1]*a*dk, G.col[2]*a*dk); n++; } }
+    gl.uniform1i(u.uNShadow, n); if (n){ gl.uniform4fv(u.uShadow, new Float32Array(seg)); gl.uniform3fv(u.uShadowCol, new Float32Array(scol)); } }
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  // ---- 2) 辺・糸・珠（加算）----
+  const edges = [], threads = [], dots = [];
+  for (const k in GEO){ const L = state.lift[k]; if (L < 0.003) continue; const G = GEO[k]; const lift = ease(L)*LIFT_H[k]; const glow = Math.min(1, L*1.5);
+    const dark = PALETTES[pal].light ? 1 : 0; const col = G.col.map(c => (dark ? (0.12 + 0.30*c) : c)*glow);
+    for (const [i, j] of G.E) edges.push(...G.P[i], ...G.P[j], ...col, lift);
+    for (const p of G.P){ threads.push(p[0], p[1], p[2] + lift, p[0], p[1], 0, ...col, 0); dots.push(p[0], p[1], p[2], ...col, lift); }
+  }
+  gl.enable(gl.BLEND); if (PALETTES[pal].light) gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); else gl.blendFunc(gl.ONE, gl.ONE); gl.depthMask(false);
+  const drawEdges = (prog, data, width) => { if (!data.length) return; gl.useProgram(prog.p); const e = prog.u;
+    gl.uniform3fv(e.uCamPos, cam.pos); gl.uniformMatrix3fv(e.uCamInv, false, cam.inv); gl.uniform1f(e.uTanHalf, cam.tanHalf); gl.uniform2f(e.uRes, W, H); gl.uniform1f(e.uWidth, width); gl.uniform1f(e.uFar, FAR); gl.uniform1f(e.uGlow, palCur.glow);
+    gl.bindVertexArray(vaoEdge); gl.bindBuffer(gl.ARRAY_BUFFER, edgeBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.DYNAMIC_DRAW); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, data.length/10); };
+  drawEdges(P_THREAD, threads, 0.012);
+  drawEdges(P_EDGE, edges, 0.026);
+  if (dots.length){ gl.useProgram(P_DOT.p); const e = P_DOT.u; gl.uniform3fv(e.uCamPos, cam.pos); gl.uniformMatrix3fv(e.uCamInv, false, cam.inv); gl.uniform1f(e.uTanHalf, cam.tanHalf); gl.uniform2f(e.uRes, W, H); gl.uniform1f(e.uRad, 0.075); gl.uniform1f(e.uFar, FAR); gl.uniform1f(e.uGlow, palCur.glow);
+    gl.bindVertexArray(vaoDot); gl.bindBuffer(gl.ARRAY_BUFFER, dotBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(dots), gl.DYNAMIC_DRAW); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, dots.length/7); }
+  gl.disable(gl.BLEND); gl.depthMask(true); gl.disable(gl.DEPTH_TEST); gl.bindVertexArray(vaoQuad);
+  // ---- 3) bloom ----
+  gl.useProgram(P_DOWN.p); gl.uniform1i(P_DOWN.u.uS, 0); gl.activeTexture(gl.TEXTURE0); let src = scene.t;
+  for (const b of bloom){ gl.bindFramebuffer(gl.FRAMEBUFFER, b.f); gl.viewport(0, 0, b.w, b.h); gl.bindTexture(gl.TEXTURE_2D, src); gl.uniform2f(P_DOWN.u.uDst, b.w, b.h); gl.drawArrays(gl.TRIANGLES, 0, 3); src = b.t; }
+  // ---- 4) post ----
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H); gl.useProgram(P_POST.p); const q = P_POST.u;
+  gl.uniform2f(q.uRes, W, H); gl.uniform1f(q.uBloom, PALETTES[pal].light ? 0.0 : 0.42); gl.uniform1f(q.uFade, ease((state.t - 0.2)/2.0));
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, scene.t); gl.uniform1i(q.uAcc, 0);
+  for (let i = 0; i < 5; i++){ gl.activeTexture(gl.TEXTURE1 + i); gl.bindTexture(gl.TEXTURE_2D, bloom[i].t); gl.uniform1i(q['uB' + (i+1)], 1 + i); }
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+// ============================================================
+//  入力
+// ============================================================
+const ptrs = new Map(); let lastPinch = 0, uiTimer = 0; const ui = document.getElementById('ui');
+function wake(){ ui.classList.remove('fade'); clearTimeout(uiTimer); uiTimer = setTimeout(() => ui.classList.add('fade'), 7000); } wake();
+canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now() }); wake();
+  if (ptrs.size === 2){ const a = [...ptrs.values()]; lastPinch = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); } });
+canvas.addEventListener('pointermove', e => { const p = ptrs.get(e.pointerId); if (!p) return; const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+  if (ptrs.size === 1){ state.yaw -= dx*0.006; state.pitch = Math.max(0.08, Math.min(1.45, state.pitch + dy*0.006)); }
+  else if (ptrs.size === 2){ const a = [...ptrs.values()]; const d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); if (lastPinch > 0) state.zoom = Math.max(0.5, Math.min(5, state.zoom*(d/lastPinch))); lastPinch = d; } });
+function endPtr(e){ const p = ptrs.get(e.pointerId); ptrs.delete(e.pointerId); lastPinch = 0;
+  if (p && ptrs.size === 0 && Math.hypot(p.x - p.x0, p.y - p.y0) < 6 && performance.now() - p.t0 < 350){ // タップ：自動なら止める、止まっていれば次へ
+    if (state.auto){ state.auto = false; } else setScene(state.sceneIdx + 1); setBtn('auto', state.auto); } }
+canvas.addEventListener('pointerup', endPtr); canvas.addEventListener('pointercancel', endPtr);
+canvas.addEventListener('wheel', e => { e.preventDefault(); state.zoom = Math.max(0.5, Math.min(5, state.zoom*Math.exp(-e.deltaY*0.0015))); wake(); }, { passive: false });
+function setBtn(k, on){ const b = document.querySelector(`#ctl button[data-k="${k}"]`); if (b) b.classList.toggle('on', !!on); }
+function pickScene(n){ const map = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 0: 6 }; state.auto = false; setBtn('auto', false); setScene(map[n]); state.sceneT = 1.2; }
+document.querySelectorAll('#ctl button').forEach(b => b.addEventListener('click', () => { wake(); if (b.dataset.s !== undefined) pickScene(parseInt(b.dataset.s)); if (b.dataset.k === 'pal') pal = (pal + 1) % PALETTES.length; if (b.dataset.k === 'auto'){ state.auto = !state.auto; setBtn('auto', state.auto); } }));
+document.querySelectorAll('#ctl button[data-s]').forEach(b => { const upd = () => b.classList.toggle('on', parseInt(b.dataset.s) === ({1:1,2:2,3:3,4:4,5:5,6:0})[state.sceneIdx]); setInterval(upd, 300); });
+window.addEventListener('keydown', e => { if (e.code === 'Space'){ e.preventDefault(); state.auto = !state.auto; setBtn('auto', state.auto); }
+  if (e.key >= '0' && e.key <= '5') pickScene(parseInt(e.key)); if (e.key === 'c' || e.key === 'C') pal = (pal + 1) % PALETTES.length; wake(); });
+new ResizeObserver(() => alloc()).observe(canvas);
+
+// ============================================================
+//  ループ
+// ============================================================
+alloc();
+if (Q.has('scene')){ state.sceneT = 1.2; }
+let last = performance.now();
+if (Q.has('warm')){ const n = Math.round(num('warm', 0)*60); for (let i = 0; i < Math.min(n, 1800); i++) render(1/60); }
+function loop(now){ let dt = (now - last)/1000; last = now; if (dt > 0.08) dt = 0.08; state.t += dt; alloc(); render(dt); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
