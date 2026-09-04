@@ -14,7 +14,8 @@
   #hint{margin-top:10px;font-size:10px;letter-spacing:.06em;color:#6f7680;line-height:1.7}
   #stage{position:fixed;right:16px;top:14px;font-size:10px;letter-spacing:.16em;color:#8a8f96;pointer-events:none;text-align:right;line-height:1.8}
   #stage b{color:#e2b45a;font-weight:500}
-  #ctl{position:fixed;right:16px;bottom:16px;display:flex;gap:6px;user-select:none;flex-wrap:wrap;justify-content:flex-end;max-width:60vw}
+  #ctl{position:fixed;right:16px;bottom:16px;display:flex;gap:6px;user-select:none;flex-wrap:wrap;justify-content:flex-end;max-width:62vw}
+  #ui{max-width:36vw}
   #ctl button{appearance:none;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.35);color:#c9cdd3;border-radius:999px;padding:6px 11px;font-size:11px;letter-spacing:.2em;cursor:pointer;backdrop-filter:blur(6px);font-family:inherit}
   #ctl button.on{background:rgba(226,180,90,.9);color:#1a1712;border-color:transparent}
 </style>
@@ -23,10 +24,10 @@
 <canvas id="c"></canvas>
 <div id="ui">
   <div id="title">影の主<span>Kage no Nushi — メタトロンキューブは影である。その主を立ち上がらせる</span></div>
-  <div id="hint">ドラッグ＝視点（全角度・真下からも）　上か下へ倒し切ると真俯瞰に吸い付き、辺が影とぴたり重なる（正射影）　ホイール／ピンチ＝寄る　タップ＝止める／進める<br>1 立方体　2 正八面体　3 星（二つの正四面体）　4 正二十面体（円が黄金比へ滑る）　5 正十二面体（六と十二の環）　0 三つ　V＝俯瞰へ　C＝彩　Space＝自動</div>
+  <div id="hint">ドラッグ＝視点（全角度・真下からも）　上か下へ倒し切ると真俯瞰に吸い付き、辺が影とぴたり重なる（正射影）　ホイール／ピンチ＝寄る　タップ＝止める／進める<br>1 立方体　2 正八面体　3 星型八面体（二つの正四面体）　4 正二十面体（円が黄金比へ滑る）　5 正十二面体（六と十二の環）　0 三つ　V＝俯瞰へ　C＝彩　Space＝自動</div>
 </div>
 <div id="stage"></div>
-<div id="ctl"><button data-s="1">立方</button><button data-s="2">八面</button><button data-s="3">星</button><button data-s="4">二十面</button><button data-s="5">十二面</button><button data-s="0">全</button><button data-k="top">俯瞰</button><button data-k="pal">彩</button><button data-k="auto" class="on">自動</button></div>
+<div id="ctl"><button data-s="1">立方体</button><button data-s="2">正八面体</button><button data-s="3">星型八面体</button><button data-s="4">正二十面体</button><button data-s="5">正十二面体</button><button data-s="0">三つ</button><button data-k="top">俯瞰</button><button data-k="pal">彩</button><button data-k="auto" class="on">自動</button></div>
 
 <script>
 'use strict';
@@ -94,10 +95,10 @@ const SCENES = [
   { id: 'plane', name: '影', en: 'THE SHADOW', rOut: 4, solids: [], dur: 14 },
   { id: 'cube', name: '立方体', en: 'CUBE · exact', rOut: 4, solids: ['cube'], dur: 16 },
   { id: 'octa', name: '正八面体', en: 'OCTAHEDRON · exact', rOut: 4, solids: ['octa'], dur: 16 },
-  { id: 'star', name: '星（二つの正四面体）', en: 'STAR TETRAHEDRON · exact', rOut: 4, solids: ['tetA', 'tetB'], dur: 16 },
+  { id: 'star', name: '星型八面体（二つの正四面体）', en: 'STELLA OCTANGULA · exact', rOut: 4, solids: ['tetA', 'tetB'], dur: 16 },
   { id: 'icosa', name: '正二十面体 — 外環が 2φ へ', en: 'ICOSAHEDRON · needs 1 : φ', rOut: 2*PHI, solids: ['icosa'], dur: 18 },
   { id: 'dodeca', name: '正十二面体 — 六と十二の環', en: 'DODECAHEDRON · needs 6 + 12', rOut: 2*Math.sqrt(2), solids: ['dodeca'], dur: 18, dodeca: true },
-  { id: 'all', name: '古典に住む三つ（立方・八面・星）', en: 'THE EXACT THREE', rOut: 4, solids: ['cube', 'octa', 'tetA', 'tetB'], dur: 20 },
+  { id: 'all', name: '古典に住む三つ（立方体・正八面体・星型八面体）', en: 'THE EXACT THREE', rOut: 4, solids: ['cube', 'octa', 'tetA', 'tetB'], dur: 20 },
 ];
 
 // ============================================================
@@ -268,7 +269,8 @@ const palCur = { bg: PALETTES[pal].bg.slice(), ink: PALETTES[pal].ink.slice(), g
 const state = { t: num('warm', 0), sceneIdx: Math.round(num('scene', 0)), sceneT: 0, auto: !Q.has('scene'), yaw: num('yaw', 0.7), pitch: num('pitch', 0.62), zoom: num('zoom', 1), moved: true, rOut: 4, rOutTarget: 4,
   lift: {}, liftTarget: {}, frame: 0, lines: 0, circles: 0, dodeca: 0, ortho: 0, orthoT: 0, align: 0, dragging: false };
 for (const k in GEO){ state.lift[k] = 0; state.liftTarget[k] = 0; }
-const LIFT_H = { cube: 3.2, octa: 2.2, tetA: 3.2, tetB: 3.2, icosa: 2.8, dodeca: 3.6 };
+// 持ち上げ＝最も低い頂点が平面から 0.55 浮く高さ（地面に刺さらない）
+const LIFT_H = {}; for (const k in GEO){ const minz = Math.min(...GEO[k].P.map(p => p[2])); LIFT_H[k] = -minz + 0.55; }
 function ease(x){ x = Math.max(0, Math.min(1, x)); return x*x*(3 - 2*x); }
 const stageEl = document.getElementById('stage');
 function setScene(i){ state.sceneIdx = ((i % SCENES.length) + SCENES.length) % SCENES.length; state.sceneT = 0; }
@@ -290,10 +292,10 @@ function camera(){
   // 俯瞰に吸い付くほど望遠→正射影へ（ドリーズーム：対象面での画角の高さを保つ）
   const k = state.ortho; const fov = (30*(1 - k) + 0.32*k)*Math.PI/180; const tanHalf = Math.tan(fov/2);
   const tan30 = Math.tan(15*Math.PI/180);
-  const fit0 = 5.2/(0.82*tan30); const halfH = fit0*tan30*(aspect < 1 ? 1/aspect : 1)/state.zoom;   // 対象面での半高さ
+  const fit0 = 5.2/(0.70*tan30); const halfH = fit0*tan30*(aspect < 1 ? 1/aspect : 1)/state.zoom;   // 対象面での半高さ
   const dist = halfH/tanHalf;
   const cp = Math.cos(state.pitch), sp = Math.sin(state.pitch);
-  const tgt = [0, 0, k > 0.5 ? 0.0 : 0.9*(1 - k)]; const pos = [dist*cp*Math.cos(state.yaw), dist*cp*Math.sin(state.yaw), dist*sp + tgt[2]];
+  const tgt = [0, 0, k > 0.5 ? 0.0 : 2.0*(1 - k)]; const pos = [dist*cp*Math.cos(state.yaw), dist*cp*Math.sin(state.yaw), dist*sp + tgt[2]];
   let f = [tgt[0]-pos[0], tgt[1]-pos[1], tgt[2]-pos[2]]; const fl = Math.hypot(...f); f = f.map(v => v/fl);
   const r = [-Math.sin(state.yaw), Math.cos(state.yaw), 0];
   const up = [r[1]*f[2]-r[2]*f[1], r[2]*f[0]-r[0]*f[2], r[0]*f[1]-r[1]*f[0]];
