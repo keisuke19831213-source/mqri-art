@@ -98,7 +98,7 @@ const SCENES = [
   { id: 'star', name: '星型八面体（二つの正四面体）', en: 'STELLA OCTANGULA · exact', rOut: 4, solids: ['tetA', 'tetB'], dur: 16 },
   { id: 'icosa', name: '正二十面体 — 外環が 2φ へ', en: 'ICOSAHEDRON · needs 1 : φ', rOut: 2*PHI, solids: ['icosa'], dur: 18 },
   { id: 'dodeca', name: '正十二面体 — 六と十二の環', en: 'DODECAHEDRON · needs 6 + 12', rOut: 2*Math.sqrt(2), solids: ['dodeca'], dur: 18, dodeca: true },
-  { id: 'all', name: '古典に住む三つ（立方体・正八面体・星型八面体）', en: 'THE EXACT THREE', rOut: 4, solids: ['cube', 'octa', 'tetA', 'tetB'], dur: 20 },
+  { id: 'all', name: '古典に住む三つ — 面の中心に正八面体、頂点に星型八面体', en: 'THE EXACT THREE · nested', rOut: 4, solids: ['cube', 'octa', 'tetA', 'tetB'], dur: 22 },
 ];
 
 // ============================================================
@@ -270,7 +270,9 @@ const state = { t: num('warm', 0), sceneIdx: Math.round(num('scene', 0)), sceneT
   lift: {}, liftTarget: {}, frame: 0, lines: 0, circles: 0, dodeca: 0, ortho: 0, orthoT: 0, align: 0, dragging: false };
 for (const k in GEO){ state.lift[k] = 0; state.liftTarget[k] = 0; }
 // 登場・退場：主は影から膨らんで立ち上がり（easeOutBack）、影へしぼんで戻る（easeIn）。順番は 退場 → 環が滑る → 登場
-const ANIM = {}; for (const k in GEO) ANIM[k] = { phase: 'off', t0: 0, p: 0, sA: 0 };
+const ANIM = {}; for (const k in GEO) ANIM[k] = { phase: 'off', t0: 0, p: 0, sA: 0, lift: 0, liftT: 0, delay: 0 };
+// 同じ場面の主は同じ高さ（共通の中心）に置く＝正八面体は立方体の面の中心に内接し、星型八面体は立方体の頂点を共有する
+function groupLift(sc){ return Math.max(...sc.solids.map(k => LIFT_H[k])); }
 const T_OUT = 0.9, T_RING = 1.3, T_IN = 1.9;
 function easeOutBack(t){ t = Math.max(0, Math.min(1, t)); const c1 = 1.15, c3 = c1 + 1; return 1 + c3*Math.pow(t - 1, 3) + c1*Math.pow(t - 1, 2); }
 function easeInCubic(t){ t = Math.max(0, Math.min(1, t)); return t*t*t; }
@@ -278,6 +280,7 @@ let rOutFrom = 4, rOutTo = 4, ringT0 = -1, enterAt = 0;
 // 持ち上げ＝最も低い頂点が平面から 0.55 浮く高さ（地面に刺さらない）
 const LIFT_H = {}; for (const k in GEO){ const minz = Math.min(...GEO[k].P.map(p => p[2])); LIFT_H[k] = -minz + 0.55; }
 LIFT_H.tetA = LIFT_H.tetB = Math.max(LIFT_H.tetA, LIFT_H.tetB);   // 星型八面体（マカバ）は二つで一体：同じ高さに置く
+for (const k in GEO){ ANIM[k].lift = ANIM[k].liftT = LIFT_H[k]; }
 function ease(x){ x = Math.max(0, Math.min(1, x)); return x*x*(3 - 2*x); }
 const stageEl = document.getElementById('stage');
 function setScene(i){
@@ -285,6 +288,7 @@ function setScene(i){
   const cur = SCENES[state.sceneIdx]; let anyOut = false;
   for (const k in GEO){ const a = ANIM[k]; const keep = cur.solids.includes(k);
     if (!keep && (a.phase === 'on' || a.phase === 'in')){ a.phase = 'out'; a.t0 = 0; a.pStart = a.p; anyOut = true; } }
+  const gl_ = groupLift(cur); cur.solids.forEach((k, i) => { ANIM[k].liftT = gl_; ANIM[k].delay = i*0.45; if (ANIM[k].phase === 'off') ANIM[k].lift = gl_; });
   const ringChange = Math.abs(cur.rOut - rOutTo) > 1e-6;
   const tExit = anyOut ? T_OUT : 0;
   rOutFrom = state.rOut; rOutTo = cur.rOut; ringT0 = ringChange ? tExit : -1;
@@ -298,7 +302,8 @@ function stepScene(dt){
   if (ringT0 >= 0){ const u = (st - ringT0)/T_RING; const e = u <= 0 ? 0 : (u >= 1 ? 1 : u*u*(3 - 2*u)); state.rOut = rOutFrom + (rOutTo - rOutFrom)*e; } else state.rOut = rOutTo;
   for (const k in GEO){ const a = ANIM[k]; const want = cur.solids.includes(k);
     if (a.phase === 'out'){ a.t0 += dt; a.p = a.pStart*(1 - easeInCubic(a.t0/T_OUT)); if (a.t0 >= T_OUT){ a.phase = 'off'; a.p = 0; } }
-    else if (a.phase === 'off'){ if (want && st >= enterAt){ a.phase = 'in'; a.t0 = 0; } a.p = 0; }
+    else if (a.phase === 'off'){ if (want && st >= enterAt + a.delay){ a.phase = 'in'; a.t0 = 0; a.lift = a.liftT; } a.p = 0; }
+    a.lift += (a.liftT - a.lift)*Math.min(1, dt*2.2);   // 居残る主は新しい高さへ滑る
     if (a.phase === 'in'){ a.t0 += dt; a.p = easeOutBack(a.t0/T_IN); if (a.t0 >= T_IN){ a.phase = 'on'; a.p = 1; } }
     else if (a.phase === 'on'){ a.p = 1; }
     a.sA += (((a.phase === 'off') ? 0 : 1) - a.sA)*Math.min(1, dt*2.5);
@@ -358,7 +363,7 @@ function render(dt){
   for (const k in GEO){ const a = ANIM[k]; const pp = a.p; if (a.phase === 'off' || pp < 0.001) continue; const G = GEO[k];
     const glow = Math.min(1, Math.max(0, pp)/0.35);   // 影の上に寝ているあいだは影の線に任せ、立ち上がるにつれ辺が灯る
     const dark = PALETTES[pal].light ? 1 : 0; const col = G.col.map(c => (dark ? (0.12 + 0.30*c) : c)*glow);
-    const Pz = G.P.map(p => [p[0], p[1], pp*(p[2] + LIFT_H[k])]);   // p=0 で影そのもの、p=1 で持ち上がった主
+    const Pz = G.P.map(p => [p[0], p[1], pp*(p[2] + a.lift)]);   // p=0 で影そのもの、p=1 で持ち上がった主
     for (const [i, j] of G.E) edges.push(...Pz[i], ...Pz[j], ...col, 0);
     for (const p of Pz){ threads.push(p[0], p[1], p[2], p[0], p[1], 0, ...col, 0); dots.push(p[0], p[1], p[2], ...col, 0); }
   }
@@ -410,7 +415,7 @@ new ResizeObserver(() => alloc()).observe(canvas);
 //  ループ
 // ============================================================
 alloc();
-if (Q.has('from')){ setScene(Math.round(num('from', 0))); for (const k of SCENES[state.sceneIdx].solids){ ANIM[k].phase = 'on'; ANIM[k].p = 1; ANIM[k].sA = 1; } state.rOut = rOutTo; }
+if (Q.has('from')){ setScene(Math.round(num('from', 0))); for (const k of SCENES[state.sceneIdx].solids){ ANIM[k].phase = 'on'; ANIM[k].p = 1; ANIM[k].sA = 1; ANIM[k].lift = ANIM[k].liftT; } state.rOut = rOutTo; }
 setScene(state.sceneIdx); if (Q.has('scene') && !Q.has('from')){ state.sceneT = enterAt; }
 let last = performance.now();
 if (Q.has('warm')){ const n = Math.round(num('warm', 0)*60); for (let i = 0; i < Math.min(n, 1800); i++) render(1/60); }
