@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>火線 — Kasen</title>
+<style>
+  html,body{margin:0;height:100%;background:#07080a;overflow:hidden;font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;color:#cfd3d8}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  #ui{position:fixed;left:18px;bottom:16px;pointer-events:none;user-select:none;opacity:.9;transition:opacity 2s;max-width:44vw}
+  #ui.fade{opacity:0}
+  #title{font-size:15px;letter-spacing:.35em;color:#e8e6df}
+  #title span{display:block;margin-top:5px;font-size:10.5px;letter-spacing:.12em;color:#9aa0a8}
+  #hint{margin-top:10px;font-size:10px;letter-spacing:.06em;color:#6f7680;line-height:1.7}
+  #stat{position:fixed;right:16px;top:14px;font-size:10px;letter-spacing:.16em;color:#8a8f96;pointer-events:none;text-align:right;line-height:1.8}
+  #stat b{color:#e2b45a;font-weight:500}
+  #ctl{position:fixed;right:16px;bottom:16px;display:flex;gap:6px;user-select:none;flex-wrap:wrap;justify-content:flex-end;max-width:54vw}
+  #ctl button{appearance:none;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.35);color:#c9cdd3;border-radius:999px;padding:6px 10px;font-size:11px;letter-spacing:.16em;cursor:pointer;backdrop-filter:blur(6px);font-family:inherit}
+  #ctl button.on{background:rgba(226,180,90,.9);color:#1a1712;border-color:transparent}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="title">火線<span>Kasen — ヴェシカ・パイシスはレンズである。光を通せば、焦点と火線（caustic）が現れる</span></div>
+  <div id="hint">ドラッグ＝光の向き　ホイール／ピンチ＝寄る　1〜4＝円の間隔（0・半径の半分・半径＝ヴェシカ・1.5倍）　W/G/D＝水・硝子・金剛石　P＝平行光／点光源　B＝分散　R＝表面反射　K＝作図線　C＝彩　Space＝自動</div>
+</div>
+<div id="stat"></div>
+<div id="ctl"><button data-d="0">円</button><button data-d="0.5">½</button><button data-d="1" class="on">ヴェシカ</button><button data-d="1.5">1.5</button><button data-n="1.333">水</button><button data-n="1.52" class="on">硝子</button><button data-n="2.42">金剛石</button><button data-k="src">点光源</button><button data-k="disp" class="on">分散</button><button data-k="refl">反射</button><button data-k="draw" class="on">作図</button><button data-k="pal">彩</button><button data-k="auto" class="on">自動</button></div>
+
+<script>
+'use strict';
+// ============================================================
+//  火線 — Kasen  (2026-09-05 / ccf5 art)
+//  二つの円（半径1・中心距離 d）の重なり＝ヴェシカ・パイシス（lens の語源）。
+//  平行光／点光源を Snell の法則で厳密に追跡（入射の屈折・内部の全反射・射出の屈折・表面反射）し、
+//  波長ごとの屈折率（Cauchy）で分散させる。光線の密度が集まる包絡線＝火線（caustic）がひとりでに現れる。
+// ============================================================
+const Q = new URLSearchParams(location.search);
+const num = (k, d) => (Q.has(k) && isFinite(parseFloat(Q.get(k)))) ? parseFloat(Q.get(k)) : d;
+const NRAY = Math.round(num('rays', 6144));   // 1フレームの光線数（毎フレーム位置と波長を乱して蓄積）
+const SEGS = 6;                                // 1本の光線の線分数（入射前・内部×最大3・射出後・表面反射）
+
+// ============================================================
+//  GLSL：光線の経路を頂点シェーダで計算（各頂点が自分の線分の端点を求める）
+// ============================================================
+const VS_RAY = `#version 300 es
+precision highp float; precision highp int;
+uniform float uD, uN0, uDispK, uAng, uSrc, uFrame, uGain; uniform vec2 uView; uniform float uScale, uAspect; uniform vec2 uPan; uniform int uOnlySeg; uniform float uRefl;
+out vec3 vCol; out float vA;
+uvec3 pcg3d(uvec3 v){ v = v*1664525u + 1013904223u; v.x += v.y*v.z; v.y += v.z*v.x; v.z += v.x*v.y; v ^= v >> 16u; v.x += v.y*v.z; v.y += v.z*v.x; v.z += v.x*v.y; return v; }
+vec3 rnd3(uvec3 s){ return vec3(pcg3d(s))*(1.0/4294967296.0); }
+// 波長→色（近似スペクトル）
+vec3 spectrum(float l){ float t = (l - 400.0)/300.0;
+  vec3 c = vec3(smoothstep(0.35, 0.65, t) + 0.55*smoothstep(0.15, 0.0, t)*0.6, smoothstep(0.05, 0.4, t)*(1.0 - smoothstep(0.62, 0.95, t)), smoothstep(0.45, 0.0, t));
+  return c/max(max(c.r, c.g), c.b); }
+// 光線と円（中心 c・半径1）の交点 t（昇順 2 個、なければ負）
+vec2 hitCircle(vec2 o, vec2 d, vec2 c){ vec2 oc = o - c; float b = dot(oc, d); float q = dot(oc, oc) - 1.0; float h = b*b - q; if (h < 0.0) return vec2(-1.0); h = sqrt(h); return vec2(-b - h, -b + h); }
+float fresnel(float cosi, float eta){ cosi = clamp(cosi, 0.0, 1.0); float s2 = (1.0 - cosi*cosi)/(eta*eta); if (s2 >= 1.0) return 1.0; float ct = sqrt(1.0 - s2); float rs = (cosi - eta*ct)/(cosi + eta*ct); float rp = (eta*cosi - ct)/(eta*cosi + ct); return 0.5*(rs*rs + rp*rp); }
+void main(){
+  int vid = gl_VertexID; int ray = vid/(2*${SEGS}); int seg = (vid/2) % ${SEGS}; int end = vid & 1;
+  uvec3 s = uvec3(uint(ray), uint(uFrame), 0x9E37u); vec3 r = rnd3(s), r2 = rnd3(s + 11u);
+  float lam = 400.0 + 300.0*r.y; float n = uN0 + uDispK*(1.0/(lam*lam*1e-6) - 1.0/(0.55*0.55));   // Cauchy: n(λ)=n0+B/λ²、550nm で n0
+  vec2 cA = vec2(-0.5*uD, 0.0), cB = vec2(0.5*uD, 0.0);
+  // 光源：平行光（向き uAng）または点光源（距離 6 の点から扇形）
+  vec2 dir = vec2(cos(uAng), sin(uAng)); vec2 perp = vec2(-dir.y, dir.x);
+  vec2 o; vec2 d;
+  if (uSrc < 0.5){ float w = (r.x*2.0 - 1.0)*1.05; o = -dir*5.0 + perp*w; d = dir; }
+  else { vec2 S = -dir*4.5; float a = (r.x*2.0 - 1.0)*0.34; d = normalize(dir*cos(a) + perp*sin(a)); o = S; }
+  // ---- 経路を順に計算し、seg 番目の線分だけを出力 ----
+  vec2 P0 = o, P1 = o; float w = 1.0; bool inside = false; bool exited = false; vec2 p = o; vec2 dd = d; float thr = 1.0; bool alive = true;
+  vec3 col = spectrum(lam); float segW = 0.0; int reflSeg = -1; vec2 rO = vec2(0.0), rD = vec2(0.0); float rW = 0.0;
+  for (int k = 0; k < ${SEGS}; k++){
+    vec2 q0 = p; vec2 q1 = p; float ww = 0.0;
+    if (alive){
+      if (exited){ q1 = p + dd*9.0; ww = thr; alive = false; }   // 射出後：まっすぐ遠くへ（火線はここに集まる）
+      else if (!inside){
+        // 入射：どちらかの円の弧で、相手の円の内側にある最初の交点
+        vec2 tA = hitCircle(p, dd, cA), tB = hitCircle(p, dd, cB); float tHit = 1e9; vec2 cHit = cA;
+        for (int j = 0; j < 4; j++){ float t = (j == 0) ? tA.x : (j == 1) ? tA.y : (j == 2) ? tB.x : tB.y; vec2 cc = (j < 2) ? cA : cB; vec2 co = (j < 2) ? cB : cA;
+          if (t > 1e-4 && t < tHit){ vec2 x = p + dd*t; if (length(x - co) <= 1.0 + 1e-6){ tHit = t; cHit = cc; } } }
+        if (tHit < 1e8){ vec2 x = p + dd*tHit; vec2 nrm = normalize(x - cHit); float cosi = -dot(dd, nrm); float F = fresnel(cosi, n);
+          q1 = x; ww = thr*0.18; vec2 rd = reflect(dd, nrm); if (k == 0){ rO = x; rD = rd; rW = thr*F*0.08; }
+          vec2 td = refract(dd, nrm, 1.0/n); p = x; dd = td; thr *= (1.0 - F); inside = true; }
+        else { q1 = p + dd*9.0; ww = thr*0.12; alive = false; }
+      } else {
+        // 射出：内側から最初に出る円
+        vec2 tA = hitCircle(p, dd, cA), tB = hitCircle(p, dd, cB); float tOut = min(tA.y > 1e-4 ? tA.y : 1e9, tB.y > 1e-4 ? tB.y : 1e9); vec2 cc = (tA.y > 1e-4 && tA.y <= tB.y) ? cA : cB;
+        if (tOut > 1e8){ alive = false; q1 = p; }
+        else { vec2 x = p + dd*tOut; vec2 nrm = normalize(x - cc); float cosi = dot(dd, nrm); float F = fresnel(cosi, 1.0/n);
+          q1 = x; ww = thr*0.4;
+          vec2 td = refract(dd, nrm, n);
+          if (F >= 1.0 || dot(td, td) < 0.5){ dd = reflect(dd, nrm); p = x; thr *= 0.97; }   // 全反射
+          else { p = x; dd = td; thr *= (1.0 - F); inside = false; exited = true; } }
+      }
+    }
+    if (k == seg){ P0 = q0; P1 = q1; segW = ww; }
+  }
+  // 最後の線分枠は表面反射（入射点で跳ね返る光）に使う
+  if (seg == ${SEGS} - 1 && rW > 0.0){ P0 = rO; P1 = rO + rD*9.0; segW = rW*0.9*uRefl; }
+  if (uOnlySeg >= 0 && seg != uOnlySeg) segW = 0.0;
+  vec2 X = (end == 0) ? P0 : P1;
+  vec2 ndc = ((X - uPan)*uScale)*vec2(1.0/uAspect, 1.0);
+  gl_Position = vec4(ndc, 0.0, 1.0);
+  vCol = col; vA = segW*uGain;
+}`;
+const FS_RAY = `#version 300 es
+precision highp float; in vec3 vCol; in float vA; out vec4 o; void main(){ o = vec4(vCol*vA, 1.0); }`;
+const VS_QUAD = `#version 300 es
+void main(){ vec2 v = vec2((gl_VertexID<<1)&2, gl_VertexID&2); gl_Position = vec4(v*2.0-1.0, 0.0, 1.0); }`;
+const FS_MIX = `#version 300 es
+precision highp float; uniform sampler2D uA, uB; uniform float uAlpha; out vec4 o;
+void main(){ ivec2 c = ivec2(gl_FragCoord.xy); o = mix(texelFetch(uA, c, 0), texelFetch(uB, c, 0), uAlpha); }`;
+// 作図線：二つの円・ヴェシカの輪郭・正三角形（ユークリッド I.1）・√3 の弦
+const FS_DRAW = `#version 300 es
+precision highp float; uniform vec2 uRes; uniform float uScale, uAspect, uD, uDraw; uniform vec2 uPan; uniform vec3 uInk; out vec4 o;
+float sdSeg(vec2 p, vec2 a, vec2 b){ vec2 pa = p - a, ba = b - a; float h = clamp(dot(pa, ba)/dot(ba, ba), 0.0, 1.0); return length(pa - ba*h); }
+void main(){ vec2 uv = (gl_FragCoord.xy/uRes)*2.0 - 1.0; uv.x *= uAspect; vec2 p = uv/uScale + uPan; float px = 1.0/(uScale*uRes.y*0.5);
+  vec2 cA = vec2(-0.5*uD, 0.0), cB = vec2(0.5*uD, 0.0);
+  float dA = abs(length(p - cA) - 1.0), dB = abs(length(p - cB) - 1.0);
+  bool inA = length(p - cA) < 1.0, inB = length(p - cB) < 1.0;
+  // ヴェシカの輪郭（相手の円の内側にある弧）は濃く、残りは薄く
+  float lens = min(inB ? dA : 1e9, inA ? dB : 1e9); float rest = min(dA, dB);
+  float ink = smoothstep(1.6*px, 0.3*px, lens)*0.9 + smoothstep(1.2*px, 0.2*px, rest)*0.28;
+  // 正三角形と√3の弦（d=1 のとき厳密に成立：交点は (0, ±√3/2)）
+  if (uD > 1e-3 && uD < 2.0){ float h = sqrt(max(1.0 - 0.25*uD*uD, 0.0)); vec2 T = vec2(0.0, h), Bm = vec2(0.0, -h);
+    float tri = min(min(sdSeg(p, cA, cB), sdSeg(p, cA, T)), sdSeg(p, cB, T)); float chord = sdSeg(p, T, Bm);
+    ink += smoothstep(1.2*px, 0.2*px, tri)*0.45 + smoothstep(1.2*px, 0.2*px, chord)*0.3;
+    float dots = min(min(length(p - cA), length(p - cB)), min(length(p - T), length(p - Bm))); ink += smoothstep(3.0*px, 0.0, dots - 2.5*px)*0.9; }
+  o = vec4(uInk*ink*uDraw, 1.0); }`;
+const FS_DOWN = `#version 300 es
+precision highp float; uniform sampler2D uS; uniform vec2 uDst; out vec4 o;
+void main(){ vec2 uv = gl_FragCoord.xy/uDst; vec2 px = 1.0/uDst; vec3 c = texture(uS, uv + px*vec2(-0.5,-0.5)).rgb + texture(uS, uv + px*vec2(0.5,-0.5)).rgb + texture(uS, uv + px*vec2(-0.5,0.5)).rgb + texture(uS, uv + px*vec2(0.5,0.5)).rgb; o = vec4(c*0.25, 1.0); }`;
+const FS_POST = `#version 300 es
+precision highp float; uniform sampler2D uAcc, uDrawT, uB1, uB2, uB3, uB4, uB5; uniform vec2 uRes; uniform float uFade, uExp, uBloom; uniform vec3 uBg; out vec4 o;
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0); }
+void main(){ vec2 uv = gl_FragCoord.xy/uRes; vec3 c = texture(uAcc, uv).rgb; vec3 b = texture(uB1, uv).rgb*0.30 + texture(uB2, uv).rgb*0.26 + texture(uB3, uv).rgb*0.20 + texture(uB4, uv).rgb*0.14 + texture(uB5, uv).rgb*0.10;
+  vec2 q = uv*2.0-1.0; vec3 col = uBg*(1.0 - 0.3*dot(q,q)) + (c + b*uBloom)*uExp + texture(uDrawT, uv).rgb; col = aces(col)*uFade; col = pow(col, vec3(1.0/2.2));
+  float dth = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898,78.233)))*43758.5453); o = vec4(col + (dth-0.5)/255.0, 1.0); }`;
+
+// ============================================================
+//  WebGL
+// ============================================================
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' });
+if (!gl) throw new Error('WebGL2 が必要です');
+if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('EXT_color_buffer_float が必要です');
+function compile(type, src){ const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function program(vs, fs){ const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); for (let i = 0; i < n; i++){ const info = gl.getActiveUniform(p, i); u[info.name.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, info.name); } return { p, u }; }
+const P_RAY = program(VS_RAY, FS_RAY), P_MIX = program(VS_QUAD, FS_MIX), P_DRAW = program(VS_QUAD, FS_DRAW), P_DOWN = program(VS_QUAD, FS_DOWN), P_POST = program(VS_QUAD, FS_POST);
+gl.bindVertexArray(gl.createVertexArray());
+function makeTex(w, h, internal, filter){ const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texStorage2D(gl.TEXTURE_2D, 1, internal, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return t; }
+function fbo(t){ const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0); return f; }
+let W = 0, H = 0, frame = null, acc = null, ac = 0, accN = 0, drawT = null, bloom = null;
+function alloc(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2); const cw = Math.max(64, Math.round(canvas.clientWidth || window.innerWidth || 640)), ch = Math.max(64, Math.round(canvas.clientHeight || window.innerHeight || 480));
+  let s = dpr; if (cw*ch*s*s > 3.0e6) s = Math.sqrt(3.0e6/(cw*ch)); const w = Math.round(cw*s), h = Math.round(ch*s); if (w === W && h === H) return false; W = w; H = h; canvas.width = W; canvas.height = H;
+  if (frame){ [frame, drawT, ...acc, ...bloom].forEach(a => { gl.deleteTexture(a.t); gl.deleteFramebuffer(a.f); }); }
+  const mk = () => { const t = makeTex(W, H, gl.RGBA16F, gl.LINEAR); return { t, f: fbo(t) }; };
+  frame = mk(); drawT = mk(); acc = [mk(), mk()];
+  bloom = []; let bw = W, bh = H; for (let i = 0; i < 5; i++){ bw = Math.max(1, bw >> 1); bh = Math.max(1, bh >> 1); const t = makeTex(bw, bh, gl.RGBA16F, gl.LINEAR); bloom.push({ t, f: fbo(t), w: bw, h: bh }); }
+  accN = 0; return true;
+}
+
+// ============================================================
+//  状態
+// ============================================================
+const PALETTES = [ { name: '夜', bg: [0.025, 0.027, 0.036], ink: [0.55, 0.58, 0.64], exp: 1.0 }, { name: '藍', bg: [0.03, 0.05, 0.10], ink: [0.6, 0.7, 0.85], exp: 1.05 }, { name: '琥珀', bg: [0.06, 0.04, 0.025], ink: [0.75, 0.62, 0.42], exp: 0.95 } ];
+const state = { t: num('warm', 0), frame: 0, d: num('d', 1), n0: num('n', 1.52), disp: Q.get('disp') === '0' ? 0 : 1, src: Q.get('src') === '1' ? 1 : 0, ang: num('ang', 0)*Math.PI/180, draw: Q.get('draw') === '0' ? 0 : 1, pal: Math.round(num('pal', 0)) % PALETTES.length,
+  refl: Q.get('refl') === '1' ? 1 : 0, zoom: num('zoom', 1), pan: [0.6, 0], auto: !Q.has('still'), dragging: false, moved: true, dT: num('d', 1), n0T: num('n', 1.52) };
+const statEl = document.getElementById('stat');
+function ease(x){ x = Math.max(0, Math.min(1, x)); return x*x*(3 - 2*x); }
+function render(dt){
+  state.frame++;
+  const pal = PALETTES[state.pal];
+  if (state.auto && !state.dragging){ state.ang = 0.42*Math.sin(state.t*0.21); }
+  const dPrev = state.d, nPrev = state.n0; state.d += (state.dT - state.d)*Math.min(1, dt*3); state.n0 += (state.n0T - state.n0)*Math.min(1, dt*3);
+  const changing = state.auto || state.dragging || Math.abs(state.d - dPrev) > 1e-5 || Math.abs(state.n0 - nPrev) > 1e-5;
+  const scale = 0.30*state.zoom; const aspect = W/H;
+  // ---- 1) 今フレームの光線 → frame ----
+  gl.bindFramebuffer(gl.FRAMEBUFFER, frame.f); gl.viewport(0, 0, W, H); gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); gl.useProgram(P_RAY.p); const u = P_RAY.u;
+  gl.uniform1f(u.uD, state.d); gl.uniform1f(u.uN0, state.n0); gl.uniform1f(u.uDispK, state.disp ? 0.020*(state.n0 - 1)/0.52 : 0.0); gl.uniform1f(u.uAng, state.ang); gl.uniform1f(u.uSrc, state.src); gl.uniform1f(u.uFrame, state.frame);
+  gl.uniform1f(u.uGain, num('gain', 0.07)*(6144/NRAY)*(H/900)); gl.uniform1i(u.uOnlySeg, Math.round(num('seg', -1))); gl.uniform1f(u.uRefl, state.refl); gl.uniform1f(u.uScale, scale); gl.uniform1f(u.uAspect, aspect); gl.uniform2fv(u.uPan, state.pan);
+  gl.drawArrays(gl.LINES, 0, NRAY*SEGS*2); gl.disable(gl.BLEND);
+  // ---- 2) 蓄積（動いている時は短い記憶、止まれば収束）----
+  if (state.moved){ accN = 0; state.moved = false; }
+  const K = changing ? 10 : 400; const alpha = 1/Math.min(accN + 1, K); accN++;
+  const an = 1 - ac; gl.bindFramebuffer(gl.FRAMEBUFFER, acc[an].f); gl.useProgram(P_MIX.p); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, acc[ac].t); gl.uniform1i(P_MIX.u.uA, 0); gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, frame.t); gl.uniform1i(P_MIX.u.uB, 1); gl.uniform1f(P_MIX.u.uAlpha, alpha); gl.drawArrays(gl.TRIANGLES, 0, 3); ac = an;
+  // ---- 3) 作図線 ----
+  gl.bindFramebuffer(gl.FRAMEBUFFER, drawT.f); gl.useProgram(P_DRAW.p); const w = P_DRAW.u; gl.uniform2f(w.uRes, W, H); gl.uniform1f(w.uScale, scale); gl.uniform1f(w.uAspect, aspect); gl.uniform1f(w.uD, state.d); gl.uniform1f(w.uDraw, state.draw*0.9); gl.uniform2fv(w.uPan, state.pan); gl.uniform3fv(w.uInk, pal.ink); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  // ---- 4) bloom → post ----
+  gl.useProgram(P_DOWN.p); gl.uniform1i(P_DOWN.u.uS, 0); gl.activeTexture(gl.TEXTURE0); let src = acc[ac].t;
+  for (const b of bloom){ gl.bindFramebuffer(gl.FRAMEBUFFER, b.f); gl.viewport(0, 0, b.w, b.h); gl.bindTexture(gl.TEXTURE_2D, src); gl.uniform2f(P_DOWN.u.uDst, b.w, b.h); gl.drawArrays(gl.TRIANGLES, 0, 3); src = b.t; }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H); gl.useProgram(P_POST.p); const q = P_POST.u; gl.uniform2f(q.uRes, W, H); gl.uniform1f(q.uFade, ease((state.t - 0.2)/1.8)); gl.uniform1f(q.uExp, pal.exp); gl.uniform1f(q.uBloom, 0.5); gl.uniform3fv(q.uBg, pal.bg);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, acc[ac].t); gl.uniform1i(q.uAcc, 0); gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, drawT.t); gl.uniform1i(q.uDrawT, 1);
+  for (let i = 0; i < 5; i++){ gl.activeTexture(gl.TEXTURE2 + i); gl.bindTexture(gl.TEXTURE_2D, bloom[i].t); gl.uniform1i(q['uB' + (i+1)], 2 + i); }
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  // 数値：厚さ・幅・近軸焦点距離（厚肉レンズの公式）
+  const dd = state.d, n = state.n0; const thick = 2 - dd; const width = 2*Math.sqrt(Math.max(1 - dd*dd/4, 0)); const R = 1;
+  const invf = (n - 1)*(1/R + 1/R - (n - 1)*thick/(n*R*R)); const f = invf > 1e-6 ? 1/invf : Infinity;
+  const nm = dd < 1e-3 ? '円（球レンズ）' : (Math.abs(dd - 1) < 1e-3 ? 'ヴェシカ・パイシス（中心距離＝半径）' : `中心距離 ${dd.toFixed(2)}`);
+  statEl.innerHTML = `<b>${nm}</b><br>幅 ${width.toFixed(3)}${Math.abs(dd - 1) < 1e-3 ? '（＝√3）' : ''}　厚さ ${thick.toFixed(2)}　屈折率 <b>${n.toFixed(3)}</b><br>近軸焦点距離 f ＝ <b>${isFinite(f) ? f.toFixed(3) : '∞'}</b>（厚肉レンズの式）<br>${state.src ? '点光源' : '平行光'}　${state.disp ? '分散あり（Cauchy）' : '単色'}`;
+}
+
+// ============================================================
+//  入力
+// ============================================================
+const ptrs = new Map(); let lastPinch = 0, uiTimer = 0; const ui = document.getElementById('ui');
+function wake(){ ui.classList.remove('fade'); clearTimeout(uiTimer); uiTimer = setTimeout(() => ui.classList.add('fade'), 7000); } wake();
+canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); state.dragging = true; state.auto = false; setBtn('auto', false); wake(); if (ptrs.size === 2){ const a = [...ptrs.values()]; lastPinch = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); } });
+canvas.addEventListener('pointermove', e => { const p = ptrs.get(e.pointerId); if (!p) return; const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+  if (ptrs.size === 1){ state.ang = Math.max(-1.2, Math.min(1.2, state.ang + dx*0.004)); if (e.shiftKey){ state.pan[0] -= dx*0.006/state.zoom; state.pan[1] += dy*0.006/state.zoom; state.ang -= dx*0.004; } state.moved = true; }
+  else if (ptrs.size === 2){ const a = [...ptrs.values()]; const d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); if (lastPinch > 0) state.zoom = Math.max(0.5, Math.min(6, state.zoom*(d/lastPinch))); lastPinch = d; state.moved = true; } });
+function endPtr(e){ ptrs.delete(e.pointerId); lastPinch = 0; if (ptrs.size === 0) state.dragging = false; }
+canvas.addEventListener('pointerup', endPtr); canvas.addEventListener('pointercancel', endPtr);
+canvas.addEventListener('wheel', e => { e.preventDefault(); state.zoom = Math.max(0.5, Math.min(6, state.zoom*Math.exp(-e.deltaY*0.0015))); state.moved = true; wake(); }, { passive: false });
+function setBtn(k, on){ const b = document.querySelector(`#ctl button[data-k="${k}"]`); if (b) b.classList.toggle('on', !!on); }
+function setD(v){ state.dT = v; document.querySelectorAll('#ctl button[data-d]').forEach(b => b.classList.toggle('on', Math.abs(parseFloat(b.dataset.d) - v) < 1e-6)); }
+function setN(v){ state.n0T = v; document.querySelectorAll('#ctl button[data-n]').forEach(b => b.classList.toggle('on', Math.abs(parseFloat(b.dataset.n) - v) < 1e-6)); }
+document.querySelectorAll('#ctl button').forEach(b => b.addEventListener('click', () => { wake(); if (b.dataset.d !== undefined) setD(parseFloat(b.dataset.d)); if (b.dataset.n) setN(parseFloat(b.dataset.n));
+  if (b.dataset.k === 'src'){ state.src = 1 - state.src; setBtn('src', state.src === 1); state.moved = true; } if (b.dataset.k === 'disp'){ state.disp = 1 - state.disp; setBtn('disp', state.disp === 1); state.moved = true; }
+  if (b.dataset.k === 'refl'){ state.refl = 1 - state.refl; setBtn('refl', state.refl === 1); state.moved = true; }
+  if (b.dataset.k === 'draw'){ state.draw = 1 - state.draw; setBtn('draw', state.draw === 1); } if (b.dataset.k === 'pal'){ state.pal = (state.pal + 1) % PALETTES.length; } if (b.dataset.k === 'auto'){ state.auto = !state.auto; setBtn('auto', state.auto); } }));
+window.addEventListener('keydown', e => { wake(); if (e.code === 'Space'){ e.preventDefault(); state.auto = !state.auto; setBtn('auto', state.auto); }
+  const D = { '1': 0, '2': 0.5, '3': 1, '4': 1.5 }[e.key]; if (D !== undefined) setD(D); const N = { w: 1.333, g: 1.52, d: 2.42 }[e.key.toLowerCase()]; if (N) setN(N);
+  if (e.key === 'p' || e.key === 'P'){ state.src = 1 - state.src; setBtn('src', state.src === 1); state.moved = true; } if (e.key === 'b' || e.key === 'B'){ state.disp = 1 - state.disp; setBtn('disp', state.disp === 1); state.moved = true; }
+  if (e.key === 'r' || e.key === 'R'){ state.refl = 1 - state.refl; setBtn('refl', state.refl === 1); state.moved = true; }
+  if (e.key === 'k' || e.key === 'K'){ state.draw = 1 - state.draw; setBtn('draw', state.draw === 1); } if (e.key === 'c' || e.key === 'C') state.pal = (state.pal + 1) % PALETTES.length; });
+new ResizeObserver(() => { if (alloc()) state.moved = true; }).observe(canvas);
+setD(state.dT); setN(state.n0T); setBtn('refl', state.refl === 1); setBtn('src', state.src === 1); setBtn('disp', state.disp === 1); setBtn('draw', state.draw === 1);
+
+// ============================================================
+//  ループ
+// ============================================================
+alloc();
+let last = performance.now();
+if (Q.has('warm')){ for (let i = 0; i < 60; i++){ render(1/60); } }
+function loop(now){ let dt = (now - last)/1000; last = now; if (dt > 0.08) dt = 0.08; state.t += dt; if (alloc()) state.moved = true; render(dt); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
