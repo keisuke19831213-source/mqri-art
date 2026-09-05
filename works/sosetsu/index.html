@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>相接 — Sōsetsu</title>
+<style>
+  html,body{margin:0;height:100%;background:#0a0a0c;overflow:hidden;font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;color:#d6d0c4}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  #lab{pointer-events:none}
+  #ui{position:fixed;left:18px;bottom:16px;pointer-events:none;user-select:none;opacity:.9;transition:opacity 2s;max-width:44vw;background:rgba(8,8,10,.5);padding:10px 14px;border-radius:10px;backdrop-filter:blur(6px)}
+  #ui.fade{opacity:0}
+  #title{font-size:15px;letter-spacing:.35em;color:#efe9dc}
+  #title span{display:block;margin-top:5px;font-size:10.5px;letter-spacing:.12em;color:#a29b8e}
+  #hint{margin-top:10px;font-size:10px;letter-spacing:.06em;color:#7d766a;line-height:1.7}
+  #stat{position:fixed;right:16px;top:14px;font-size:10px;letter-spacing:.16em;color:#a29b8e;pointer-events:none;text-align:right;line-height:1.8;background:rgba(8,8,10,.5);padding:8px 12px;border-radius:10px;backdrop-filter:blur(6px)}
+  #stat b{color:#e6b95a;font-weight:500}
+  #ctl{position:fixed;right:16px;bottom:16px;display:flex;gap:6px;user-select:none;flex-wrap:wrap;justify-content:flex-end;max-width:56vw}
+  #ctl button{appearance:none;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.35);color:#d6d0c4;border-radius:999px;padding:6px 10px;font-size:11px;letter-spacing:.14em;cursor:pointer;backdrop-filter:blur(6px);font-family:inherit}
+  #ctl button.on{background:rgba(230,185,90,.92);color:#1a1712;border-color:transparent}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<canvas id="lab" style="position:fixed;inset:0;width:100%;height:100%"></canvas>
+<div id="ui">
+  <div id="title">相接<span>Sōsetsu — 互いに接する四つの円。デカルトの定理 k₄＝k₁+k₂+k₃±2√(k₁k₂+k₂k₃+k₃k₁) が、無限の円の曲率を整数で決める</span></div>
+  <div id="hint">ドラッグ＝移動　ホイール／ピンチ＝寄る（どこまでも）　1〜4＝根の四つ組（−1,2,2,3／−2,3,6,7／−3,5,8,8／−6,11,14,15）　N＝曲率の数字　C＝彩　Space＝自動で潜る</div>
+</div>
+<div id="stat"></div>
+<div id="ctl"><button data-r="0" class="on">−1,2,2,3</button><button data-r="1">−2,3,6,7</button><button data-r="2">−3,5,8,8</button><button data-r="3">−6,11,14,15</button><button data-k="num" class="on">数字</button><button data-k="pal">彩</button><button data-k="auto" class="on">自動</button></div>
+
+<script>
+'use strict';
+// ============================================================
+//  相接 — Sōsetsu  (2026-09-05 / ccf5 art)
+//  アポロニウスのガスケットを、デカルトの円定理（1643）の複素数版（Lagarias–Mallows–Wilks 2002）で厳密に生成する。
+//  曲率 k と中心 z について、四つ組から新しい円： k4' = 2(k1+k2+k3) − k4、 k4'z4' = 2(k1z1+k2z2+k3z3) − k4z4。
+//  根が整数なら全ての円の曲率が整数（整数アポロニウス）。見えている範囲だけ、画素より小さくなるまで再帰する。
+// ============================================================
+const Q = new URLSearchParams(location.search);
+const num = (k, d) => (Q.has(k) && isFinite(parseFloat(Q.get(k)))) ? parseFloat(Q.get(k)) : d;
+// 根：外円（曲率 −n・中心 0）、内円 A（x 軸上）、内円 B（A と外円に接する・与えた曲率）→ 4つ目はデカルト
+function tangentCircle(cA, rA, cB, rB, r, innerA){ // A に（innerA なら内接）B に外接する半径 r の円の中心（上側の解）
+  const dA = innerA ? rA - r : rA + r, dB = rB + r; const d = Math.hypot(cB[0] - cA[0], cB[1] - cA[1]);
+  const a = (dA*dA - dB*dB + d*d)/(2*d); const h = Math.sqrt(Math.max(dA*dA - a*a, 0)); const ux = (cB[0] - cA[0])/d, uy = (cB[1] - cA[1])/d;
+  return [cA[0] + a*ux - h*uy, cA[1] + a*uy + h*ux]; }
+function makeRoot(n, k1, k2){ const R = 1/n, r1 = 1/k1, r2 = 1/k2; const c0 = [0, 0], c1 = [R - r1, 0]; const c2 = tangentCircle(c0, R, c1, r1, r2, true);
+  const C = [{ k: -n, z: c0 }, { k: k1, z: c1 }, { k: k2, z: c2 }];
+  // 4つ目：複素デカルト
+  const s = C.reduce((a, c) => a + c.k, 0); const p = C[0].k*C[1].k + C[1].k*C[2].k + C[2].k*C[0].k; const k4 = s + 2*Math.sqrt(p);
+  const kz = C.map(c => [c.k*c.z[0], c.k*c.z[1]]); const S = kz.reduce((a, v) => [a[0] + v[0], a[1] + v[1]], [0, 0]);
+  const cm = (a, b) => [a[0]*b[0] - a[1]*b[1], a[0]*b[1] + a[1]*b[0]]; const P = [0, 1, 2].map(i => cm(kz[i], kz[(i + 1) % 3])).reduce((a, v) => [a[0] + v[0], a[1] + v[1]], [0, 0]);
+  const csqrt = v => { const m = Math.hypot(v[0], v[1]); const re = Math.sqrt((m + v[0])/2), im = Math.sign(v[1] || 1)*Math.sqrt(Math.max((m - v[0])/2, 0)); return [re, im]; };
+  const sq = csqrt(P); const cands = [[S[0] + 2*sq[0], S[1] + 2*sq[1]], [S[0] - 2*sq[0], S[1] - 2*sq[1]]].map(v => [v[0]/k4, v[1]/k4]);
+  // 三つの円すべてに接する方を選ぶ
+  const ok = z => C.every(c => { const d = Math.hypot(z[0] - c.z[0], z[1] - c.z[1]); const r4 = 1/k4; const t = c.k < 0 ? Math.abs(d - (1/(-c.k) - r4)) : Math.abs(d - (1/c.k + r4)); return t < 1e-6; });
+  const z4 = cands.find(ok) || cands[0]; C.push({ k: k4, z: z4 }); return C; }
+const ROOTS = [ { name: '−1, 2, 2, 3', C: makeRoot(1, 2, 2) }, { name: '−2, 3, 6, 7', C: makeRoot(2, 3, 6) }, { name: '−3, 5, 8, 8', C: makeRoot(3, 5, 8) }, { name: '−6, 11, 14, 15', C: makeRoot(6, 11, 14) } ];
+// 再帰：四つ組 (a,b,c,d) から d を裏返した d' = 2(a+b+c) − d。深さ優先。画面内かつ半径が画素以上のものだけ
+function generate(root, view){ const out = []; const { cx, cy, scale, W, H } = view; const minR = 0.6/scale; const halfW = W/(2*scale), halfH = H/(2*scale);
+  const visible = c => { const r = 1/Math.abs(c.k); return c.z[0] + r > cx - halfW && c.z[0] - r < cx + halfW && c.z[1] + r > cy - halfH && c.z[1] - r < cy + halfH; };
+  const flip = (a, b, c, d) => { const k = 2*(a.k + b.k + c.k) - d.k; return { k, z: [(2*(a.k*a.z[0] + b.k*b.z[0] + c.k*c.z[0]) - d.k*d.z[0])/k, (2*(a.k*a.z[1] + b.k*b.z[1] + c.k*c.z[1]) - d.k*d.z[1])/k], depth: d.depth + 1 }; };
+  const [A, B, C, D] = root.map(c => ({ ...c, depth: 0 })); out.push(A, B, C, D);
+  const stack = [[A, B, C, D], [A, B, D, C], [A, C, D, B], [B, C, D, A]];   // 各三つ組と、裏返す4つ目
+  let n = 0;
+  while (stack.length && n < 60000){ const [a, b, c, d] = stack.pop(); const e = flip(a, b, c, d); if (1/e.k < minR || !visible(e) || e.depth > 40) continue; out.push(e); n++;
+    stack.push([a, b, e, c], [a, c, e, b], [b, c, e, a]); }
+  return out; }
+
+// ============================================================
+//  GLSL：円＝インスタンス板（内側を塗り、縁を線）
+// ============================================================
+const VS = `#version 300 es
+precision highp float; layout(location=0) in vec3 aC; layout(location=1) in vec3 aCol; layout(location=2) in float aOuter;
+uniform vec2 uRes; uniform float uScale; uniform vec2 uCenter; out vec2 vQ; out vec3 vCol; out float vR; out float vOuter;
+void main(){ int id = gl_VertexID; vec2 q = vec2(float(id & 1), float((id >> 1) & 1))*2.0 - 1.0; float r = aC.z; vec2 p = (aC.xy - uCenter + q*r*1.02)*uScale; vec2 ndc = vec2(p.x/uRes.x*2.0, p.y/uRes.y*2.0);
+  gl_Position = vec4(ndc, 0.0, 1.0); vQ = q*1.02; vCol = aCol; vR = r*uScale; vOuter = aOuter; }`;
+const FS = `#version 300 es
+precision highp float; in vec2 vQ; in vec3 vCol; in float vR; in float vOuter; uniform float uLineW; out vec4 o;
+void main(){ float d = (length(vQ) - 1.0)*vR;   // 画素単位の縁からの距離（内側が負）
+  if (d > 0.0) discard;
+  float edge = smoothstep(uLineW, uLineW*0.35, -d); float fill = vOuter > 0.5 ? 0.0 : 0.85;
+  vec3 col = vCol*fill*(1.0 - 0.25*smoothstep(0.0, 1.0, -d/max(vR, 1.0))) + vec3(0.95, 0.9, 0.8)*edge*0.55;
+  float a = vOuter > 0.5 ? edge : 1.0; o = vec4(col, a); }`;
+const VS_QUAD = `#version 300 es
+void main(){ vec2 v = vec2((gl_VertexID<<1)&2, gl_VertexID&2); gl_Position = vec4(v*2.0-1.0, 0.0, 1.0); }`;
+const FS_BG = `#version 300 es
+precision highp float; uniform vec2 uRes; uniform vec3 uBg; out vec4 o; void main(){ vec2 uv = gl_FragCoord.xy/uRes*2.0 - 1.0; o = vec4(uBg*(1.0 - 0.3*dot(uv, uv)), 1.0); }`;
+
+// ============================================================
+//  WebGL
+// ============================================================
+const canvas = document.getElementById('c'); const lab = document.getElementById('lab'); const lctx = lab.getContext('2d');
+const gl = canvas.getContext('webgl2', { antialias: true, alpha: false });
+if (!gl) throw new Error('WebGL2 が必要です');
+function compile(type, src){ const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function program(vs, fs){ const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); for (let i = 0; i < n; i++){ const info = gl.getActiveUniform(p, i); u[info.name.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, info.name); } return { p, u }; }
+const P_C = program(VS, FS), P_BG = program(VS_QUAD, FS_BG);
+const vaoQuad = gl.createVertexArray(); const buf = gl.createBuffer(); const vao = gl.createVertexArray(); gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+[[0,3,0],[1,3,12],[2,1,24]].forEach(([l, s, o]) => { gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, s, gl.FLOAT, false, 28, o); gl.vertexAttribDivisor(l, 1); }); gl.bindVertexArray(null);
+let W = 0, H = 0, DPR = 1;
+function alloc(){ const dpr = Math.min(window.devicePixelRatio || 1, 2); const cw = Math.max(64, Math.round(canvas.clientWidth || window.innerWidth || 640)), ch = Math.max(64, Math.round(canvas.clientHeight || window.innerHeight || 480));
+  let s = dpr; if (cw*ch*s*s > 3.6e6) s = Math.sqrt(3.6e6/(cw*ch)); const w = Math.round(cw*s), h = Math.round(ch*s); if (w === W && h === H) return false; W = w; H = h; DPR = s; canvas.width = W; canvas.height = H; lab.width = W; lab.height = H; return true; }
+
+// ============================================================
+//  彩・状態
+// ============================================================
+const PALETTES = [ { name: '夜', bg: [0.035, 0.035, 0.045], hue: k => { const t = Math.log(Math.abs(k) + 1)*0.55; return hsl(0.62 + 0.12*Math.sin(t) + 0.05*Math.cos(2.1*t), 0.45, 0.16 + 0.10*Math.sin(t*1.3)); } },
+  { name: '琥珀', bg: [0.05, 0.04, 0.03], hue: k => { const t = Math.log(Math.abs(k) + 1)*0.5; return hsl(0.08 + 0.06*Math.sin(t), 0.55, 0.18 + 0.12*Math.sin(t*1.7)); } },
+  { name: '翠', bg: [0.03, 0.045, 0.04], hue: k => { const t = Math.log(Math.abs(k) + 1)*0.5; return hsl(0.42 + 0.1*Math.sin(t), 0.4, 0.15 + 0.12*Math.sin(t*1.1)); } } ];
+function hsl(h, s, l){ const f = (n) => { const k = (n + h*12) % 12; const a = s*Math.min(l, 1 - l); return l - a*Math.max(-1, Math.min(k - 3, 9 - k, 1)); }; return [f(0), f(8), f(4)]; }
+const state = { t: num('warm', 0), root: Math.round(num('root', 0)), cx: num('cx', 0), cy: num('cy', 0), zoom: num('zoom', 1), numbers: Q.get('num') === '0' ? 0 : 1, pal: Math.round(num('pal', 0)) % PALETTES.length, auto: !Q.has('still'), dragging: false, dirty: true, circles: [], target: null };
+const statEl = document.getElementById('stat');
+function ease(x){ x = Math.max(0, Math.min(1, x)); return x*x*(3 - 2*x); }
+function pickTarget(){ // 自動で潜る先：見えている円のうち中くらいのものを選ぶ
+  const cs = state.circles.filter(c => c.k > 0); if (!cs.length) return null; const R = 1/Math.abs(ROOTS[state.root].C[0].k);
+  const scale = state.zoom*Math.min(W, H)*0.46/R; const mid = cs.filter(c => (1/c.k)*scale > 40 && (1/c.k)*scale < 200); const pool = mid.length ? mid : cs; return pool[Math.floor(Math.random()*pool.length)]; }
+function render(dt){
+  const pal = PALETTES[state.pal]; const root = ROOTS[state.root]; const R = 1/Math.abs(root.C[0].k);
+  if (state.auto && !state.dragging){ if (!state.target || (1/state.target.k)*state.zoom*Math.min(W, H)*0.46/R > Math.min(W, H)*0.55){ state.target = pickTarget(); }
+    if (state.target){ const tz = state.target.z; state.cx += (tz[0] - state.cx)*Math.min(1, dt*0.8); state.cy += (tz[1] - state.cy)*Math.min(1, dt*0.8); state.zoom *= Math.exp(dt*0.22); state.dirty = true; } }
+  const scale = state.zoom*Math.min(W, H)*0.46/R;
+  if (state.dirty){ state.circles = generate(root.C, { cx: state.cx, cy: state.cy, scale, W, H }); state.dirty = false; }
+  const cs = state.circles; const data = new Float32Array(cs.length*7);
+  for (let i = 0; i < cs.length; i++){ const c = cs[i]; const col = pal.hue(c.k); data[i*7] = c.z[0]; data[i*7+1] = c.z[1]; data[i*7+2] = 1/Math.abs(c.k); data[i*7+3] = col[0]; data[i*7+4] = col[1]; data[i*7+5] = col[2]; data[i*7+6] = c.k < 0 ? 1 : 0; }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H); gl.disable(gl.DEPTH_TEST);
+  gl.useProgram(P_BG.p); gl.bindVertexArray(vaoQuad); gl.uniform2f(P_BG.u.uRes, W, H); gl.uniform3fv(P_BG.u.uBg, pal.bg); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.useProgram(P_C.p); const u = P_C.u; gl.uniform2f(u.uRes, W, H); gl.uniform1f(u.uScale, scale); gl.uniform2f(u.uCenter, state.cx, state.cy); gl.uniform1f(u.uLineW, 1.2*DPR);
+  gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, cs.length); gl.disable(gl.BLEND); gl.bindVertexArray(vaoQuad);
+  // 数字（2D キャンバス）
+  lctx.clearRect(0, 0, W, H); let labels = 0;
+  if (state.numbers){ lctx.textAlign = 'center'; lctx.textBaseline = 'middle'; lctx.fillStyle = 'rgba(240,232,215,0.9)';
+    for (const c of cs){ if (c.k <= 0) continue; const rp = (1/c.k)*scale; if (rp < 14*DPR) continue; const x = (c.z[0] - state.cx)*scale + W/2, y = H/2 - (c.z[1] - state.cy)*scale; if (x < -rp || x > W + rp || y < -rp || y > H + rp) continue;
+      const txt = Number.isInteger(c.k) ? String(c.k) : c.k.toFixed(2); const fs = Math.min(rp*0.9, rp*2.2/Math.max(txt.length, 1))*0.85; lctx.font = `${Math.max(fs, 6*DPR)}px -apple-system, "Hiragino Sans", sans-serif`; lctx.fillText(txt, x, y); labels++; if (labels > 900) break; } }
+  const kmax = cs.reduce((m, c) => Math.max(m, c.k), 0);
+  statEl.innerHTML = `根 <b>${root.name}</b>　円 <b>${cs.length}</b>（見えている分・画素まで）　最大曲率 <b>${kmax.toLocaleString()}</b><br>倍率 ×${state.zoom.toExponential(2)}　k₄' ＝ 2(k₁+k₂+k₃) − k₄　${Number.isInteger(root.C[3].k) ? '整数アポロニウス：曲率はすべて整数' : ''}`;
+}
+
+// ============================================================
+//  入力
+// ============================================================
+const ptrs = new Map(); let lastPinch = 0, uiTimer = 0; const ui = document.getElementById('ui');
+function wake(){ ui.classList.remove('fade'); clearTimeout(uiTimer); uiTimer = setTimeout(() => ui.classList.add('fade'), 7000); } wake();
+function scaleNow(){ const R = 1/Math.abs(ROOTS[state.root].C[0].k); return state.zoom*Math.min(W, H)*0.46/R; }
+canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); state.dragging = true; state.auto = false; setBtn('auto', false); wake(); if (ptrs.size === 2){ const a = [...ptrs.values()]; lastPinch = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); } });
+canvas.addEventListener('pointermove', e => { const p = ptrs.get(e.pointerId); if (!p) return; const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY; const s = scaleNow()/DPR;
+  if (ptrs.size === 1){ state.cx -= dx/s; state.cy += dy/s; state.dirty = true; }
+  else if (ptrs.size === 2){ const a = [...ptrs.values()]; const d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); if (lastPinch > 0) state.zoom *= d/lastPinch; lastPinch = d; state.cx -= dx*0.5/s; state.cy += dy*0.5/s; state.dirty = true; } });
+function endPtr(e){ ptrs.delete(e.pointerId); lastPinch = 0; if (ptrs.size === 0) state.dragging = false; }
+canvas.addEventListener('pointerup', endPtr); canvas.addEventListener('pointercancel', endPtr);
+canvas.addEventListener('wheel', e => { e.preventDefault(); const f = Math.exp(-e.deltaY*0.0015); const s = scaleNow()/DPR; const r = canvas.getBoundingClientRect(); const mx = (e.clientX - r.left - r.width/2)/s + state.cx, my = -(e.clientY - r.top - r.height/2)/s + state.cy;
+  state.zoom *= f; state.cx = mx + (state.cx - mx)/f; state.cy = my + (state.cy - my)/f; state.dirty = true; state.auto = false; setBtn('auto', false); wake(); }, { passive: false });
+function setBtn(k, on){ const b = document.querySelector(`#ctl button[data-k="${k}"]`); if (b) b.classList.toggle('on', !!on); }
+function setRoot(i){ state.root = i; state.cx = 0; state.cy = 0; state.zoom = 1; state.target = null; state.dirty = true; document.querySelectorAll('#ctl button[data-r]').forEach(b => b.classList.toggle('on', parseInt(b.dataset.r) === i)); }
+document.querySelectorAll('#ctl button').forEach(b => b.addEventListener('click', () => { wake(); if (b.dataset.r !== undefined) setRoot(parseInt(b.dataset.r));
+  if (b.dataset.k === 'num'){ state.numbers = 1 - state.numbers; setBtn('num', state.numbers === 1); } if (b.dataset.k === 'pal') state.pal = (state.pal + 1) % PALETTES.length; if (b.dataset.k === 'auto'){ state.auto = !state.auto; setBtn('auto', state.auto); state.target = null; } }));
+window.addEventListener('keydown', e => { wake(); if (e.code === 'Space'){ e.preventDefault(); state.auto = !state.auto; setBtn('auto', state.auto); state.target = null; }
+  if (e.key >= '1' && e.key <= '4') setRoot(parseInt(e.key) - 1); if (e.key === 'n' || e.key === 'N'){ state.numbers = 1 - state.numbers; setBtn('num', state.numbers === 1); } if (e.key === 'c' || e.key === 'C') state.pal = (state.pal + 1) % PALETTES.length; });
+new ResizeObserver(() => { if (alloc()) state.dirty = true; }).observe(canvas); setRoot(state.root); state.cx = num('cx', 0); state.cy = num('cy', 0); state.zoom = num('zoom', 1); setBtn('num', state.numbers === 1);
+
+// ============================================================
+//  ループ
+// ============================================================
+alloc(); state.dirty = true;
+let last = performance.now();
+if (Q.has('warm')){ for (let i = 0; i < 30; i++){ state.t += 1/60; render(1/60); } }
+function loop(now){ let dt = (now - last)/1000; last = now; if (dt > 0.08) dt = 0.08; state.t += dt; if (alloc()) state.dirty = true; render(dt); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
