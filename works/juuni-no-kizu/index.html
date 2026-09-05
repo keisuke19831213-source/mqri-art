@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>十二の疵 — Jūni no Kizu</title>
+<style>
+  html,body{margin:0;height:100%;background:#0a0b0d;overflow:hidden;font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;color:#cfd3d8}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  #ui{position:fixed;left:18px;bottom:16px;pointer-events:none;user-select:none;opacity:.9;transition:opacity 2s;max-width:44vw}
+  #ui.fade{opacity:0}
+  #title{font-size:15px;letter-spacing:.35em;color:#e8e6df}
+  #title span{display:block;margin-top:5px;font-size:10.5px;letter-spacing:.12em;color:#9aa0a8}
+  #hint{margin-top:10px;font-size:10px;letter-spacing:.06em;color:#6f7680;line-height:1.7}
+  #stat{position:fixed;right:16px;top:14px;font-size:10px;letter-spacing:.16em;color:#8a8f96;pointer-events:none;text-align:right;line-height:1.8}
+  #stat b{color:#e2b45a;font-weight:500}
+  #ctl{position:fixed;right:16px;bottom:16px;display:flex;gap:6px;user-select:none;flex-wrap:wrap;justify-content:flex-end;max-width:52vw}
+  #ctl button{appearance:none;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.35);color:#c9cdd3;border-radius:999px;padding:6px 10px;font-size:11px;letter-spacing:.16em;cursor:pointer;backdrop-filter:blur(6px);font-family:inherit}
+  #ctl button.on{background:rgba(226,180,90,.9);color:#1a1712;border-color:transparent}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="title">十二の疵<span>Jūni no Kizu — 球に生命の花を咲かせると、十二の五弁が必ず残る。その疵に金を流す</span></div>
+  <div id="hint">ドラッグ＝まわす　ホイール／ピンチ＝寄る　2〜9＝花の細かさ（測地線の分割数）　C＝彩　K＝疵の金を隠す／見せる　Space＝自動</div>
+</div>
+<div id="stat"></div>
+<div id="ctl"><button data-n="2">2</button><button data-n="3">3</button><button data-n="4">4</button><button data-n="5">5</button><button data-n="6">6</button><button data-n="7">7</button><button data-n="8">8</button><button data-n="9">9</button><button data-k="pal">彩</button><button data-k="kin" class="on">金</button><button data-k="auto" class="on">自動</button></div>
+
+<script>
+'use strict';
+// ============================================================
+//  十二の疵 — Jūni no Kizu  (2026-09-05 / ccf5 art)
+//  生命の花（六方格子の円）は球に載らない。オイラー V−E+F=2 により、球面の六角格子には
+//  分割をいくら細かくしても五角形がちょうど12個残る（正二十面体の頂点）。
+//  ここでは正二十面体の測地線分割（class I・分割数ν）の頂点を円の中心にし、
+//  各円の半径＝隣への角距離の平均で球面の小円を描く。十二の疵（五弁）には金を流す。
+// ============================================================
+const Q = new URLSearchParams(location.search);
+const num = (k, d) => (Q.has(k) && isFinite(parseFloat(Q.get(k)))) ? parseFloat(Q.get(k)) : d;
+
+// ---------- 測地線分割 ----------
+function icosahedron(){
+  const t = (1 + Math.sqrt(5))/2; const V = [[-1,t,0],[1,t,0],[-1,-t,0],[1,-t,0],[0,-1,t],[0,1,t],[0,-1,-t],[0,1,-t],[t,0,-1],[t,0,1],[-t,0,-1],[-t,0,1]].map(v => { const l = Math.hypot(...v); return v.map(x => x/l); });
+  const F = [[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],[3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]];
+  return { V, F };
+}
+function geodesic(nu){
+  const { V, F } = icosahedron(); const verts = []; const map = new Map();
+  const key = p => p.map(x => Math.round(x*1e5)).join(',');
+  const add = p => { const l = Math.hypot(...p); const q = p.map(x => x/l); const k = key(q); if (map.has(k)) return map.get(k); const id = verts.length; verts.push(q); map.set(k, id); return id; };
+  const faces = [];
+  for (const [a, b, c] of F){ const A = V[a], B = V[b], C = V[c]; const grid = [];
+    for (let i = 0; i <= nu; i++){ grid.push([]); for (let j = 0; j <= nu - i; j++){ const k = nu - i - j; const p = [0,1,2].map(d => (A[d]*i + B[d]*j + C[d]*k)/nu); grid[i].push(add(p)); } }
+    for (let i = 0; i < nu; i++) for (let j = 0; j < nu - i; j++){ faces.push([grid[i][j], grid[i+1][j], grid[i][j+1]]); if (j < nu - i - 1) faces.push([grid[i+1][j], grid[i+1][j+1], grid[i][j+1]]); }
+  }
+  // 隣接（辺）から各頂点の半径＝隣への角距離の平均
+  const nb = verts.map(() => new Set());
+  for (const [a, b, c] of faces){ nb[a].add(b); nb[a].add(c); nb[b].add(a); nb[b].add(c); nb[c].add(a); nb[c].add(b); }
+  const rad = verts.map((v, i) => { let s = 0; for (const j of nb[i]) s += Math.acos(Math.max(-1, Math.min(1, v[0]*verts[j][0] + v[1]*verts[j][1] + v[2]*verts[j][2]))); return s/nb[i].size; });
+  const deg = nb.map(s => s.size);
+  const defects = []; deg.forEach((d, i) => { if (d === 5) defects.push(i); });
+  return { verts, rad, deg, defects, E: faces.length*3/2, F: faces.length };
+}
+
+// ============================================================
+//  GLSL
+// ============================================================
+const VS_QUAD = `#version 300 es
+void main(){ vec2 v = vec2((gl_VertexID<<1)&2, gl_VertexID&2); gl_Position = vec4(v*2.0-1.0, 0.0, 1.0); }`;
+// キューブマップへ花の場を焼く：R=線までの角距離, G=覆う円の数, B=疵（五弁）までの角距離, A=最寄り中心までの角距離
+const FS_BAKE = `#version 300 es
+precision highp float; precision highp int;
+uniform sampler2D uVerts; uniform int uN; uniform int uFace; uniform float uRes;
+out vec4 o;
+vec3 faceDir(int f, vec2 st){ // st in [-1,1]  OpenGL cubemap convention
+  if (f == 0) return vec3( 1.0, -st.y, -st.x);
+  if (f == 1) return vec3(-1.0, -st.y,  st.x);
+  if (f == 2) return vec3( st.x,  1.0,  st.y);
+  if (f == 3) return vec3( st.x, -1.0, -st.y);
+  if (f == 4) return vec3( st.x, -st.y,  1.0);
+  return vec3(-st.x, -st.y, -1.0);
+}
+void main(){
+  vec2 st = (gl_FragCoord.xy/uRes)*2.0 - 1.0; vec3 p = normalize(faceDir(uFace, st));
+  float dl = 1e9, dv = 1e9, dk = 1e9; float cover = 0.0;
+  for (int i = 0; i < 4096; i++){ if (i >= uN) break;
+    vec4 v = texelFetch(uVerts, ivec2(i, 0), 0); float c = dot(p, v.xyz);
+    float r = abs(v.w); float cr = cos(r);
+    if (c > cr) cover += 1.0;
+    if (abs(c - cr) < 0.12 || c > 0.94){ float a = acos(clamp(c, -1.0, 1.0)); dl = min(dl, abs(a - r)); dv = min(dv, a); if (v.w < 0.0) dk = min(dk, a); }
+  }
+  o = vec4(dl, cover, dk, dv);
+}`;
+// 本描画：球（青磁／黒漆／白磁）に刻まれた花。十二の疵に金
+const FS_MAIN = `#version 300 es
+precision highp float;
+uniform vec2 uRes; uniform vec3 uCamPos; uniform mat3 uCam; uniform float uTanHalf, uTime, uFrame, uAlpha;
+uniform samplerCube uField; uniform sampler2D uPrev; uniform mat3 uRot;
+uniform vec3 uBase, uGlaze, uLine, uBg, uGold, uGold2; uniform float uKin, uPal, uLineW, uRadK, uReveal;
+out vec4 fragColor;
+#define PI 3.14159265358979
+float hash21(vec2 p){ p = fract(p*vec2(233.34, 851.73)); p += dot(p, p + 23.45); return fract(p.x*p.y); }
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0); }
+vec4 field(vec3 d){ return texture(uField, uRot*d); }
+float ggx(vec3 n, vec3 v, vec3 l, float rough){ vec3 h = normalize(v + l); float nh = max(dot(n, h), 0.0); float a2 = rough*rough; float D = a2/(PI*pow(nh*nh*(a2 - 1.0) + 1.0, 2.0)); return D*0.25; }
+void main(){
+  vec2 jit = vec2(hash21(gl_FragCoord.xy + uFrame*0.37), hash21(gl_FragCoord.yx + uFrame*0.91)) - 0.5;
+  vec2 uv = ((gl_FragCoord.xy + jit)/uRes)*2.0 - 1.0; uv.x *= uRes.x/uRes.y;
+  vec3 d = normalize(uCam*vec3(uv*uTanHalf, 1.0)); vec3 o = uCamPos;
+  // 背景：暗い部屋、足元にやわらかい光だまり
+  vec3 bg = uBg*(0.9 + 0.25*smoothstep(0.6, -0.4, uv.y)) ;
+  vec3 col = bg;
+  float b = dot(o, d); float c = dot(o, o) - 1.0; float disc = b*b - c;
+  if (disc > 0.0){
+    float t = -b - sqrt(disc); vec3 P = o + d*t; vec3 n = P; vec3 V = -d;
+    vec4 f = field(n);
+    float px = t*uTanHalf*2.0/uRes.y;           // 1画素の角幅
+    float lw = uLineW;                            // 線の半幅（角）
+    // 線の溝：法線を勾配で傾ける
+    vec3 T1 = normalize(cross(abs(n.z) < 0.9 ? vec3(0,0,1) : vec3(1,0,0), n)); vec3 T2 = cross(n, T1);
+    float e = max(px, 0.0015);
+    float gx = (field(normalize(n + T1*e)).x - field(normalize(n - T1*e)).x)/(2.0*e);
+    float gy = (field(normalize(n + T2*e)).x - field(normalize(n - T2*e)).x)/(2.0*e);
+    float groove = smoothstep(lw*1.6, 0.0, f.x);                 // 1=線の中心
+    float dg = (f.x < lw*1.6) ? -3.0*groove*(1.0 - groove) : 0.0;  // 溝断面の傾き（中心で0）
+    vec3 ng = normalize(n + (T1*gx + T2*gy)*dg*0.35);
+    // 材：釉の色は覆う円の数で薄く変わる（花弁の濃淡）
+    float cover = f.y;
+    vec3 base = uBase; vec3 glaze = mix(base, uGlaze, clamp(cover - 1.0, 0.0, 2.0)*0.32);
+    glaze *= 1.0 - 0.28*smoothstep(lw*3.0, lw*0.6, f.x);           // 溝に釉が溜まって濃くなる
+    float lineA = smoothstep(lw, lw*0.35, f.x);                     // 線（呉須／金）
+    vec3 lineCol = uLine;
+    // 十二の疵：五弁の花（疵の中心から半径 uRadK）を金で満たす
+    // 五弁の花びら＝疵の円の内側で、隣の円にも覆われている所（cover≥2）。金は花びらの形に流れる
+    float inK = smoothstep(uRadK + 0.004, uRadK - 0.004, f.z); float petal = smoothstep(1.4, 1.9, cover);   // 疵の円の内側で隣の円にも覆われる所（円の中心の小さな星だけ残る）
+    float kin = inK*petal*uKin;
+    float kinEdge = smoothstep(0.010, 0.0, abs(f.z - uRadK))*uKin;
+    // 照明：天窓＋窓
+    vec3 L1 = normalize(vec3(-0.45, 0.85, 0.35)), L2 = normalize(vec3(0.7, 0.2, 0.55));
+    float d1 = max(dot(ng, L1), 0.0), d2 = max(dot(ng, L2), 0.0);
+    float wrap = max(dot(ng, L1)*0.5 + 0.5, 0.0);
+    vec3 albedo = mix(glaze, lineCol, lineA*0.92);
+    vec3 diffuse = albedo*(0.20 + 0.85*d1 + 0.30*d2 + 0.12*wrap);
+    float F = 0.04 + 0.96*pow(1.0 - max(dot(ng, V), 0.0), 5.0);
+    float spec = (ggx(ng, V, L1, 0.16)*1.2 + ggx(ng, V, L2, 0.22)*0.5)*F*22.0;
+    vec3 sky = mix(vec3(0.10, 0.11, 0.13), vec3(0.32, 0.36, 0.42), max(reflect(-V, ng).y, 0.0));
+    vec3 porcelain = diffuse + vec3(spec) + sky*F*0.9;
+    // 金（金属）：色つき鏡面
+    vec3 gv = reflect(-V, ng); float gl = max(gv.y*0.5 + 0.5, 0.0);
+    vec3 gold = uGold*(0.35 + 0.55*d1 + 0.25*d2) + uGold2*(ggx(ng, V, L1, 0.24)*3.0 + ggx(ng, V, L2, 0.3)*1.5) + uGold*gl*0.35;
+    gold *= 0.9 + 0.25*hash21(floor(n.xy*300.0 + n.z*77.0))*0.4;  // 箔のむら
+    gold *= 1.0 - 0.45*lineA;                                     // 金の中でも線は溝として残る
+    col = mix(porcelain, gold, kin*uReveal);
+    col = mix(col, uGold2*1.4, kinEdge*uReveal*0.8);
+    // 疵の中心の小さな金の点（金を隠している時も）
+    float dot5 = smoothstep(0.02, 0.008, f.z);
+    col = mix(col, uGold2, dot5*0.9*uReveal*max(uKin, 0.35));
+    // 球の縁の落ち影
+    col *= 0.85 + 0.15*max(dot(n, V), 0.0);
+    // 床の接地影は背景側で
+  } else {
+    // 床の影（球の下）
+    float sh = exp(-pow(length(uv - vec2(0.0, -0.98))*1.6, 2.0)*3.0);
+    col *= 1.0 - 0.35*sh;
+  }
+  col = max(col, vec3(0.0));
+  vec3 prev = texelFetch(uPrev, ivec2(gl_FragCoord.xy), 0).rgb;
+  fragColor = vec4(mix(prev, col, uAlpha), 1.0);
+}`;
+const FS_OUT = `#version 300 es
+precision highp float; uniform sampler2D uAcc; uniform vec2 uRes; uniform float uFade; out vec4 o;
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0); }
+void main(){ vec2 uv = gl_FragCoord.xy/uRes; vec3 c = texture(uAcc, uv).rgb; vec2 q = uv*2.0-1.0; c *= 1.0 - 0.18*dot(q,q)*dot(q,q);
+  c = pow(aces(c*uFade), vec3(1.0/2.2)); float dth = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898,78.233)))*43758.5453); o = vec4(c + (dth-0.5)/255.0, 1.0); }`;
+
+// ============================================================
+//  WebGL
+// ============================================================
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' });
+if (!gl) throw new Error('WebGL2 が必要です');
+if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('EXT_color_buffer_float が必要です');
+gl.getExtension('OES_texture_float_linear');
+function compile(type, src){ const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function program(vs, fs){ const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); for (let i = 0; i < n; i++){ const info = gl.getActiveUniform(p, i); u[info.name.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, info.name); } return { p, u }; }
+const P_BAKE = program(VS_QUAD, FS_BAKE), P_MAIN = program(VS_QUAD, FS_MAIN), P_OUT = program(VS_QUAD, FS_OUT);
+gl.bindVertexArray(gl.createVertexArray());
+function makeTex(w, h, internal, filter){ const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texStorage2D(gl.TEXTURE_2D, 1, internal, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return t; }
+// キューブマップ
+const CUBE = Math.round(num('cube', 1024));
+const cubeTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_CUBE_MAP, cubeTex); gl.texStorage2D(gl.TEXTURE_CUBE_MAP, 1, gl.RGBA16F, CUBE, CUBE);
+gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+const cubeFBO = gl.createFramebuffer();
+const vertTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, vertTex); gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, 4096, 1); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+let GEO = null; let bakeQueue = [];
+function setNu(nu){
+  nu = Math.max(2, Math.min(12, nu)); state.nu = nu; GEO = geodesic(nu);
+  const data = new Float32Array(4096*4); GEO.verts.forEach((v, i) => { data[i*4] = v[0]; data[i*4+1] = v[1]; data[i*4+2] = v[2]; data[i*4+3] = GEO.deg[i] === 5 ? -GEO.rad[i] : GEO.rad[i]; });
+  gl.bindTexture(gl.TEXTURE_2D, vertTex); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 4096, 1, gl.RGBA, gl.FLOAT, data);
+  bakeQueue = [0, 1, 2, 3, 4, 5]; state.reveal = 0; state.moved = true;
+  document.querySelectorAll('#ctl button[data-n]').forEach(b => b.classList.toggle('on', parseInt(b.dataset.n) === nu));
+}
+function bakeFace(f){
+  gl.bindFramebuffer(gl.FRAMEBUFFER, cubeFBO); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_CUBE_MAP_POSITIVE_X + f, cubeTex, 0);
+  gl.viewport(0, 0, CUBE, CUBE); gl.useProgram(P_BAKE.p); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, vertTex);
+  gl.uniform1i(P_BAKE.u.uVerts, 0); gl.uniform1i(P_BAKE.u.uN, GEO.verts.length); gl.uniform1i(P_BAKE.u.uFace, f); gl.uniform1f(P_BAKE.u.uRes, CUBE);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+let W = 0, H = 0, acc = null, cur = 0, accN = 0;
+function alloc(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const cw = Math.max(64, Math.round(canvas.clientWidth || window.innerWidth || 640)), ch = Math.max(64, Math.round(canvas.clientHeight || window.innerHeight || 480));
+  let s = dpr; if (cw*ch*s*s > 3.0e6) s = Math.sqrt(3.0e6/(cw*ch)); const w = Math.round(cw*s), h = Math.round(ch*s); if (w === W && h === H) return false;
+  W = w; H = h; canvas.width = W; canvas.height = H;
+  if (acc) acc.forEach(a => { gl.deleteTexture(a.t); gl.deleteFramebuffer(a.f); });
+  acc = [0, 1].map(() => { const t = makeTex(W, H, gl.RGBA16F, gl.LINEAR); const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0); return { t, f }; });
+  accN = 0; return true;
+}
+
+// ============================================================
+//  彩
+// ============================================================
+const PALETTES = [
+  { name: '青磁', base: [0.60, 0.74, 0.68], glaze: [0.30, 0.52, 0.50], line: [0.20, 0.34, 0.34], bg: [0.055, 0.058, 0.064], gold: [0.82, 0.62, 0.24], gold2: [1.0, 0.86, 0.5], lineW: 0.0065 },
+  { name: '黒漆', base: [0.055, 0.05, 0.05], glaze: [0.10, 0.08, 0.07], line: [0.86, 0.68, 0.30], bg: [0.04, 0.038, 0.04], gold: [0.80, 0.30, 0.16], gold2: [1.0, 0.55, 0.30], lineW: 0.0055 },
+  { name: '白磁', base: [0.92, 0.92, 0.90], glaze: [0.70, 0.74, 0.78], line: [0.12, 0.22, 0.48], bg: [0.07, 0.072, 0.08], gold: [0.84, 0.64, 0.26], gold2: [1.0, 0.88, 0.55], lineW: 0.0065 },
+];
+let pal = Math.round(num('pal', 0)) % PALETTES.length; const palCur = JSON.parse(JSON.stringify(PALETTES[pal]));
+function lerpPal(dt){ const T = PALETTES[pal]; const k = Math.min(1, dt*2.0); for (const key of ['base', 'glaze', 'line', 'bg', 'gold', 'gold2']) for (let j = 0; j < 3; j++) palCur[key][j] += (T[key][j] - palCur[key][j])*k; palCur.lineW += (T.lineW - palCur.lineW)*k; }
+
+// ============================================================
+//  状態
+// ============================================================
+const state = { t: num('warm', 0), frame: 0, nu: 0, yaw: num('yaw', 0.6), pitch: num('pitch', 0.35), zoom: num('zoom', 1), auto: !Q.has('still'), kin: Q.get('kin') === '0' ? 0 : 1, kinT: 1, reveal: 0, moved: true, dragging: false };
+state.kinT = state.kin;
+setNu(Math.round(num('nu', 6)));
+const statEl = document.getElementById('stat');
+function ease(x){ x = Math.max(0, Math.min(1, x)); return x*x*(3 - 2*x); }
+function rotMat(){ // 球の姿勢：yaw（z軸）→ pitch（x軸）。シェーダには逆行列（方向→場の座標）
+  const cy = Math.cos(state.yaw), sy = Math.sin(state.yaw), cp = Math.cos(state.pitch), sp = Math.sin(state.pitch);
+  // R = Ry(pitch)·Rz(yaw) の転置を渡す（列優先）
+  const Rz = [cy, sy, 0, -sy, cy, 0, 0, 0, 1]; const Rx = [1, 0, 0, 0, cp, sp, 0, -sp, cp];
+  const m = (A, B) => { const r = new Array(9).fill(0); for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) for (let k = 0; k < 3; k++) r[i*3+j] += A[i*3+k]*B[k*3+j]; return r; };
+  const R = m(Rx, Rz); return new Float32Array(R); // 列優先で読むと転置＝逆行列
+}
+function camera(){ const aspect = W/H; const fov = 24*Math.PI/180; const tanHalf = Math.tan(fov/2); const fit = 1.0/(0.78*tanHalf); const dist = (aspect < 1 ? fit/aspect : fit)/state.zoom;
+  const pos = [0, 0, dist]; const basis = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, -1]); return { pos, basis, tanHalf }; }
+function render(dt){
+  state.frame++; lerpPal(dt);
+  if (bakeQueue.length){ bakeFace(bakeQueue.shift()); state.moved = true; }
+  else state.reveal = Math.min(1, state.reveal + dt*0.6);
+  state.kin += (state.kinT - state.kin)*Math.min(1, dt*2.5);
+  if (state.auto && !state.dragging){ state.yaw += dt*0.12; state.pitch += (0.35 + 0.25*Math.sin(state.t*0.17) - state.pitch)*Math.min(1, dt*0.5); }
+  const cam = camera(); const next = 1 - cur;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, acc[next].f); gl.viewport(0, 0, W, H);
+  gl.useProgram(P_MAIN.p); const u = P_MAIN.u;
+  gl.uniform2f(u.uRes, W, H); gl.uniform3fv(u.uCamPos, cam.pos); gl.uniformMatrix3fv(u.uCam, false, cam.basis); gl.uniform1f(u.uTanHalf, cam.tanHalf); gl.uniform1f(u.uTime, state.t); gl.uniform1f(u.uFrame, state.frame);
+  const moving = state.auto || state.dragging || state.kin !== state.kinT; if (state.moved){ accN = 0; state.moved = false; }
+  const K = moving ? 4 : 64; const alpha = 1/Math.min(accN + 1, K); accN++; gl.uniform1f(u.uAlpha, alpha);
+  gl.uniformMatrix3fv(u.uRot, false, rotMat());
+  gl.uniform3fv(u.uBase, palCur.base); gl.uniform3fv(u.uGlaze, palCur.glaze); gl.uniform3fv(u.uLine, palCur.line); gl.uniform3fv(u.uBg, palCur.bg); gl.uniform3fv(u.uGold, palCur.gold); gl.uniform3fv(u.uGold2, palCur.gold2);
+  gl.uniform1f(u.uKin, state.kin); gl.uniform1f(u.uPal, pal); gl.uniform1f(u.uLineW, palCur.lineW*Math.sqrt(6/state.nu)); gl.uniform1f(u.uRadK, GEO.rad[GEO.defects[0]]); gl.uniform1f(u.uReveal, ease(state.reveal));
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_CUBE_MAP, cubeTex); gl.uniform1i(u.uField, 0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, acc[cur].t); gl.uniform1i(u.uPrev, 1);
+  gl.drawArrays(gl.TRIANGLES, 0, 3); cur = next;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H); gl.useProgram(P_OUT.p); gl.uniform2f(P_OUT.u.uRes, W, H); gl.uniform1f(P_OUT.u.uFade, ease((state.t - 0.2)/2.0));
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, acc[cur].t); gl.uniform1i(P_OUT.u.uAcc, 0); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const nu = state.nu; const Vn = GEO.verts.length; const hex = Vn - 12;
+  statEl.innerHTML = `分割 ν＝<b>${nu}</b>　円 ${Vn}（＝10ν²＋2）<br>六弁 ${hex}　五弁 <b>12</b>　V−E+F ＝ ${Vn}−${GEO.E}+${GEO.F} ＝ <b>${Vn - GEO.E + GEO.F}</b><br>${PALETTES[pal].name}${state.kin > 0.5 ? '・疵に金' : ''}`;
+}
+
+// ============================================================
+//  入力
+// ============================================================
+const ptrs = new Map(); let lastPinch = 0, uiTimer = 0; const ui = document.getElementById('ui');
+function wake(){ ui.classList.remove('fade'); clearTimeout(uiTimer); uiTimer = setTimeout(() => ui.classList.add('fade'), 7000); } wake();
+canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); state.dragging = true; wake();
+  if (ptrs.size === 2){ const a = [...ptrs.values()]; lastPinch = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); } });
+canvas.addEventListener('pointermove', e => { const p = ptrs.get(e.pointerId); if (!p) return; const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+  if (ptrs.size === 1){ state.yaw += dx*0.007; state.pitch = Math.max(-1.5, Math.min(1.5, state.pitch + dy*0.007)); }
+  else if (ptrs.size === 2){ const a = [...ptrs.values()]; const d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); if (lastPinch > 0) state.zoom = Math.max(0.6, Math.min(6, state.zoom*(d/lastPinch))); lastPinch = d; } });
+function endPtr(e){ ptrs.delete(e.pointerId); lastPinch = 0; if (ptrs.size === 0){ state.dragging = false; state.moved = true; } }
+canvas.addEventListener('pointerup', endPtr); canvas.addEventListener('pointercancel', endPtr);
+canvas.addEventListener('wheel', e => { e.preventDefault(); state.zoom = Math.max(0.6, Math.min(6, state.zoom*Math.exp(-e.deltaY*0.0015))); state.moved = true; wake(); }, { passive: false });
+function setBtn(k, on){ const b = document.querySelector(`#ctl button[data-k="${k}"]`); if (b) b.classList.toggle('on', !!on); }
+document.querySelectorAll('#ctl button').forEach(b => b.addEventListener('click', () => { wake(); if (b.dataset.n) setNu(parseInt(b.dataset.n));
+  if (b.dataset.k === 'pal'){ pal = (pal + 1) % PALETTES.length; state.moved = true; } if (b.dataset.k === 'kin'){ state.kinT = 1 - state.kinT; setBtn('kin', state.kinT === 1); } if (b.dataset.k === 'auto'){ state.auto = !state.auto; setBtn('auto', state.auto); state.moved = true; } }));
+window.addEventListener('keydown', e => { wake(); if (e.code === 'Space'){ e.preventDefault(); state.auto = !state.auto; setBtn('auto', state.auto); state.moved = true; }
+  if (e.key >= '2' && e.key <= '9') setNu(parseInt(e.key)); if (e.key === 'c' || e.key === 'C'){ pal = (pal + 1) % PALETTES.length; state.moved = true; } if (e.key === 'k' || e.key === 'K'){ state.kinT = 1 - state.kinT; setBtn('kin', state.kinT === 1); } });
+new ResizeObserver(() => { if (alloc()) state.moved = true; }).observe(canvas);
+setBtn('kin', state.kinT === 1); setBtn('auto', state.auto);
+
+// ============================================================
+//  ループ
+// ============================================================
+alloc();
+let last = performance.now();
+if (Q.has('warm')){ for (let i = 0; i < 40; i++) render(1/60); }
+function loop(now){ let dt = (now - last)/1000; last = now; if (dt > 0.08) dt = 0.08; state.t += dt; if (alloc()) state.moved = true; render(dt); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
