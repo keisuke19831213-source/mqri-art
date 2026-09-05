@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>六百胞 — Roppyaku-hō</title>
+<style>
+  html,body{margin:0;height:100%;background:#06070a;overflow:hidden;font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;color:#cfd3d8}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  #ui{position:fixed;left:18px;bottom:16px;pointer-events:none;user-select:none;opacity:.9;transition:opacity 2s;max-width:44vw}
+  #ui.fade{opacity:0}
+  #title{font-size:15px;letter-spacing:.35em;color:#e8e6df}
+  #title span{display:block;margin-top:5px;font-size:10.5px;letter-spacing:.12em;color:#9aa0a8}
+  #hint{margin-top:10px;font-size:10px;letter-spacing:.06em;color:#6f7680;line-height:1.7}
+  #stat{position:fixed;right:16px;top:14px;font-size:10px;letter-spacing:.16em;color:#8a8f96;pointer-events:none;text-align:right;line-height:1.8}
+  #stat b{color:#e2b45a;font-weight:500}
+  #ctl{position:fixed;right:16px;bottom:16px;display:flex;gap:6px;user-select:none;flex-wrap:wrap;justify-content:flex-end;max-width:54vw}
+  #ctl button{appearance:none;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.35);color:#c9cdd3;border-radius:999px;padding:6px 10px;font-size:11px;letter-spacing:.16em;cursor:pointer;backdrop-filter:blur(6px);font-family:inherit}
+  #ctl button.on{background:rgba(226,180,90,.9);color:#1a1712;border-color:transparent}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="title">六百胞<span>Roppyaku-hō — 四次元の正多胞体。120の頂点は黄金比の四元数、12本のホップ環に10ずつ並ぶ</span></div>
+  <div id="hint">ドラッグ＝視点　Shift＋ドラッグ／二本指＝四次元に回す　ホイール／ピンチ＝寄る<br>H＝ホップの流れ（四元数の左掛け＝全頂点が環に沿って流れる）　D＝双対の百二十胞体　R＝環／奥行きで染める　C＝彩　Space＝自動</div>
+</div>
+<div id="stat"></div>
+<div id="ctl"><button data-k="hopf" class="on">ホップの流れ</button><button data-k="dual">百二十胞体</button><button data-k="ring" class="on">環で染める</button><button data-k="pal">彩</button><button data-k="auto" class="on">自動</button></div>
+
+<script>
+'use strict';
+// ============================================================
+//  六百胞 — Roppyaku-hō  (2026-09-05 / ccf5 art)
+//  600-cell：120頂点 = 単位イコシアン（(±1,0,0,0) の並べ替え 8、(±½,±½,±½,±½) 16、½(±φ,±1,±1/φ,0) の偶置換 96）。
+//  辺 = 距離 1/φ の組（720）。三角形 1200・四面体の胞 600 をクリークで数え上げ、V−E+F−C=0 を検算。
+//  ホップ束：位数10の単位四元数 q（実部 cos36°）の左掛けの軌道で 12 本の大円（各10頂点＝正十角形）。
+//  左掛け exp(tq̂) はクリフォード回転＝全頂点がそれぞれの環に沿って等速に流れる。立体射影で三次元へ。
+//  双対の 120-cell（600頂点・1200辺）は各胞の重心（正規化）。
+// ============================================================
+const Q = new URLSearchParams(location.search);
+const num = (k, d) => (Q.has(k) && isFinite(parseFloat(Q.get(k)))) ? parseFloat(Q.get(k)) : d;
+const PHI = (1 + Math.sqrt(5))/2;
+// ---------- 頂点 ----------
+function build600(){
+  const V = []; const push = v => V.push(v);
+  for (let i = 0; i < 4; i++) for (const s of [1, -1]){ const v = [0, 0, 0, 0]; v[i] = s; push(v); }
+  for (let m = 0; m < 16; m++) push([0, 1, 2, 3].map(i => (m >> i) & 1 ? 0.5 : -0.5));
+  const evenPerms = [[0,1,2,3],[0,2,3,1],[0,3,1,2],[1,0,3,2],[1,2,0,3],[1,3,2,0],[2,0,1,3],[2,1,3,0],[2,3,0,1],[3,0,2,1],[3,1,0,2],[3,2,1,0]];
+  const base = [PHI/2, 0.5, 1/(2*PHI), 0];
+  for (const p of evenPerms) for (let m = 0; m < 8; m++){ const s = [(m & 1) ? -1 : 1, (m & 2) ? -1 : 1, (m & 4) ? -1 : 1, 1]; const v = [0, 0, 0, 0]; for (let i = 0; i < 4; i++) v[p[i]] = base[i]*s[i]; push(v); }
+  return V;
+}
+const V4 = build600();
+const dist = (a, b) => Math.hypot(a[0]-b[0], a[1]-b[1], a[2]-b[2], a[3]-b[3]);
+const EDGE_LEN = 1/PHI; const E = []; const ADJ = V4.map(() => []);
+for (let i = 0; i < 120; i++) for (let j = i + 1; j < 120; j++) if (Math.abs(dist(V4[i], V4[j]) - EDGE_LEN) < 1e-6){ E.push([i, j]); ADJ[i].push(j); ADJ[j].push(i); }
+// 三角形・四面体（クリーク）
+const TRI = []; for (const [i, j] of E) for (const k of ADJ[i]) if (k > j && ADJ[j].includes(k)) TRI.push([i, j, k]);
+const CELL = []; for (const [i, j, k] of TRI) for (const l of ADJ[i]) if (l > k && ADJ[j].includes(l) && ADJ[k].includes(l)) CELL.push([i, j, k, l]);
+// ---------- 四元数 ----------
+const qmul = (a, b) => [a[0]*b[0] - a[1]*b[1] - a[2]*b[2] - a[3]*b[3], a[0]*b[1] + a[1]*b[0] + a[2]*b[3] - a[3]*b[2], a[0]*b[2] - a[1]*b[3] + a[2]*b[0] + a[3]*b[1], a[0]*b[3] + a[1]*b[2] - a[2]*b[1] + a[3]*b[0]];
+// 位数10の q：実部 cos36° = φ/2 の頂点
+const q10 = V4.find(v => Math.abs(v[0] - PHI/2) < 1e-9 && Math.abs(v[1] - 0.5) < 1e-9);
+// ホップ環：q10 の左掛け軌道で 120 頂点を 12 本に分ける
+const FIBER = new Array(120).fill(-1); let nf = 0;
+const findV = p => V4.findIndex(v => dist(v, p) < 1e-6);
+for (let i = 0; i < 120; i++){ if (FIBER[i] >= 0) continue; let p = V4[i]; for (let k = 0; k < 10; k++){ const idx = findV(p); FIBER[idx] = nf; p = qmul(q10, p); } nf++; }
+// 双対：胞の重心を正規化
+const DUALV = CELL.map(c => { const s = [0, 0, 0, 0]; for (const i of c) for (let d = 0; d < 4; d++) s[d] += V4[i][d]; const l = Math.hypot(...s); return s.map(x => x/l); });
+const DUAL_LEN = (() => { let m = 1e9; for (let j = 1; j < DUALV.length; j++){ const d = dist(DUALV[0], DUALV[j]); if (d > 1e-6 && d < m) m = d; } return m; })();
+const DUALE = []; for (let i = 0; i < DUALV.length; i++) for (let j = i + 1; j < DUALV.length; j++) if (Math.abs(dist(DUALV[i], DUALV[j]) - DUAL_LEN) < 1e-6) DUALE.push([i, j]);
+// 四次元回転：左掛け exp(t q̂)（ホップの流れ）と、一般の二平面回転（ユーザー操作）
+const qexp = (axis, t) => { const l = Math.hypot(...axis); const u = axis.map(x => x/l); const s = Math.sin(t); return [Math.cos(t), u[0]*s, u[1]*s, u[2]*s]; };
+const QAXIS = [q10[1], q10[2], q10[3]];   // q10 の虚部の向き
+function rot2(v, a, b, th){ const c = Math.cos(th), s = Math.sin(th); const w = v.slice(); w[a] = v[a]*c - v[b]*s; w[b] = v[a]*s + v[b]*c; return w; }
+
+// ============================================================
+//  GLSL（辺＝カプセル、珠）
+// ============================================================
+const VS_EDGE = `#version 300 es
+precision highp float; layout(location=0) in vec3 aA; layout(location=1) in vec3 aB; layout(location=2) in vec4 aCol;
+uniform vec3 uCamPos; uniform mat3 uCamInv; uniform float uTanHalf; uniform vec2 uRes; uniform float uWidth, uFar; out vec4 vCol; out float vV; out float vDepth;
+void main(){ int id = gl_VertexID; vec2 q = vec2(float(id & 1), float((id >> 1) & 1)); vec3 P = mix(aA, aB, q.x);
+  vec3 view = normalize(P - uCamPos); vec3 axis = normalize(aB - aA); vec3 side = normalize(cross(view, axis)); float w = uWidth*(0.6 + 0.4*aCol.a); vec3 W = P + side*w*(q.y*2.0 - 1.0);
+  vec3 c = uCamInv*(W - uCamPos); float z = max(c.z, 1e-3); gl_Position = vec4(c.x/(z*uTanHalf)*(uRes.y/uRes.x), c.y/(z*uTanHalf), 0.0, 1.0); vCol = aCol; vV = q.y*2.0 - 1.0; vDepth = z/uFar; }`;
+const FS_EDGE = `#version 300 es
+precision highp float; in vec4 vCol; in float vV; in float vDepth; uniform float uGlow; out vec4 o;
+void main(){ float r = abs(vV); float body = sqrt(max(0.0, 1.0 - r*r)); vec3 col = vCol.rgb*(0.45 + 0.8*body) + vec3(0.5)*pow(body, 10.0)*0.4; float aa = smoothstep(1.0, 0.7, r); o = vec4(col*uGlow*aa*vCol.a, aa*vCol.a); gl_FragDepth = clamp(vDepth, 0.0, 0.9999); }`;
+const VS_DOT = `#version 300 es
+precision highp float; layout(location=0) in vec3 aP; layout(location=1) in vec4 aCol;
+uniform vec3 uCamPos; uniform mat3 uCamInv; uniform float uTanHalf; uniform vec2 uRes; uniform float uRad, uFar; out vec4 vCol; out vec2 vQ; out float vDepth;
+void main(){ int id = gl_VertexID; vec2 q = vec2(float(id & 1), float((id >> 1) & 1))*2.0 - 1.0; vec3 c = uCamInv*(aP - uCamPos); float z = max(c.z, 1e-3);
+  vec2 ndc = vec2(c.x/(z*uTanHalf)*(uRes.y/uRes.x), c.y/(z*uTanHalf)); float rad = uRad*(0.5 + 0.5*aCol.a); vec2 sz = vec2(rad/(z*uTanHalf)*(uRes.y/uRes.x), rad/(z*uTanHalf)); gl_Position = vec4(ndc + q*sz, 0.0, 1.0); vCol = aCol; vQ = q; vDepth = z/uFar; }`;
+const FS_DOT = `#version 300 es
+precision highp float; in vec4 vCol; in vec2 vQ; in float vDepth; uniform float uGlow; out vec4 o;
+void main(){ float r = length(vQ); if (r > 1.0) discard; float body = sqrt(1.0 - r*r); vec3 n = vec3(vQ, body); float spec = pow(max(dot(n, normalize(vec3(-0.5, 0.6, 0.8))), 0.0), 14.0);
+  vec3 col = vCol.rgb*(0.5 + 0.6*body) + vec3(1.0)*spec*0.6; float aa = smoothstep(1.0, 0.85, r); o = vec4(col*uGlow*aa*vCol.a, aa*vCol.a); gl_FragDepth = clamp(vDepth - 0.0003, 0.0, 0.9999); }`;
+const VS_QUAD = `#version 300 es
+void main(){ vec2 v = vec2((gl_VertexID<<1)&2, gl_VertexID&2); gl_Position = vec4(v*2.0-1.0, 0.0, 1.0); }`;
+const FS_BG = `#version 300 es
+precision highp float; uniform vec2 uRes; uniform vec3 uBg; out vec4 o; void main(){ vec2 uv = gl_FragCoord.xy/uRes*2.0 - 1.0; o = vec4(uBg*(1.0 - 0.35*dot(uv, uv)), 1.0); gl_FragDepth = 0.9999; }`;
+const FS_DOWN = `#version 300 es
+precision highp float; uniform sampler2D uS; uniform vec2 uDst; out vec4 o;
+void main(){ vec2 uv = gl_FragCoord.xy/uDst; vec2 px = 1.0/uDst; vec3 c = texture(uS, uv + px*vec2(-0.5,-0.5)).rgb + texture(uS, uv + px*vec2(0.5,-0.5)).rgb + texture(uS, uv + px*vec2(-0.5,0.5)).rgb + texture(uS, uv + px*vec2(0.5,0.5)).rgb; o = vec4(c*0.25, 1.0); }`;
+const FS_POST = `#version 300 es
+precision highp float; uniform sampler2D uAcc, uB1, uB2, uB3, uB4; uniform vec2 uRes; uniform float uBloom, uFade; out vec4 o;
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0); }
+void main(){ vec2 uv = gl_FragCoord.xy/uRes; vec3 c = texture(uAcc, uv).rgb + (texture(uB1, uv).rgb*0.35 + texture(uB2, uv).rgb*0.28 + texture(uB3, uv).rgb*0.22 + texture(uB4, uv).rgb*0.15)*uBloom;
+  c = pow(aces(c)*uFade, vec3(1.0/2.2)); float dth = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898,78.233)))*43758.5453); o = vec4(c + (dth-0.5)/255.0, 1.0); }`;
+
+// ============================================================
+//  WebGL
+// ============================================================
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' });
+if (!gl) throw new Error('WebGL2 が必要です');
+if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('EXT_color_buffer_float が必要です');
+function compile(type, src){ const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function program(vs, fs){ const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); for (let i = 0; i < n; i++){ const info = gl.getActiveUniform(p, i); u[info.name.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, info.name); } return { p, u }; }
+const P_EDGE = program(VS_EDGE, FS_EDGE), P_DOT = program(VS_DOT, FS_DOT), P_BG = program(VS_QUAD, FS_BG), P_DOWN = program(VS_QUAD, FS_DOWN), P_POST = program(VS_QUAD, FS_POST);
+const vaoQuad = gl.createVertexArray(); const edgeBuf = gl.createBuffer(), dotBuf = gl.createBuffer();
+const vaoEdge = gl.createVertexArray(); gl.bindVertexArray(vaoEdge); gl.bindBuffer(gl.ARRAY_BUFFER, edgeBuf); [[0,3,0],[1,3,12],[2,4,24]].forEach(([l, s, o]) => { gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, s, gl.FLOAT, false, 40, o); gl.vertexAttribDivisor(l, 1); });
+const vaoDot = gl.createVertexArray(); gl.bindVertexArray(vaoDot); gl.bindBuffer(gl.ARRAY_BUFFER, dotBuf); [[0,3,0],[1,4,12]].forEach(([l, s, o]) => { gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, s, gl.FLOAT, false, 28, o); gl.vertexAttribDivisor(l, 1); }); gl.bindVertexArray(null);
+function makeTex(w, h, internal, filter){ const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texStorage2D(gl.TEXTURE_2D, 1, internal, w, h); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return t; }
+let W = 0, H = 0, scene = null, bloom = null, depthRB = null;
+function alloc(){ const dpr = Math.min(window.devicePixelRatio || 1, 2); const cw = Math.max(64, Math.round(canvas.clientWidth || window.innerWidth || 640)), ch = Math.max(64, Math.round(canvas.clientHeight || window.innerHeight || 480));
+  let s = dpr; if (cw*ch*s*s > 3.0e6) s = Math.sqrt(3.0e6/(cw*ch)); const w = Math.round(cw*s), h = Math.round(ch*s); if (w === W && h === H) return false; W = w; H = h; canvas.width = W; canvas.height = H;
+  if (scene){ gl.deleteTexture(scene.t); gl.deleteFramebuffer(scene.f); gl.deleteRenderbuffer(depthRB); bloom.forEach(b => { gl.deleteTexture(b.t); gl.deleteFramebuffer(b.f); }); }
+  const t = makeTex(W, H, gl.RGBA16F, gl.LINEAR); const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  depthRB = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, depthRB); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, W, H); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthRB); scene = { t, f };
+  bloom = []; let bw = W, bh = H; for (let i = 0; i < 4; i++){ bw = Math.max(1, bw >> 1); bh = Math.max(1, bh >> 1); const tt = makeTex(bw, bh, gl.RGBA16F, gl.LINEAR); const ff = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, ff); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tt, 0); bloom.push({ t: tt, f: ff, w: bw, h: bh }); } return true; }
+
+// ============================================================
+//  状態・彩
+// ============================================================
+const PALETTES = [ { name: '夜', bg: [0.03, 0.035, 0.05], sat: 0.55, dual: [0.9, 0.85, 0.7] }, { name: '藍', bg: [0.03, 0.05, 0.10], sat: 0.35, dual: [0.9, 0.95, 1.0] }, { name: '琥珀', bg: [0.06, 0.04, 0.025], sat: 0.45, dual: [1.0, 0.9, 0.7] } ];
+const state = { t: num('warm', 0), yaw: num('yaw', 0.6), pitch: num('pitch', 0.35), zoom: num('zoom', 1), auto: !Q.has('still'), dragging: false, hopf: Q.get('hopf') === '0' ? 0 : 1, dual: Q.get('dual') === '1' ? 1 : 0, ring: Q.get('ring') === '0' ? 0 : 1, pal: Math.round(num('pal', 0)) % PALETTES.length, ht: num('ht', 0), rx: num('rx', 0.35), ry: num('ry', 0.2), w0: num('w0', 1.9) };
+const statEl = document.getElementById('stat');
+function ease(x){ x = Math.max(0, Math.min(1, x)); return x*x*(3 - 2*x); }
+function hsl(h, s, l){ const f = (n) => { const k = (n + h*12) % 12; const a = s*Math.min(l, 1 - l); return l - a*Math.max(-1, Math.min(k - 3, 9 - k, 1)); }; return [f(0), f(8), f(4)]; }
+function camera(){ const aspect = W/H; const fov = 30*Math.PI/180; const tanHalf = Math.tan(fov/2); const fit = 1.25/(0.8*tanHalf); const dist = (aspect < 1 ? fit/aspect : fit)/state.zoom;
+  const cp = Math.cos(state.pitch), sp = Math.sin(state.pitch); const pos = [dist*cp*Math.cos(state.yaw), dist*cp*Math.sin(state.yaw), dist*sp];
+  let f = pos.map(v => -v); const fl = Math.hypot(...f); f = f.map(v => v/fl); const r = [-Math.sin(state.yaw), Math.cos(state.yaw), 0]; const up = [r[1]*f[2]-r[2]*f[1], r[2]*f[0]-r[0]*f[2], r[0]*f[1]-r[1]*f[0]];
+  return { pos, inv: new Float32Array([r[0], up[0], f[0], r[1], up[1], f[1], r[2], up[2], f[2]]), tanHalf, dist }; }
+// 四次元→三次元：立体射影（極 w=+1）。極に近い頂点は遠くへ飛ぶので、半径でフェード
+// 極を w=w0（>1）に置いた射影：w0→1 で立体射影、w0 が大きいほど四次元の遠近法に近く、玉ねぎ状に締まる
+function project(v){ const w = v[0]; const k = 1.15/(state.w0 - w); return [v[1]*k, v[2]*k, v[3]*k]; }
+function transform4(v){ let p = v; if (state.hopf) p = qmul(qexp(QAXIS, state.ht), p); p = rot2(p, 0, 1, state.rx); p = rot2(p, 0, 2, state.ry); return p; }
+function render(dt){
+  const pal = PALETTES[state.pal];
+  if (state.auto && !state.dragging){ state.yaw += dt*0.08; state.rx += dt*0.05; }
+  if (state.hopf) state.ht += dt*0.10;
+  const cam = camera(); const FAR = cam.dist*2 + 60;
+  const P3 = V4.map(v => project(transform4(v))); const W4 = V4.map(v => transform4(v)[0]);
+  const fade = p => { const r = Math.hypot(...p); return Math.min(1, 6/(r*r + 1)); };
+  const dfade = i => 0.22 + 0.78*Math.pow((W4[i] + 1)/2, 1.6);   // 四次元の奥（w が小さい）ほど暗く
+  const colOf = i => { if (state.ring){ const h = FIBER[i]/12; return hsl(h, pal.sat + 0.25, 0.62); } const d = (W4[i] + 1)/2; return [0.4 + 0.6*d, 0.55 + 0.3*d, 1.0 - 0.5*d]; };
+  const edges = [], dots = [];
+  for (const [i, j] of E){ const a = P3[i], b = P3[j]; const fa = fade(a), fb = fade(b); if (fa < 0.02 && fb < 0.02) continue; const ca = colOf(i), cb = colOf(j); const c = [(ca[0]+cb[0])/2, (ca[1]+cb[1])/2, (ca[2]+cb[2])/2]; edges.push(...a, ...b, ...c, Math.min(fa, fb)*Math.min(dfade(i), dfade(j))); }
+  for (let i = 0; i < 120; i++){ const p = P3[i]; const f = fade(p); if (f < 0.02) continue; dots.push(...p, ...colOf(i), f*dfade(i)); }
+  if (state.dual){ const D3 = DUALV.map(v => project(transform4(v))); for (const [i, j] of DUALE){ const a = D3[i], b = D3[j]; const fa = fade(a), fb = fade(b); if (fa < 0.02 && fb < 0.02) continue; edges.push(...a, ...b, ...pal.dual, Math.min(fa, fb)*0.35); } }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, scene.f); gl.viewport(0, 0, W, H); gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.BLEND); gl.clearColor(0, 0, 0, 1); gl.clearDepth(1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.useProgram(P_BG.p); gl.bindVertexArray(vaoQuad); gl.uniform2f(P_BG.u.uRes, W, H); gl.uniform3fv(P_BG.u.uBg, pal.bg); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); gl.depthMask(false);
+  gl.useProgram(P_EDGE.p); { const u = P_EDGE.u; gl.uniform3fv(u.uCamPos, cam.pos); gl.uniformMatrix3fv(u.uCamInv, false, cam.inv); gl.uniform1f(u.uTanHalf, cam.tanHalf); gl.uniform2f(u.uRes, W, H); gl.uniform1f(u.uWidth, 0.010); gl.uniform1f(u.uFar, FAR); gl.uniform1f(u.uGlow, 1.0);
+    gl.bindVertexArray(vaoEdge); gl.bindBuffer(gl.ARRAY_BUFFER, edgeBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(edges), gl.DYNAMIC_DRAW); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, edges.length/10); }
+  gl.useProgram(P_DOT.p); { const u = P_DOT.u; gl.uniform3fv(u.uCamPos, cam.pos); gl.uniformMatrix3fv(u.uCamInv, false, cam.inv); gl.uniform1f(u.uTanHalf, cam.tanHalf); gl.uniform2f(u.uRes, W, H); gl.uniform1f(u.uRad, 0.024); gl.uniform1f(u.uFar, FAR); gl.uniform1f(u.uGlow, 1.0);
+    gl.bindVertexArray(vaoDot); gl.bindBuffer(gl.ARRAY_BUFFER, dotBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(dots), gl.DYNAMIC_DRAW); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, dots.length/7); }
+  gl.disable(gl.BLEND); gl.depthMask(true); gl.disable(gl.DEPTH_TEST); gl.bindVertexArray(vaoQuad);
+  gl.useProgram(P_DOWN.p); gl.uniform1i(P_DOWN.u.uS, 0); gl.activeTexture(gl.TEXTURE0); let src = scene.t;
+  for (const b of bloom){ gl.bindFramebuffer(gl.FRAMEBUFFER, b.f); gl.viewport(0, 0, b.w, b.h); gl.bindTexture(gl.TEXTURE_2D, src); gl.uniform2f(P_DOWN.u.uDst, b.w, b.h); gl.drawArrays(gl.TRIANGLES, 0, 3); src = b.t; }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H); gl.useProgram(P_POST.p); gl.uniform2f(P_POST.u.uRes, W, H); gl.uniform1f(P_POST.u.uBloom, 0.5); gl.uniform1f(P_POST.u.uFade, ease((state.t - 0.2)/1.5));
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, scene.t); gl.uniform1i(P_POST.u.uAcc, 0); for (let i = 0; i < 4; i++){ gl.activeTexture(gl.TEXTURE1 + i); gl.bindTexture(gl.TEXTURE_2D, bloom[i].t); gl.uniform1i(P_POST.u['uB' + (i+1)], 1 + i); } gl.drawArrays(gl.TRIANGLES, 0, 3);
+  statEl.innerHTML = `頂点 <b>${V4.length}</b>　辺 <b>${E.length}</b>（長さ 1/φ ＝ ${EDGE_LEN.toFixed(4)}）　面 <b>${TRI.length}</b>　胞 <b>${CELL.length}</b><br>V − E + F − C ＝ ${V4.length} − ${E.length} + ${TRI.length} − ${CELL.length} ＝ <b>${V4.length - E.length + TRI.length - CELL.length}</b><br>ホップ環 <b>${nf}</b> 本 × 10 頂点（q の実部 cos36°＝φ/2）${state.hopf ? '　流れ t ＝ ' + state.ht.toFixed(2) : ''}${state.dual ? '<br>双対 百二十胞体：頂点 ' + DUALV.length + '・辺 ' + DUALE.length : ''}`;
+}
+
+// ============================================================
+//  入力
+// ============================================================
+const ptrs = new Map(); let lastPinch = 0, uiTimer = 0; const ui = document.getElementById('ui');
+function wake(){ ui.classList.remove('fade'); clearTimeout(uiTimer); uiTimer = setTimeout(() => ui.classList.add('fade'), 7000); } wake();
+canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); state.dragging = true; wake(); if (ptrs.size === 2){ const a = [...ptrs.values()]; lastPinch = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); } });
+canvas.addEventListener('pointermove', e => { const p = ptrs.get(e.pointerId); if (!p) return; const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+  if (ptrs.size === 1){ if (e.shiftKey){ state.rx += dx*0.005; state.ry += dy*0.005; } else { state.yaw -= dx*0.006; state.pitch = Math.max(-1.5, Math.min(1.5, state.pitch + dy*0.006)); } }
+  else if (ptrs.size === 2){ const a = [...ptrs.values()]; const d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); if (lastPinch > 0) state.zoom = Math.max(0.5, Math.min(5, state.zoom*(d/lastPinch))); lastPinch = d; state.rx += dx*0.004; state.ry += dy*0.004; } });
+function endPtr(e){ ptrs.delete(e.pointerId); lastPinch = 0; if (ptrs.size === 0) state.dragging = false; }
+canvas.addEventListener('pointerup', endPtr); canvas.addEventListener('pointercancel', endPtr);
+canvas.addEventListener('wheel', e => { e.preventDefault(); state.zoom = Math.max(0.5, Math.min(5, state.zoom*Math.exp(-e.deltaY*0.0015))); wake(); }, { passive: false });
+function setBtn(k, on){ const b = document.querySelector(`#ctl button[data-k="${k}"]`); if (b) b.classList.toggle('on', !!on); }
+function toggle(k){ if (k === 'hopf'){ state.hopf = 1 - state.hopf; setBtn('hopf', state.hopf === 1); } if (k === 'dual'){ state.dual = 1 - state.dual; setBtn('dual', state.dual === 1); } if (k === 'ring'){ state.ring = 1 - state.ring; setBtn('ring', state.ring === 1); } if (k === 'pal') state.pal = (state.pal + 1) % PALETTES.length; if (k === 'auto'){ state.auto = !state.auto; setBtn('auto', state.auto); } }
+document.querySelectorAll('#ctl button').forEach(b => b.addEventListener('click', () => { wake(); toggle(b.dataset.k); }));
+window.addEventListener('keydown', e => { wake(); if (e.code === 'Space'){ e.preventDefault(); toggle('auto'); } const m = { h: 'hopf', d: 'dual', r: 'ring', c: 'pal' }[e.key.toLowerCase()]; if (m) toggle(m); });
+new ResizeObserver(() => alloc()).observe(canvas); setBtn('hopf', state.hopf === 1); setBtn('dual', state.dual === 1); setBtn('ring', state.ring === 1);
+
+// ============================================================
+//  ループ
+// ============================================================
+alloc();
+let last = performance.now();
+if (Q.has('warm')){ for (let i = 0; i < 60; i++){ render(1/60); } }
+function loop(now){ let dt = (now - last)/1000; last = now; if (dt > 0.08) dt = 0.08; state.t += dt; alloc(); render(dt); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
