@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>七弁 — Shichiben</title>
+<style>
+  html,body{margin:0;height:100%;background:#07070a;overflow:hidden;font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;color:#cfd3d8}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  #ui{position:fixed;left:18px;bottom:16px;pointer-events:none;user-select:none;opacity:.9;transition:opacity 2s;max-width:44vw}
+  #ui.fade{opacity:0}
+  #title{font-size:15px;letter-spacing:.35em;color:#e8e6df}
+  #title span{display:block;margin-top:5px;font-size:10.5px;letter-spacing:.12em;color:#9aa0a8}
+  #hint{margin-top:10px;font-size:10px;letter-spacing:.06em;color:#6f7680;line-height:1.7}
+  #stat{position:fixed;right:16px;top:14px;font-size:10px;letter-spacing:.16em;color:#8a8f96;pointer-events:none;text-align:right;line-height:1.8}
+  #stat b{color:#e2b45a;font-weight:500}
+  #ctl{position:fixed;right:16px;bottom:16px;display:flex;gap:6px;user-select:none;flex-wrap:wrap;justify-content:flex-end;max-width:54vw}
+  #ctl button{appearance:none;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.35);color:#c9cdd3;border-radius:999px;padding:6px 10px;font-size:11px;letter-spacing:.16em;cursor:pointer;backdrop-filter:blur(6px);font-family:inherit}
+  #ctl button.on{background:rgba(226,180,90,.9);color:#1a1712;border-color:transparent}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="title">七弁<span>Shichiben — 球では五弁が十二だけ、平面では六弁、双曲平面では七弁の花が無限に咲く</span></div>
+  <div id="hint">ドラッグ＝双曲平面を滑る（メビウス変換）　ホイール／ピンチ＝寄る　7〜9・0＝弁の数（q＝7,8,9,12）　K＝作図線　P＝花びらを塗る　C＝彩　Space＝自動</div>
+</div>
+<div id="stat"></div>
+<div id="ctl"><button data-q="7" class="on">七弁</button><button data-q="8">八弁</button><button data-q="9">九弁</button><button data-q="12">十二弁</button><button data-k="draw">作図</button><button data-k="petal" class="on">花びら</button><button data-k="pal">彩</button><button data-k="auto" class="on">自動</button></div>
+
+<script>
+'use strict';
+// ============================================================
+//  七弁 — Shichiben  (2026-09-05 / ccf5 art)
+//  ポアンカレ円板上の {3,q} 三角形タイリングの頂点を中心に、辺の長さ L を半径とする双曲円を描く。
+//  q=6 が平面の生命の花（六弁）、q=5 が球（五弁が12）、q≥7 が双曲平面（q 弁の花が無限に）。
+//  (2,3,q) 三角群の三つの鏡映（実軸・角 π/q の直線・O と V1 の垂直二等分測地線）＋ 遠い辺 V1V2 の測地線で
+//  各画素を基本領域へ厳密に折り畳み、近傍の頂点への双曲距離 cosh d = 1 + 2|z−w|²/((1−|z|²)(1−|w|²)) で線と花びらを出す。
+//  線幅は共形因子 (1−|z|²)/2 で画面上一定。ドラッグはメビウス変換 z→(z−c)/(1−c̄z)。
+// ============================================================
+const Q = new URLSearchParams(location.search);
+const num = (k, d) => (Q.has(k) && isFinite(parseFloat(Q.get(k)))) ? parseFloat(Q.get(k)) : d;
+
+function geom(q){ // {3,q}: cosh(L/2) = cos(π/3)/sin(π/q), cosh R = cot(π/3)cot(π/q)
+  const cL2 = 0.5/Math.sin(Math.PI/q); const L = 2*Math.acosh(cL2); const R = Math.acosh((1/Math.tan(Math.PI/3))*(1/Math.tan(Math.PI/q)));
+  const rho = Math.tanh(L/2); const rhoM = Math.tanh(L/4);
+  const a = 2*Math.PI/q; const V1 = [rho, 0], V2 = [rho*Math.cos(a), rho*Math.sin(a)], Vm = [rho*Math.cos(-a), rho*Math.sin(-a)], Vp = [rho*Math.cos(2*a), rho*Math.sin(2*a)];
+  const cb = (1 + rhoM*rhoM)/(2*rhoM); const rb = Math.sqrt(cb*cb - 1);                    // O–V1 の垂直二等分測地線（中心 cb・半径 rb）
+  const t = (1 + rho*rho)/(2*rho*Math.cos(Math.PI/q)); const cf = [t*Math.cos(Math.PI/q), t*Math.sin(Math.PI/q)]; const rf = Math.sqrt(t*t - 1);   // 辺 V1V2 の測地線
+  const V3 = [cf[0]/(t*t), cf[1]/(t*t)];                                                     // O を辺 V1V2 で鏡映＝第二環の頂点
+  return { q, L, R, rho, V1, V2, Vm, Vp, V3, cb, rb, cf, rf, coshL: Math.cosh(L), area: Math.PI*(1 - 6/q) };
+}
+
+const VS_QUAD = `#version 300 es
+void main(){ vec2 v = vec2((gl_VertexID<<1)&2, gl_VertexID&2); gl_Position = vec4(v*2.0-1.0, 0.0, 1.0); }`;
+const FS = `#version 300 es
+precision highp float;
+uniform vec2 uRes; uniform float uScale, uTime, uFrame, uAlpha, uQ, uCoshL, uDraw, uPetal, uRho; uniform vec2 uPan; uniform float uRot;
+uniform vec2 uV1, uV2, uVm, uVp, uV3, uCf; uniform float uCb, uRb, uRf;
+uniform vec3 uBg, uInk, uP1, uP2, uP3, uP4; uniform sampler2D uPrev;
+out vec4 fragColor;
+#define PI 3.14159265358979
+float hash21(vec2 p){ p = fract(p*vec2(233.34, 851.73)); p += dot(p, p + 23.45); return fract(p.x*p.y); }
+vec2 cmul(vec2 a, vec2 b){ return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); }
+vec2 cdiv(vec2 a, vec2 b){ float d = dot(b, b); return vec2(a.x*b.x + a.y*b.y, a.y*b.x - a.x*b.y)/d; }
+vec2 mobius(vec2 z, vec2 c){ return cdiv(z - c, vec2(1.0, 0.0) - cmul(vec2(c.x, -c.y), z)); }
+float coshd(vec2 z, vec2 w){ vec2 d = z - w; return 1.0 + 2.0*dot(d, d)/max((1.0 - dot(z, z))*(1.0 - dot(w, w)), 1e-9); }
+vec2 reflectCircle(vec2 z, vec2 c, float r){ vec2 d = z - c; return c + r*r*d/max(dot(d, d), 1e-12); }   // 測地線（円）で鏡映＝円反転
+vec2 reflectLine(vec2 z, float ang){ vec2 u = vec2(cos(ang), sin(ang)); return 2.0*dot(z, u)*u - z; }
+void main(){
+  vec2 jit = vec2(hash21(gl_FragCoord.xy + uFrame*0.37), hash21(gl_FragCoord.yx + uFrame*0.91)) - 0.5;
+  vec2 uv = ((gl_FragCoord.xy + jit)/uRes)*2.0 - 1.0; uv.x *= uRes.x/uRes.y;
+  vec2 z = uv/uScale; float rr = dot(z, z);
+  vec3 col = uBg;
+  if (rr < 1.0){
+    float px = 1.0/(uScale*uRes.y*0.5);                 // 画面1画素の円板単位
+    // 視点：回転とメビウス変換
+    z = cmul(z, vec2(cos(uRot), sin(uRot))); z = mobius(z, uPan);
+    float conf = (1.0 - dot(z, z))*0.5;                  // 共形因子：双曲長 = ユークリッド長 / conf
+    // ---- 基本領域へ折り畳む ----
+    float sec = 2.0*PI/uQ;
+    for (int k = 0; k < 40; k++){
+      vec2 z0 = z;
+      if (z.y < 0.0) z.y = -z.y;
+      float a = atan(z.y, z.x); if (a < 0.0) a += 2.0*PI; float n = floor(a/sec); if (n > 0.0){ float c = cos(-n*sec), s = sin(-n*sec); z = vec2(z.x*c - z.y*s, z.x*s + z.y*c); a -= n*sec; }
+      if (a > 0.5*sec) z = reflectLine(z, 0.5*sec);
+      if (coshd(z, uV1) < coshd(z, vec2(0.0))) z = reflectCircle(z, vec2(uCb, 0.0), uRb);
+      if (coshd(z, uV3) < coshd(z, vec2(0.0))) z = reflectCircle(z, uCf, uRf);
+      if (distance(z, z0) < 1e-7) break;
+    }
+    // ---- 近傍の頂点への双曲距離 → 線・花びら ----
+    float dl = 1e9; float cover = 0.0; float dv = 1e9;
+    // 中心の候補：扇の隣 k=−4..5（q が大きいほど遠い隣の弧が基本領域をかすめる）＋ 第二環（辺 V1V2 と V−1V1 の向こう）
+    vec2 C[13]; C[0] = vec2(0.0); for (int k = -4; k <= 5; k++){ float a = float(k)*sec; C[k + 5] = uRho*vec2(cos(a), sin(a)); } C[11] = uV3; C[12] = vec2(uV3.x, -uV3.y);
+    float sL = sinh(acosh(uCoshL));
+    for (int i = 0; i < 13; i++){ float cd = coshd(z, C[i]); float d = acosh(max(cd, 1.0)); dl = min(dl, abs(cd - uCoshL)/sL);   // |d−L| の一次近似（cosh の差を勾配で割る）
+      if (cd < uCoshL) cover += 1.0; dv = min(dv, d); }
+    float wLine = 1.3*px/conf;                            // 双曲単位での線の半幅（画面で一定）
+    float ink = smoothstep(wLine*1.4, wLine*0.4, dl);
+    // 花びら：覆う円の数で色
+    vec3 pc = cover < 1.5 ? uP1 : (cover < 2.5 ? uP2 : (cover < 3.5 ? uP3 : uP4));
+    float gran = 0.93 + 0.07*hash21(floor(z*400.0));
+    col = mix(uBg, pc*gran, uPetal);
+    // 頂点の小さな芯
+    col = mix(col, uInk*1.4, smoothstep(2.0*px/conf, 0.0, dv - 1.2*px/conf)*0.8);
+    col = mix(col, uInk, ink*0.95);
+    // 作図線：{3,q} の辺（頂点間の測地線）は円の交点を結ぶ＝O–V1 は実軸上
+    if (uDraw > 0.5){ float dEdge = min(abs(z.y), 1e9); float rf2 = uRf; float dFar = abs(length(z - uCf) - rf2); float d2 = abs(dot(z, vec2(-sin(sec), cos(sec)))); float de = min(dEdge, min(dFar, d2));
+      col = mix(col, vec3(0.95, 0.75, 0.35), smoothstep(1.2*px/conf*0.9, 0.2*px/conf, de)*0.6); }
+    // 縁へ向けて暗く
+    col *= 1.0 - 0.75*pow(rr, 6.0);
+  } else { float e = smoothstep(0.0, 0.006, sqrt(rr) - 1.0); col = mix(vec3(0.75, 0.65, 0.45)*0.6, uBg, e); }
+  vec3 prev = texelFetch(uPrev, ivec2(gl_FragCoord.xy), 0).rgb;
+  fragColor = vec4(mix(prev, col, uAlpha), 1.0);
+}`;
+const FS_OUT = `#version 300 es
+precision highp float; uniform sampler2D uAcc; uniform vec2 uRes; uniform float uFade; out vec4 o;
+void main(){ vec2 uv = gl_FragCoord.xy/uRes; vec3 c = texture(uAcc, uv).rgb*uFade; vec2 q = uv*2.0-1.0; c *= 1.0 - 0.12*dot(q,q)*dot(q,q); o = vec4(pow(clamp(c, 0.0, 1.0), vec3(1.0/2.2)) + (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898,78.233)))*43758.5453) - 0.5)/255.0, 1.0); }`;
+
+// ============================================================
+//  WebGL
+// ============================================================
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false });
+if (!gl) throw new Error('WebGL2 が必要です');
+if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('EXT_color_buffer_float が必要です');
+function compile(type, src){ const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function program(vs, fs){ const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); for (let i = 0; i < n; i++){ const info = gl.getActiveUniform(p, i); u[info.name.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, info.name); } return { p, u }; }
+const P_MAIN = program(VS_QUAD, FS), P_OUT = program(VS_QUAD, FS_OUT); gl.bindVertexArray(gl.createVertexArray());
+function makeTex(w, h){ const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, w, h); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return t; }
+let W = 0, H = 0, acc = null, cur = 0, accN = 0;
+function alloc(){ const dpr = Math.min(window.devicePixelRatio || 1, 2); const cw = Math.max(64, Math.round(canvas.clientWidth || window.innerWidth || 640)), ch = Math.max(64, Math.round(canvas.clientHeight || window.innerHeight || 480));
+  let s = dpr; if (cw*ch*s*s > 3.0e6) s = Math.sqrt(3.0e6/(cw*ch)); const w = Math.round(cw*s), h = Math.round(ch*s); if (w === W && h === H) return false; W = w; H = h; canvas.width = W; canvas.height = H;
+  if (acc) acc.forEach(a => { gl.deleteTexture(a.t); gl.deleteFramebuffer(a.f); }); acc = [0, 1].map(() => { const t = makeTex(W, H); const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0); return { t, f }; }); accN = 0; return true; }
+
+// ============================================================
+//  状態・彩
+// ============================================================
+const PALETTES = [
+  { name: '硝子', bg: [0.03, 0.03, 0.045], ink: [0.16, 0.13, 0.09], p: [[0.10, 0.16, 0.30], [0.62, 0.20, 0.22], [0.84, 0.62, 0.22], [0.95, 0.90, 0.70]] },
+  { name: '和紙', bg: [0.92, 0.90, 0.85], ink: [0.18, 0.14, 0.12], p: [[0.86, 0.84, 0.78], [0.55, 0.66, 0.74], [0.86, 0.48, 0.36], [0.96, 0.88, 0.62]] },
+  { name: '翠', bg: [0.03, 0.05, 0.045], ink: [0.05, 0.08, 0.07], p: [[0.08, 0.22, 0.20], [0.20, 0.48, 0.36], [0.55, 0.78, 0.40], [0.92, 0.96, 0.75]] },
+];
+const state = { t: num('warm', 0), frame: 0, q: Math.round(num('q', 7)), pan: [0, 0], rot: 0, zoom: num('zoom', 1), draw: Q.get('draw') === '1' ? 1 : 0, petal: Q.get('petal') === '0' ? 0 : 1, pal: Math.round(num('pal', 0)) % PALETTES.length, auto: !Q.has('still'), dragging: false, moved: true };
+let G = geom(state.q);
+const statEl = document.getElementById('stat');
+function ease(x){ x = Math.max(0, Math.min(1, x)); return x*x*(3 - 2*x); }
+// メビウス変換の合成：現在の pan c に、微小な平行移動 d を重ねる（c' = (c + d)/(1 + c̄d)）
+function panBy(dx, dy){ const c = state.pan, d = [dx, dy]; const numr = [c[0] + d[0], c[1] + d[1]]; const den = [1 + c[0]*d[0] + c[1]*d[1], c[0]*d[1] - c[1]*d[0]]; const dd = den[0]*den[0] + den[1]*den[1]; state.pan = [(numr[0]*den[0] + numr[1]*den[1])/dd, (numr[1]*den[0] - numr[0]*den[1])/dd]; const r = Math.hypot(...state.pan); if (r > 0.995){ state.pan = state.pan.map(v => v*0.995/r); } state.moved = true; }
+function render(dt){
+  state.frame++; const pal = PALETTES[state.pal];
+  if (state.auto && !state.dragging){ const th = state.t*0.12; panBy(0.0025*Math.cos(th)*dt*60, 0.0025*Math.sin(th*0.7)*dt*60); state.rot += dt*0.02; state.moved = true; }
+  const scale = 0.92*state.zoom; const next = 1 - cur;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, acc[next].f); gl.viewport(0, 0, W, H); gl.useProgram(P_MAIN.p); const u = P_MAIN.u;
+  gl.uniform2f(u.uRes, W, H); gl.uniform1f(u.uScale, scale); gl.uniform1f(u.uTime, state.t); gl.uniform1f(u.uFrame, state.frame);
+  if (state.moved){ accN = 0; state.moved = false; } const K = (state.auto || state.dragging) ? 3 : 48; const alpha = 1/Math.min(accN + 1, K); accN++; gl.uniform1f(u.uAlpha, alpha);
+  gl.uniform1f(u.uQ, G.q); gl.uniform1f(u.uCoshL, G.coshL); gl.uniform1f(u.uRho, G.rho); gl.uniform1f(u.uDraw, state.draw); gl.uniform1f(u.uPetal, state.petal); gl.uniform2fv(u.uPan, state.pan); gl.uniform1f(u.uRot, state.rot);
+  gl.uniform2fv(u.uV1, G.V1); gl.uniform2fv(u.uV2, G.V2); gl.uniform2fv(u.uVm, G.Vm); gl.uniform2fv(u.uVp, G.Vp); gl.uniform2fv(u.uV3, G.V3); gl.uniform2fv(u.uCf, G.cf); gl.uniform1f(u.uCb, G.cb); gl.uniform1f(u.uRb, G.rb); gl.uniform1f(u.uRf, G.rf);
+  gl.uniform3fv(u.uBg, pal.bg); gl.uniform3fv(u.uInk, pal.ink); gl.uniform3fv(u.uP1, pal.p[0]); gl.uniform3fv(u.uP2, pal.p[1]); gl.uniform3fv(u.uP3, pal.p[2]); gl.uniform3fv(u.uP4, pal.p[3]);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, acc[cur].t); gl.uniform1i(u.uPrev, 0); gl.drawArrays(gl.TRIANGLES, 0, 3); cur = next;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H); gl.useProgram(P_OUT.p); gl.uniform2f(P_OUT.u.uRes, W, H); gl.uniform1f(P_OUT.u.uFade, ease((state.t - 0.2)/1.5)); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, acc[cur].t); gl.uniform1i(P_OUT.u.uAcc, 0); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  statEl.innerHTML = `{3, <b>${G.q}</b>}　どの頂点にも <b>${G.q}</b> 弁　花は <b>∞</b><br>辺の長さ L ＝ ${G.L.toFixed(4)}（cosh(L/2)＝cos60°/sin(180°/${G.q})）　三角形の面積 ＝ π(1−6/${G.q}) ＝ ${G.area.toFixed(4)}<br>球 q=5：五弁が12だけ　平面 q=6：六弁　双曲 q≥7：${G.q}弁が無限に`;
+}
+
+// ============================================================
+//  入力
+// ============================================================
+const ptrs = new Map(); let lastPinch = 0, uiTimer = 0; const ui = document.getElementById('ui');
+function wake(){ ui.classList.remove('fade'); clearTimeout(uiTimer); uiTimer = setTimeout(() => ui.classList.add('fade'), 7000); } wake();
+canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); state.dragging = true; state.auto = false; setBtn('auto', false); wake(); if (ptrs.size === 2){ const a = [...ptrs.values()]; lastPinch = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); } });
+canvas.addEventListener('pointermove', e => { const p = ptrs.get(e.pointerId); if (!p) return; const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+  const s = 0.92*state.zoom*canvas.clientHeight*0.5;   // 円板半径（px）
+  if (ptrs.size === 1){ panBy(-dx/s*0.55, dy/s*0.55); }
+  else if (ptrs.size === 2){ const a = [...ptrs.values()]; const d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); if (lastPinch > 0) state.zoom = Math.max(0.6, Math.min(4, state.zoom*(d/lastPinch))); lastPinch = d; state.moved = true; } });
+function endPtr(e){ ptrs.delete(e.pointerId); lastPinch = 0; if (ptrs.size === 0) state.dragging = false; }
+canvas.addEventListener('pointerup', endPtr); canvas.addEventListener('pointercancel', endPtr);
+canvas.addEventListener('wheel', e => { e.preventDefault(); state.zoom = Math.max(0.6, Math.min(4, state.zoom*Math.exp(-e.deltaY*0.0015))); state.moved = true; wake(); }, { passive: false });
+function setBtn(k, on){ const b = document.querySelector(`#ctl button[data-k="${k}"]`); if (b) b.classList.toggle('on', !!on); }
+function setQ(q){ state.q = q; G = geom(q); state.moved = true; document.querySelectorAll('#ctl button[data-q]').forEach(b => b.classList.toggle('on', parseInt(b.dataset.q) === q)); }
+document.querySelectorAll('#ctl button').forEach(b => b.addEventListener('click', () => { wake(); if (b.dataset.q) setQ(parseInt(b.dataset.q));
+  if (b.dataset.k === 'draw'){ state.draw = 1 - state.draw; setBtn('draw', state.draw === 1); state.moved = true; } if (b.dataset.k === 'petal'){ state.petal = 1 - state.petal; setBtn('petal', state.petal === 1); state.moved = true; } if (b.dataset.k === 'pal'){ state.pal = (state.pal + 1) % PALETTES.length; state.moved = true; } if (b.dataset.k === 'auto'){ state.auto = !state.auto; setBtn('auto', state.auto); } }));
+window.addEventListener('keydown', e => { wake(); if (e.code === 'Space'){ e.preventDefault(); state.auto = !state.auto; setBtn('auto', state.auto); }
+  const qm = { '7': 7, '8': 8, '9': 9, '0': 12 }[e.key]; if (qm) setQ(qm); if (e.key === 'k' || e.key === 'K'){ state.draw = 1 - state.draw; setBtn('draw', state.draw === 1); state.moved = true; } if (e.key === 'p' || e.key === 'P'){ state.petal = 1 - state.petal; setBtn('petal', state.petal === 1); state.moved = true; } if (e.key === 'c' || e.key === 'C'){ state.pal = (state.pal + 1) % PALETTES.length; state.moved = true; } });
+new ResizeObserver(() => { if (alloc()) state.moved = true; }).observe(canvas); setQ(state.q); setBtn('draw', state.draw === 1); setBtn('petal', state.petal === 1);
+
+// ============================================================
+//  ループ
+// ============================================================
+alloc();
+let last = performance.now();
+if (Q.has('warm')){ for (let i = 0; i < 40; i++){ render(1/60); } }
+function loop(now){ let dt = (now - last)/1000; last = now; if (dt > 0.08) dt = 0.08; state.t += dt; if (alloc()) state.moved = true; render(dt); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
