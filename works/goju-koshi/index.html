@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>五重格子 — Gojū-kōshi</title>
+<style>
+  html,body{margin:0;height:100%;background:#0e0d0c;overflow:hidden;font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;color:#d8d2c6}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  #ui{position:fixed;left:18px;bottom:16px;pointer-events:none;user-select:none;opacity:.9;transition:opacity 2s;max-width:44vw}
+  #ui.fade{opacity:0}
+  #title{font-size:15px;letter-spacing:.35em;color:#efe9dc}
+  #title span{display:block;margin-top:5px;font-size:10.5px;letter-spacing:.12em;color:#a29b8e}
+  #hint{margin-top:10px;font-size:10px;letter-spacing:.06em;color:#7d766a;line-height:1.7}
+  #stat{position:fixed;right:16px;top:14px;font-size:10px;letter-spacing:.16em;color:#a29b8e;pointer-events:none;text-align:right;line-height:1.8;background:rgba(10,9,8,.55);padding:8px 12px;border-radius:10px;backdrop-filter:blur(6px)}
+  #ui{background:rgba(10,9,8,.55);padding:10px 14px;border-radius:10px;backdrop-filter:blur(6px)}
+  body.light #stat,body.light #ui{background:rgba(255,252,246,.6)}
+  #stat b{color:#e6b95a;font-weight:500} #stat .big{font-size:20px;letter-spacing:.06em;color:#f2e6c8}
+  #ctl{position:fixed;right:16px;bottom:16px;display:flex;gap:6px;user-select:none;flex-wrap:wrap;justify-content:flex-end;max-width:52vw}
+  #ctl button{appearance:none;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.35);color:#d8d2c6;border-radius:999px;padding:6px 10px;font-size:11px;letter-spacing:.16em;cursor:pointer;backdrop-filter:blur(6px);font-family:inherit}
+  #ctl button.on{background:rgba(230,185,90,.92);color:#1a1712;border-color:transparent}
+  body.light{background:#ece7dd;color:#4a453d} body.light #title{color:#2e2a25} body.light #title span,body.light #hint,body.light #stat{color:#7a7266} body.light #stat .big{color:#2e2a25}
+  body.light #ctl button{border-color:rgba(0,0,0,.2);background:rgba(255,255,255,.4);color:#4a453d}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="title">五重格子<span>Gojū-kōshi — 五方向の平行線の束から、ペンローズ・タイルが厳密に生まれる（de Bruijn 1981）</span></div>
+  <div id="hint">ドラッグ＝束をずらす（フェイゾン：タイルが局所的に反転する）　Shift＋ドラッグ／二本指＝移動　ホイール／ピンチ＝寄る<br>G＝五重格子を重ねる　H＝総和 0（真のペンローズ）／½（一般化）　C＝彩　Space＝自動</div>
+</div>
+<div id="stat"></div>
+<div id="ctl"><button data-k="grid">格子</button><button data-k="half">総和½</button><button data-k="pal">彩</button><button data-k="auto" class="on">自動</button></div>
+
+<script>
+'use strict';
+// ============================================================
+//  五重格子 — Gojū-kōshi  (2026-09-05 / ccf5 art)
+//  de Bruijn (1981)：五方向 e_j=(cos 2πj/5, sin 2πj/5) の平行線 x·e_j = k − γ_j。
+//  二本の線の交点ひとつがひし形ひとつ（隣り合う方向＝太 72°、二つ隣＝細 36°）。
+//  交点 x のまわりの整数ベクトル K_i(x)=⌈x·e_i+γ_i⌉ からひし形の頂点 Σ K_i e_i が決まる（双対）。
+//  Σγ が整数なら真のペンローズ、そうでなければ一般化ペンローズ。γ を垂直空間で動かすとフェイゾン反転。
+// ============================================================
+const Q = new URLSearchParams(location.search);
+const num = (k, d) => (Q.has(k) && isFinite(parseFloat(Q.get(k)))) ? parseFloat(Q.get(k)) : d;
+const PHI = (1 + Math.sqrt(5))/2;
+const E = [0, 1, 2, 3, 4].map(j => [Math.cos(2*Math.PI*j/5), Math.sin(2*Math.PI*j/5)]);
+const E2 = [0, 1, 2, 3, 4].map(j => [Math.cos(4*Math.PI*j/5), Math.sin(4*Math.PI*j/5)]);   // 垂直空間（フェイゾン）の向き
+
+const state = { t: num('warm', 0), a: num('a', 0.13), b: num('b', 0.27), half: Q.get('half') === '1', grid: Q.get('grid') === '1', pal: Math.round(num('pal', 0)), zoom: num('zoom', 1.5), pan: [0, 0], auto: !Q.has('still'), dragging: false, tiles: null, key: '' };
+function gammas(){ const c = state.half ? 0.5 : 0; return [0, 1, 2, 3, 4].map(j => state.a*E2[j][0] + state.b*E2[j][1] + c/5 + 1e-7*(j + 1)); }
+
+// ---------- タイル生成 ----------
+function build(R){
+  const g = gammas(); const key = g.map(v => v.toFixed(6)).join(',') + '|' + R; if (key === state.key) return state.tiles; state.key = key;
+  const Kmax = Math.ceil(R) + 2; const tiles = []; const cnt = [0, 0];
+  for (let j = 0; j < 5; j++) for (let l = j + 1; l < 5; l++){
+    const ej = E[j], el = E[l]; const det = ej[0]*el[1] - ej[1]*el[0];
+    for (let k = -Kmax; k <= Kmax; k++) for (let m = -Kmax; m <= Kmax; m++){
+      const cj = k - g[j], cl = m - g[l];  // x·ej = cj, x·el = cl
+      const x = (cj*el[1] - cl*ej[1])/det, y = (ej[0]*cl - el[0]*cj)/det;
+      if (x*x + y*y > R*R) continue;
+      const K = new Array(5); for (let i = 0; i < 5; i++) K[i] = Math.ceil(x*E[i][0] + y*E[i][1] + g[i]);
+      K[j] = k; K[l] = m;   // 交点上では両方の値を取る：{k,k+1}×{m,m+1}
+      const base = [0, 0]; for (let i = 0; i < 5; i++){ if (i === j || i === l) continue; base[0] += K[i]*E[i][0]; base[1] += K[i]*E[i][1]; }
+      const v = [[k, m], [k + 1, m], [k + 1, m + 1], [k, m + 1]].map(([a, b]) => [base[0] + a*ej[0] + b*el[0], base[1] + a*ej[1] + b*el[1]]);
+      const thick = ((l - j) % 5 === 1 || (l - j) % 5 === 4) ? 1 : 0; cnt[thick]++;
+      tiles.push({ v, thick, ori: (j + l) % 5, j, l, cx: x, cy: y });
+    }
+  }
+  state.tiles = { tiles, cnt }; return state.tiles;
+}
+
+// ============================================================
+//  GLSL
+// ============================================================
+const VS = `#version 300 es
+precision highp float; layout(location=0) in vec2 aP; layout(location=1) in vec3 aC; uniform vec2 uPan; uniform float uScale, uAspect; out vec3 vC;
+void main(){ vec2 p = (aP - uPan)*uScale*vec2(1.0/uAspect, 1.0); gl_Position = vec4(p, 0.0, 1.0); vC = aC; }`;
+const FS = `#version 300 es
+precision highp float; in vec3 vC; out vec4 o; void main(){ o = vec4(vC, 1.0); }`;
+const VS_QUAD = `#version 300 es
+void main(){ vec2 v = vec2((gl_VertexID<<1)&2, gl_VertexID&2); gl_Position = vec4(v*2.0-1.0, 0.0, 1.0); }`;
+// 五重格子の線（画面全体で解析描画）
+const FS_GRID = `#version 300 es
+precision highp float; uniform vec2 uRes; uniform float uScale, uAspect, uOn; uniform vec2 uPan; uniform float uG[5]; uniform vec3 uInk; out vec4 o;
+void main(){ vec2 uv = (gl_FragCoord.xy/uRes)*2.0 - 1.0; uv.x *= uAspect; vec2 p = uv/uScale + uPan; float px = 1.0/(uScale*uRes.y*0.5);
+  // 格子空間はタイル空間の 2/5 倍（双対で V≈(5/2)x）。線 x·e_j = k − γ_j を描く
+  vec2 x = p*0.4; float ink = 0.0;
+  for (int j = 0; j < 5; j++){ float a = 6.2831853*float(j)/5.0; vec2 e = vec2(cos(a), sin(a)); float s = dot(x, e) + uG[j]; float d = abs(s - floor(s + 0.5))/0.4; ink += smoothstep(1.4*px, 0.2*px, d)*0.5; }
+  o = vec4(uInk*min(ink, 1.0)*uOn, 1.0); }`;
+const FS_POST = `#version 300 es
+precision highp float; uniform sampler2D uS, uGrid; uniform vec2 uRes; uniform float uFade, uLight; out vec4 o;
+float hash21(vec2 p){ p = fract(p*vec2(233.34, 851.73)); p += dot(p, p + 23.45); return fract(p.x*p.y); }
+void main(){ vec2 uv = gl_FragCoord.xy/uRes; vec3 c = texture(uS, uv).rgb; vec2 q = uv*2.0-1.0; c *= 1.0 - 0.22*dot(q,q)*dot(q,q)*(1.0 - 0.6*uLight);
+  vec3 g = texture(uGrid, uv).rgb; c = uLight > 0.5 ? c - g*0.9 : c + g;
+  c = mix(vec3(0.0), c, uFade) + (uLight > 0.5 ? vec3(1.0 - uFade)*0.9 : vec3(0.0));
+  o = vec4(pow(clamp(c, 0.0, 1.0), vec3(1.0/2.2)) + (hash21(gl_FragCoord.xy) - 0.5)/255.0, 1.0); }`;
+
+// ============================================================
+//  WebGL
+// ============================================================
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: true, alpha: false });
+if (!gl) throw new Error('WebGL2 が必要です');
+if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('EXT_color_buffer_float が必要です');
+function compile(type, src){ const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function program(vs, fs){ const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); for (let i = 0; i < n; i++){ const info = gl.getActiveUniform(p, i); u[info.name.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, info.name); } return { p, u }; }
+const P_T = program(VS, FS), P_G = program(VS_QUAD, FS_GRID), P_POST = program(VS_QUAD, FS_POST);
+const vaoQuad = gl.createVertexArray();
+const vbo = gl.createBuffer(), vaoT = gl.createVertexArray(); gl.bindVertexArray(vaoT); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 20, 0); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 20, 8); gl.bindVertexArray(null);
+function makeTex(w, h, internal, filter){ const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texStorage2D(gl.TEXTURE_2D, 1, internal, w, h); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return t; }
+function fbo(t){ const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0); return f; }
+let W = 0, H = 0, scene = null, gridT = null, rb = null;
+function alloc(){ const dpr = Math.min(window.devicePixelRatio || 1, 2); const cw = Math.max(64, Math.round(canvas.clientWidth || window.innerWidth || 640)), ch = Math.max(64, Math.round(canvas.clientHeight || window.innerHeight || 480));
+  let s = dpr; if (cw*ch*s*s > 3.2e6) s = Math.sqrt(3.2e6/(cw*ch)); const w = Math.round(cw*s), h = Math.round(ch*s); if (w === W && h === H) return false; W = w; H = h; canvas.width = W; canvas.height = H;
+  if (scene){ gl.deleteTexture(scene.t); gl.deleteFramebuffer(scene.f); gl.deleteTexture(gridT.t); gl.deleteFramebuffer(gridT.f); gl.deleteRenderbuffer(rb); }
+  const mk = () => { const t = makeTex(W, H, gl.RGBA16F, gl.LINEAR); return { t, f: fbo(t) }; }; scene = mk(); gridT = mk();
+  // マルチサンプルの器（辺の滑らかさ）
+  rb = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, rb); gl.renderbufferStorageMultisample(gl.RENDERBUFFER, 4, gl.RGBA16F, W, H); scene.ms = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, scene.ms); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, rb);
+  return true; }
+
+// ============================================================
+//  彩：太／細×向き5で 10 の面。辺は濃い線
+// ============================================================
+const PALETTES = [
+  { name: '漆', light: 0, bg: [0.06, 0.055, 0.05], thick: [[0.72, 0.52, 0.22], [0.80, 0.60, 0.28], [0.66, 0.46, 0.20], [0.86, 0.66, 0.34], [0.60, 0.42, 0.18]], thin: [[0.16, 0.20, 0.30], [0.20, 0.26, 0.38], [0.13, 0.17, 0.26], [0.24, 0.30, 0.42], [0.11, 0.14, 0.22]], edge: [0.05, 0.045, 0.04], ink: [0.9, 0.8, 0.55] },
+  { name: '和紙', light: 1, bg: [0.93, 0.91, 0.86], thick: [[0.86, 0.50, 0.36], [0.90, 0.58, 0.42], [0.82, 0.44, 0.32], [0.94, 0.66, 0.48], [0.78, 0.40, 0.28]], thin: [[0.40, 0.55, 0.66], [0.48, 0.62, 0.72], [0.34, 0.48, 0.60], [0.56, 0.70, 0.78], [0.30, 0.42, 0.54]], edge: [0.28, 0.24, 0.20], ink: [0.35, 0.3, 0.25] },
+  { name: '翠', light: 0, bg: [0.045, 0.06, 0.055], thick: [[0.30, 0.62, 0.50], [0.36, 0.70, 0.56], [0.26, 0.56, 0.44], [0.44, 0.78, 0.62], [0.22, 0.50, 0.40]], thin: [[0.86, 0.80, 0.62], [0.92, 0.86, 0.70], [0.80, 0.74, 0.56], [0.96, 0.92, 0.78], [0.74, 0.68, 0.50]], edge: [0.04, 0.05, 0.045], ink: [0.9, 0.85, 0.6] },
+];
+const statEl = document.getElementById('stat');
+function ease(x){ x = Math.max(0, Math.min(1, x)); return x*x*(3 - 2*x); }
+let flipFlash = new Map();   // 反転したタイルの明滅（交点のキー→時刻）
+let prevKeys = null;
+function render(dt){
+  const pal = PALETTES[state.pal % PALETTES.length]; document.body.classList.toggle('light', pal.light === 1);
+  if (state.auto && !state.dragging){ state.a += dt*0.010*Math.cos(state.t*0.07); state.b += dt*0.010*Math.sin(state.t*0.05); }
+  const scale = 0.055*state.zoom; const aspect = W/H; const Rview = (aspect > 1 ? aspect : 1)/scale + 3;
+  const { tiles, cnt } = build(Rview*0.52);
+  // 反転検出：交点キーごとの頂点集合が変わったら明滅
+  const keysNow = new Map(); for (const t of tiles){ const k = t.j + ',' + t.l + ',' + Math.round(t.v[0][0]*1000) + ',' + Math.round(t.v[0][1]*1000); keysNow.set(k, t); }
+  if (prevKeys){ for (const [k, t] of keysNow) if (!prevKeys.has(k)) flipFlash.set(k, state.t); }
+  prevKeys = keysNow;
+  // 頂点配列：塗り（2三角）＋辺（4線分）
+  const n = tiles.length; const fill = new Float32Array(n*6*5); const edge = new Float32Array(n*8*5); let fi = 0, ei = 0;
+  for (const t of tiles){ const base = (t.thick ? pal.thick : pal.thin)[t.ori]; const k = t.j + ',' + t.l + ',' + Math.round(t.v[0][0]*1000) + ',' + Math.round(t.v[0][1]*1000);
+    let fl = 0; const ft = flipFlash.get(k); if (ft !== undefined){ fl = Math.max(0, 1 - (state.t - ft)/1.2); if (fl <= 0) flipFlash.delete(k); }
+    const c = [Math.min(1, base[0] + fl*0.5), Math.min(1, base[1] + fl*0.45), Math.min(1, base[2] + fl*0.3)];
+    const v = t.v; const tri = [v[0], v[1], v[2], v[0], v[2], v[3]];
+    for (const p of tri){ fill[fi++] = p[0]; fill[fi++] = p[1]; fill[fi++] = c[0]; fill[fi++] = c[1]; fill[fi++] = c[2]; }
+    for (let i = 0; i < 4; i++){ const a = v[i], b = v[(i + 1) % 4]; edge[ei++] = a[0]; edge[ei++] = a[1]; edge[ei++] = pal.edge[0]; edge[ei++] = pal.edge[1]; edge[ei++] = pal.edge[2]; edge[ei++] = b[0]; edge[ei++] = b[1]; edge[ei++] = pal.edge[0]; edge[ei++] = pal.edge[1]; edge[ei++] = pal.edge[2]; } }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, scene.ms); gl.viewport(0, 0, W, H); gl.clearColor(pal.bg[0], pal.bg[1], pal.bg[2], 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.useProgram(P_T.p); gl.bindVertexArray(vaoT); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.uniform2fv(P_T.u.uPan, state.pan); gl.uniform1f(P_T.u.uScale, scale); gl.uniform1f(P_T.u.uAspect, aspect);
+  gl.bufferData(gl.ARRAY_BUFFER, fill, gl.DYNAMIC_DRAW); gl.drawArrays(gl.TRIANGLES, 0, n*6);
+  gl.bufferData(gl.ARRAY_BUFFER, edge, gl.DYNAMIC_DRAW); gl.drawArrays(gl.LINES, 0, n*8);
+  gl.bindFramebuffer(gl.READ_FRAMEBUFFER, scene.ms); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, scene.f); gl.blitFramebuffer(0, 0, W, H, 0, 0, W, H, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+  gl.bindVertexArray(vaoQuad); gl.bindFramebuffer(gl.FRAMEBUFFER, gridT.f); gl.useProgram(P_G.p); const g = P_G.u; gl.uniform2f(g.uRes, W, H); gl.uniform1f(g.uScale, scale); gl.uniform1f(g.uAspect, aspect); gl.uniform2fv(g.uPan, state.pan); gl.uniform1fv(g.uG, new Float32Array(gammas())); gl.uniform3fv(g.uInk, pal.ink); gl.uniform1f(g.uOn, state.grid ? 1 : 0); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H); gl.useProgram(P_POST.p); gl.uniform2f(P_POST.u.uRes, W, H); gl.uniform1f(P_POST.u.uFade, ease((state.t - 0.2)/1.5)); gl.uniform1f(P_POST.u.uLight, pal.light);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, scene.t); gl.uniform1i(P_POST.u.uS, 0); gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, gridT.t); gl.uniform1i(P_POST.u.uGrid, 1); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const ratio = cnt[0] ? cnt[1]/cnt[0] : 0; const gs = gammas(); const sum = gs.reduce((a, b) => a + b, 0);
+  statEl.innerHTML = `太 <b>${cnt[1]}</b>　細 <b>${cnt[0]}</b>　太／細 ＝ <span class="big">${ratio.toFixed(4)}</span><br>φ ＝ ${PHI.toFixed(4)}（無限では厳密に一致）<br>Σγ ＝ <b>${(sum - Math.round(sum - (state.half ? 0.5 : 0))).toFixed(3)}</b> ${state.half ? '一般化ペンローズ' : '真のペンローズ'}　γ⊥ ＝ (${state.a.toFixed(3)}, ${state.b.toFixed(3)})`;
+}
+
+// ============================================================
+//  入力
+// ============================================================
+const ptrs = new Map(); let lastPinch = 0, uiTimer = 0; const ui = document.getElementById('ui');
+function wake(){ ui.classList.remove('fade'); clearTimeout(uiTimer); uiTimer = setTimeout(() => ui.classList.add('fade'), 7000); } wake();
+canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); state.dragging = true; wake(); if (ptrs.size === 2){ const a = [...ptrs.values()]; lastPinch = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); } });
+canvas.addEventListener('pointermove', e => { const p = ptrs.get(e.pointerId); if (!p) return; const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+  if (ptrs.size === 1){ if (e.shiftKey){ const s = 0.055*state.zoom; state.pan[0] -= dx*2/(s*canvas.clientHeight); state.pan[1] += dy*2/(s*canvas.clientHeight); } else { state.a += dx*0.0012; state.b -= dy*0.0012; } }
+  else if (ptrs.size === 2){ const a = [...ptrs.values()]; const d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); if (lastPinch > 0) state.zoom = Math.max(0.35, Math.min(4, state.zoom*(d/lastPinch))); lastPinch = d;
+    const s = 0.055*state.zoom; state.pan[0] -= dx*1/(s*canvas.clientHeight); state.pan[1] += dy*1/(s*canvas.clientHeight); } });
+function endPtr(e){ ptrs.delete(e.pointerId); lastPinch = 0; if (ptrs.size === 0) state.dragging = false; }
+canvas.addEventListener('pointerup', endPtr); canvas.addEventListener('pointercancel', endPtr);
+canvas.addEventListener('wheel', e => { e.preventDefault(); state.zoom = Math.max(0.35, Math.min(4, state.zoom*Math.exp(-e.deltaY*0.0015))); wake(); }, { passive: false });
+function setBtn(k, on){ const b = document.querySelector(`#ctl button[data-k="${k}"]`); if (b) b.classList.toggle('on', !!on); }
+document.querySelectorAll('#ctl button').forEach(b => b.addEventListener('click', () => { wake(); const k = b.dataset.k;
+  if (k === 'grid'){ state.grid = !state.grid; setBtn('grid', state.grid); } if (k === 'half'){ state.half = !state.half; setBtn('half', state.half); } if (k === 'pal') state.pal = (state.pal + 1) % PALETTES.length; if (k === 'auto'){ state.auto = !state.auto; setBtn('auto', state.auto); } }));
+window.addEventListener('keydown', e => { wake(); if (e.code === 'Space'){ e.preventDefault(); state.auto = !state.auto; setBtn('auto', state.auto); }
+  if (e.key === 'g' || e.key === 'G'){ state.grid = !state.grid; setBtn('grid', state.grid); } if (e.key === 'h' || e.key === 'H'){ state.half = !state.half; setBtn('half', state.half); } if (e.key === 'c' || e.key === 'C') state.pal = (state.pal + 1) % PALETTES.length; });
+new ResizeObserver(() => alloc()).observe(canvas); setBtn('grid', state.grid); setBtn('half', state.half);
+
+// ============================================================
+//  ループ
+// ============================================================
+alloc();
+let last = performance.now();
+if (Q.has('warm')){ for (let i = 0; i < 30; i++){ state.t += 1/60; render(1/60); } }
+function loop(now){ let dt = (now - last)/1000; last = now; if (dt > 0.08) dt = 0.08; state.t += dt; alloc(); render(dt); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
