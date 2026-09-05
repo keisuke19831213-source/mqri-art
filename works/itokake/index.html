@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>糸かけ — Itokake</title>
+<style>
+  html,body{margin:0;height:100%;background:#2a1f16;overflow:hidden;font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;color:#e8dfd0}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  #ui{position:fixed;left:18px;bottom:16px;pointer-events:none;user-select:none;opacity:.92;transition:opacity 2s;max-width:44vw;background:rgba(20,14,10,.55);padding:10px 14px;border-radius:10px;backdrop-filter:blur(6px)}
+  #ui.fade{opacity:0}
+  #title{font-size:15px;letter-spacing:.35em;color:#f3ebdc}
+  #title span{display:block;margin-top:5px;font-size:10.5px;letter-spacing:.12em;color:#b9ac9a}
+  #hint{margin-top:10px;font-size:10px;letter-spacing:.06em;color:#9a8d7b;line-height:1.7}
+  #stat{position:fixed;right:16px;top:14px;font-size:10px;letter-spacing:.16em;color:#b9ac9a;pointer-events:none;text-align:right;line-height:1.8;background:rgba(20,14,10,.55);padding:8px 12px;border-radius:10px;backdrop-filter:blur(6px)}
+  #stat b{color:#e9b95a;font-weight:500}
+  #ctl{position:fixed;right:16px;bottom:16px;display:flex;gap:6px;user-select:none;flex-wrap:wrap;justify-content:flex-end;max-width:56vw}
+  #ctl button{appearance:none;border:1px solid rgba(255,240,220,.22);background:rgba(20,14,10,.5);color:#e8dfd0;border-radius:999px;padding:6px 10px;font-size:11px;letter-spacing:.14em;cursor:pointer;backdrop-filter:blur(6px);font-family:inherit}
+  #ctl button.on{background:rgba(233,185,90,.92);color:#2a1f16;border-color:transparent}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="title">糸かけ<span>Itokake — 釘を打ち、素数の歩幅で糸を掛ける。内側に浮かぶ円の半径は R·cos(πs/n)、一本も描いていない</span></div>
+  <div id="hint">タップ＝次の糸を掛ける／自動なら止める　ドラッグ横＝巻く速さ　1〜3＝釘の数（48・64・96）　P＝素数の歩幅　K＝掛け算（i→k·i・包絡線はエピサイクロイド）<br>Z＝作図（包絡線の予言）　C＝糸の色　R＝ほどいて巻き直す　Space＝自動</div>
+</div>
+<div id="stat"></div>
+<div id="ctl"><button data-n="48">48</button><button data-n="64" class="on">64</button><button data-n="96">96</button><button data-k="prime" class="on">素数</button><button data-k="mult">掛け算</button><button data-k="draw">作図</button><button data-k="pal">色</button><button data-k="reset">巻き直す</button><button data-k="auto" class="on">自動</button></div>
+
+<script>
+'use strict';
+// ============================================================
+//  糸かけ — Itokake  (2026-09-05 / ccf5 art)
+//  n 本の釘を円に打ち、歩幅 s で糸を掛ける（i → i+s）。弦の包絡線は半径 R·cos(πs/n) の円。
+//  素数の歩幅を大きい順に重ねると同心の円が層になる（素数糸かけ曼荼羅）。gcd(n,s) 本の輪に分かれる。
+//  掛け算型（i → k·i mod n）の包絡線は k−1 個の尖点を持つエピサイクロイド（k=2 カージオイド・3 ネフロイド）。
+//  木の板・真鍮の釘・木綿の糸を Canvas 2D で描き、糸は一本ずつ巻かれていく。
+// ============================================================
+const Q = new URLSearchParams(location.search);
+const num = (k, d) => (Q.has(k) && isFinite(parseFloat(Q.get(k)))) ? parseFloat(Q.get(k)) : d;
+const canvas = document.getElementById('c'); const ctx = canvas.getContext('2d');
+let W = 0, H = 0, DPR = 1, board = null;   // board: 板＋釘の下地（オフスクリーン）
+const state = { hold: 0, t: num('warm', 0), n: Math.round(num('n', 64)), mode: Q.get('mode') === 'mult' ? 'mult' : 'prime', layers: [], li: 0, seg: 0, prog: 0, speed: num('speed', 6), draw: Q.get('draw') === '1', pal: Math.round(num('pal', 0)), auto: !Q.has('still'), dragging: false, done: false, threads: null };
+const PALS = [
+  { name: '藍と茜', board: ['#3b2a1e', '#2a1c12'], nail: '#c9a45c', th: ['#2c4a7a', '#b8323a', '#d9a63a', '#5f8a4a', '#7a5a9a', '#c9773a', '#e6dcc8', '#2e6f6a'] },
+  { name: '白と金', board: ['#22201d', '#141311'], nail: '#d8c07a', th: ['#f1e9d8', '#d8b45a', '#b9a58a', '#e2d3b8', '#c8a55f', '#f3efe6', '#a88b5a', '#e9dcc4'] },
+  { name: '春', board: ['#4a3b2c', '#33281d'], nail: '#c9a45c', th: ['#e98aa0', '#f2c85c', '#8fc07a', '#7fb4d9', '#c99bd9', '#f0a56a', '#f6efe1', '#6ab8a8'] },
+];
+const PRIMES = n => { const out = []; for (let p = Math.floor(n/2); p >= 2; p--){ let ok = true; for (let d = 2; d*d <= p; d++) if (p % d === 0){ ok = false; break; } if (ok && n % p !== 0) out.push(p); } return out; };
+const gcd = (a, b) => b ? gcd(b, a % b) : a;
+function plan(){ // 層の設計：素数＝大きい順の素数の歩幅（内側から外側へ円が層になる）／掛け算＝k=2..7
+  const pal = PALS[state.pal % PALS.length]; const n = state.n; const L = [];
+  if (state.mode === 'prime'){ const ps = PRIMES(n).slice(0, 8); ps.forEach((s, i) => L.push({ s, k: 0, col: pal.th[i % pal.th.length], count: n })); }
+  else { for (let k = 2; k <= 7; k++) L.push({ s: 0, k, col: pal.th[(k - 2) % pal.th.length], count: n }); }
+  state.layers = L; state.li = 0; state.seg = 0; state.prog = 0; state.done = false; state.hold = 0; state.threads = []; }
+function nailPos(i){ const R = Math.min(W, H)*0.40; const a = -Math.PI/2 + i*2*Math.PI/state.n; return [W/2 + R*Math.cos(a), H/2 + R*Math.sin(a)]; }
+function segEnds(layer, j){ const n = state.n; if (layer.k){ const i = j % n; return [i, (layer.k*i) % n]; } const i = (j*layer.s) % n; return [i, (i + layer.s) % n]; }   // 等歩：糸は連続して巻かれる
+// ---------- 下地：板と釘 ----------
+function paintBoard(){ const pal = PALS[state.pal % PALS.length]; board = document.createElement('canvas'); board.width = W; board.height = H; const b = board.getContext('2d');
+  const g = b.createRadialGradient(W/2, H/2, Math.min(W, H)*0.2, W/2, H/2, Math.max(W, H)*0.8); g.addColorStop(0, pal.board[0]); g.addColorStop(1, pal.board[1]); b.fillStyle = g; b.fillRect(0, 0, W, H);
+  // 木目：ゆらぐ縞
+  b.globalAlpha = 0.16; for (let y = -H; y < 2*H; y += 7*DPR){ b.beginPath(); for (let x = 0; x <= W; x += 24*DPR){ const yy = y + 18*DPR*Math.sin(x*0.004/DPR + y*0.01) + 8*DPR*Math.sin(x*0.013/DPR + 1.7); if (x === 0) b.moveTo(x, yy); else b.lineTo(x, yy); } b.strokeStyle = (Math.random() < 0.5) ? '#000' : '#fff'; b.lineWidth = (0.6 + Math.random()*1.4)*DPR; b.stroke(); }
+  b.globalAlpha = 1;
+  // 釘：影・胴・頭の光
+  const R = Math.min(W, H)*0.40; for (let i = 0; i < state.n; i++){ const [x, y] = nailPos(i); const r = Math.max(2.6*DPR, R*0.012);
+    b.fillStyle = 'rgba(0,0,0,0.45)'; b.beginPath(); b.arc(x + 1.4*DPR, y + 2.2*DPR, r*1.1, 0, 7); b.fill();
+    const ng = b.createRadialGradient(x - r*0.4, y - r*0.4, r*0.1, x, y, r); ng.addColorStop(0, '#fff2c8'); ng.addColorStop(0.35, pal.nail); ng.addColorStop(1, '#5a4520'); b.fillStyle = ng; b.beginPath(); b.arc(x, y, r, 0, 7); b.fill(); }
+}
+function alloc(){ const dpr = Math.min(window.devicePixelRatio || 1, 2); const cw = Math.max(64, Math.round(canvas.clientWidth || window.innerWidth || 640)), ch = Math.max(64, Math.round(canvas.clientHeight || window.innerHeight || 480));
+  const w = Math.round(cw*dpr), h = Math.round(ch*dpr); if (w === W && h === H) return false; W = w; H = h; DPR = dpr; canvas.width = W; canvas.height = H; paintBoard(); return true; }
+// ---------- 糸 ----------
+function thread(c, a, b, col, alpha){ const dx = b[0] - a[0], dy = b[1] - a[1]; const L = Math.hypot(dx, dy); if (L < 1) return; const nx = -dy/L, ny = dx/L; const w = Math.max(1.6*DPR, Math.min(W, H)*0.0035);
+  c.globalAlpha = alpha; c.lineCap = 'round';
+  c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = w*1.4; c.beginPath(); c.moveTo(a[0] + 1.2*DPR, a[1] + 2.0*DPR); c.lineTo(b[0] + 1.2*DPR, b[1] + 2.0*DPR); c.stroke();   // 影
+  c.strokeStyle = col; c.lineWidth = w; c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke();                                                       // 芯
+  c.strokeStyle = 'rgba(255,250,235,0.45)'; c.lineWidth = w*0.35; c.beginPath(); c.moveTo(a[0] - nx*w*0.25, a[1] - ny*w*0.25); c.lineTo(b[0] - nx*w*0.25, b[1] - ny*w*0.25); c.stroke();   // 光る稜
+  c.globalAlpha = 1; }
+let laid = null;   // 掛け終えた糸を貯めるキャンバス
+function resetLaid(){ laid = document.createElement('canvas'); laid.width = W; laid.height = H; }
+function step(dt){ if (state.done || !state.layers.length) return; const layer = state.layers[state.li];
+  if (state.hold > 0){ state.hold -= dt; if (state.hold <= 0 && state.mode === 'mult'){ resetLaid(); } return; }   // 掛け算：一つの k を見せてから、ほどいて次へ
+  state.prog += dt*state.speed;
+  while (state.prog >= 1){ state.prog -= 1; const [i, j] = segEnds(layer, state.seg); thread(laid.getContext('2d'), nailPos(i), nailPos(j), layer.col, 0.95); state.seg++;
+    if (state.seg >= layer.count){ state.li++; state.seg = 0; if (state.li >= state.layers.length){ if (state.mode === 'mult'){ state.li = 0; state.hold = 3.5; } else state.done = true; break; } if (state.mode === 'mult'){ state.hold = 3.5; break; } } } }
+function render(dt){
+  if (state.auto) step(dt);
+  ctx.drawImage(board, 0, 0); ctx.drawImage(laid, 0, 0);
+  // 巻いている最中の糸
+  if (!state.done && state.layers.length){ const layer = state.layers[state.li]; const [i, j] = segEnds(layer, state.seg); const a = nailPos(i), b = nailPos(j); const p = state.prog; const e = [a[0] + (b[0] - a[0])*p, a[1] + (b[1] - a[1])*p]; thread(ctx, a, e, layer.col, 0.95);
+    // 糸の先（指先の位置）に小さな光
+    ctx.fillStyle = 'rgba(255,240,200,0.6)'; ctx.beginPath(); ctx.arc(e[0], e[1], 2.5*DPR, 0, 7); ctx.fill(); }
+  // 釘の頭を糸の上に
+  const pal = PALS[state.pal % PALS.length]; const R = Math.min(W, H)*0.40; const r = Math.max(2.6*DPR, R*0.012);
+  for (let k = 0; k < state.n; k++){ const [x, y] = nailPos(k); const ng = ctx.createRadialGradient(x - r*0.4, y - r*0.4, r*0.1, x, y, r); ng.addColorStop(0, '#fff2c8'); ng.addColorStop(0.35, pal.nail); ng.addColorStop(1, '#5a4520'); ctx.fillStyle = ng; ctx.beginPath(); ctx.arc(x, y, r*0.85, 0, 7); ctx.fill(); }
+  // 作図：包絡線の予言（等歩＝円 R cos(πs/n)、掛け算＝エピサイクロイド）
+  if (state.draw && state.layers.length){ ctx.save(); ctx.setLineDash([4*DPR, 5*DPR]); ctx.lineWidth = 1*DPR; ctx.strokeStyle = 'rgba(255,240,210,0.7)';
+    for (let li = 0; li <= Math.min(state.li, state.layers.length - 1); li++){ const L = state.layers[li]; if (!L.k){ const rr = R*Math.cos(Math.PI*L.s/state.n); ctx.beginPath(); ctx.arc(W/2, H/2, rr, 0, 7); ctx.stroke(); }
+      else { const k = L.k; const a = R/(k + 1)*1.0; /* 円 R に内接するエピサイクロイド（k−1 尖点）：r_c=R/(k+1) */ ctx.beginPath(); const N = 720; for (let m = 0; m <= N; m++){ const th = m/N*2*Math.PI; const rc = R*(k - 1)/(k + 1), rr2 = R/(k + 1)*1.0; const X0 = (rc + rr2)*Math.cos(th) - rr2*Math.cos((rc + rr2)/rr2*th), Y0 = (rc + rr2)*Math.sin(th) - rr2*Math.sin((rc + rr2)/rr2*th); const x = W/2 + Y0, y = H/2 - X0;   /* 尖点を釘0（上）へ：−90°回す */ if (m === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.stroke(); } }
+    ctx.restore(); }
+  const layer = state.layers[Math.min(state.li, state.layers.length - 1)]; const doneN = state.layers.slice(0, state.li).reduce((a, l) => a + l.count, 0) + state.seg;
+  const st = document.getElementById('stat');
+  if (state.mode === 'prime'){ const s = layer.s; st.innerHTML = `釘 <b>${state.n}</b>　歩幅 s ＝ <b>${s}</b>（素数）　輪の数 gcd(n,s) ＝ ${gcd(state.n, s)}<br>包絡線の半径 ＝ R·cos(πs/n) ＝ <b>${Math.cos(Math.PI*s/state.n).toFixed(4)} R</b>　糸 ${doneN} 本${state.done ? '　— 巻き終わり' : ''}<br>層 ${Math.min(state.li + 1, state.layers.length)}／${state.layers.length}（${state.layers.map(l => l.s).join('・')}）`; }
+  else { const k = layer.k; const nm = k === 2 ? '（カージオイド）' : k === 3 ? '（ネフロイド）' : ''; st.innerHTML = `釘 <b>${state.n}</b>　掛け算 i → <b>${k}</b>·i (mod n)　糸 ${state.seg} 本<br>包絡線 ＝ 尖点 <b>${k - 1}</b> のエピサイクロイド${nm}${state.hold > 0 ? '　— 見せてからほどく' : ''}<br>k＝${state.layers.map(l => l.k).join('・')} を順に`; }
+}
+
+// ============================================================
+//  入力
+// ============================================================
+let uiTimer = 0; const ui = document.getElementById('ui'); function wake(){ ui.classList.remove('fade'); clearTimeout(uiTimer); uiTimer = setTimeout(() => ui.classList.add('fade'), 7000); } wake();
+let down = null;
+canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); down = { x: e.clientX, y: e.clientY, t: performance.now(), moved: false }; wake(); });
+canvas.addEventListener('pointermove', e => { if (!down) return; const dx = e.clientX - down.x; if (Math.abs(dx) > 6) down.moved = true; if (down.moved){ state.speed = Math.max(0.5, Math.min(60, state.speed*Math.exp(dx*0.01))); down.x = e.clientX; } });
+canvas.addEventListener('pointerup', e => { if (!down) return; if (!down.moved && performance.now() - down.t < 400){ if (state.auto){ state.auto = false; setBtn('auto', false); } else { state.prog += 1; step(0); } } down = null; });
+function setBtn(k, on){ const b = document.querySelector(`#ctl button[data-k="${k}"]`); if (b) b.classList.toggle('on', !!on); }
+function restart(){ resetLaid(); plan(); }
+function setN(n){ state.n = n; document.querySelectorAll('#ctl button[data-n]').forEach(b => b.classList.toggle('on', parseInt(b.dataset.n) === n)); paintBoard(); restart(); }
+function setMode(m){ state.mode = m; setBtn('prime', m === 'prime'); setBtn('mult', m === 'mult'); restart(); }
+document.querySelectorAll('#ctl button').forEach(b => b.addEventListener('click', () => { wake(); if (b.dataset.n) setN(parseInt(b.dataset.n)); const k = b.dataset.k;
+  if (k === 'prime') setMode('prime'); if (k === 'mult') setMode('mult'); if (k === 'draw'){ state.draw = !state.draw; setBtn('draw', state.draw); } if (k === 'pal'){ state.pal = (state.pal + 1) % PALS.length; paintBoard(); restart(); } if (k === 'reset') restart(); if (k === 'auto'){ state.auto = !state.auto; setBtn('auto', state.auto); } }));
+window.addEventListener('keydown', e => { wake(); if (e.code === 'Space'){ e.preventDefault(); state.auto = !state.auto; setBtn('auto', state.auto); } const N = { '1': 48, '2': 64, '3': 96 }[e.key]; if (N) setN(N);
+  if (e.key === 'p' || e.key === 'P') setMode('prime'); if (e.key === 'k' || e.key === 'K') setMode('mult'); if (e.key === 'z' || e.key === 'Z'){ state.draw = !state.draw; setBtn('draw', state.draw); } if (e.key === 'c' || e.key === 'C'){ state.pal = (state.pal + 1) % PALS.length; paintBoard(); restart(); } if (e.key === 'r' || e.key === 'R') restart(); });
+new ResizeObserver(() => { if (alloc()){ restart(); } }).observe(canvas);
+setBtn('draw', state.draw); setBtn('prime', state.mode === 'prime'); setBtn('mult', state.mode === 'mult');
+
+// ============================================================
+//  ループ
+// ============================================================
+alloc(); restart();
+let last = performance.now();
+// ?warm=秒：レイアウトが落ち着いた3フレーム目に、その秒数ぶん糸を巻いておく（初期サイズ確定前に巻くとリサイズで解けてしまう）
+let pendingWarm = Q.has('warm') ? Math.round(num('warm', 0)*60) : 0, frames = 0;
+function loop(now){ let dt = (now - last)/1000; last = now; if (dt > 0.08) dt = 0.08; state.t += dt; if (alloc()) restart(); frames++;
+  if (pendingWarm && frames > 2){ for (let i = 0; i < Math.min(pendingWarm, 6000); i++) step(1/60); pendingWarm = 0; }
+  render(dt); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
