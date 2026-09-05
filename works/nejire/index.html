@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>捩れ — Nejire</title>
+<style>
+  html,body{margin:0;height:100%;background:#07070a;overflow:hidden;font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;color:#cfd3d8}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  #ui{position:fixed;left:18px;bottom:16px;pointer-events:none;user-select:none;opacity:.9;transition:opacity 2s;max-width:44vw;background:rgba(6,6,9,.5);padding:10px 14px;border-radius:10px;backdrop-filter:blur(6px)}
+  #ui.fade{opacity:0}
+  #title{font-size:15px;letter-spacing:.35em;color:#e8e6df}
+  #title span{display:block;margin-top:5px;font-size:10.5px;letter-spacing:.12em;color:#9aa0a8}
+  #hint{margin-top:10px;font-size:10px;letter-spacing:.06em;color:#6f7680;line-height:1.7}
+  #stat{position:fixed;right:16px;top:14px;font-size:10px;letter-spacing:.16em;color:#8a8f96;pointer-events:none;text-align:right;line-height:1.8;background:rgba(6,6,9,.5);padding:8px 12px;border-radius:10px;backdrop-filter:blur(6px)}
+  #stat b{color:#e2b45a;font-weight:500} #stat .big{font-size:22px;letter-spacing:.06em;color:#eef0f2}
+  #ctl{position:fixed;right:16px;bottom:16px;display:flex;gap:6px;user-select:none;flex-wrap:wrap;justify-content:flex-end;max-width:56vw}
+  #ctl button{appearance:none;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.35);color:#c9cdd3;border-radius:999px;padding:6px 10px;font-size:11px;letter-spacing:.16em;cursor:pointer;backdrop-filter:blur(6px);font-family:inherit}
+  #ctl button.on{background:rgba(226,180,90,.9);color:#1a1712;border-color:transparent}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="title">捩れ<span>Nejire — 二枚の生命の花を重ねて捩ると、大きな花が現れる。周期 D＝d／2sin(θ/2)、1.1°が魔法角</span></div>
+  <div id="hint">ドラッグ横＝捩れ角 θ　ドラッグ縦＝全体の回転　ホイール／ピンチ＝寄る　M＝魔法角 1.1°　1〜5＝整合角（21.79°・13.17°・9.43°・7.34°・6.01°）<br>E＝包絡（ぼかしてモアレだけを見る）　L＝格子の種類（花／格子）　C＝彩　Space＝自動</div>
+</div>
+<div id="stat"></div>
+<div id="ctl"><button data-a="21.787">21.79°</button><button data-a="13.174">13.17°</button><button data-a="9.430">9.43°</button><button data-a="7.341">7.34°</button><button data-a="6.009">6.01°</button><button data-a="1.1">魔法角</button><button data-k="env">包絡</button><button data-k="lat">格子</button><button data-k="pal">彩</button><button data-k="auto" class="on">自動</button></div>
+
+<script>
+'use strict';
+// ============================================================
+//  捩れ — Nejire  (2026-09-05 / ccf5 art)
+//  六方格子（間隔 d）の生命の花を二枚、±θ/2 で捩って重ねる。モアレの周期は D = d/(2 sin(θ/2))（厳密）。
+//  整合角：cos θ = (3m²+3mr+r²/2)/(3m²+3mr+r²)（捩れ二層グラフェンの整合条件）。(m,r)=(1,1) で 21.79°、(2,1) 13.17°、
+//  (3,1) 9.43°、(4,1) 7.34°、(5,1) 6.01°…。1.1° は魔法角（Bistritzer–MacDonald 2011）。
+//  各層は解析 SDF で描き、ジッタ蓄積でアンチエイリアス＝格子が画素より細くなっても、平均としてモアレが物理どおり現れる。
+// ============================================================
+const Q = new URLSearchParams(location.search);
+const num = (k, d) => (Q.has(k) && isFinite(parseFloat(Q.get(k)))) ? parseFloat(Q.get(k)) : d;
+const COMM = []; for (let m = 1; m <= 40; m++){ const r = 1; const c = (3*m*m + 3*m*r + r*r/2)/(3*m*m + 3*m*r + r*r); COMM.push({ m, r, deg: Math.acos(c)*180/Math.PI }); }
+
+const VS_QUAD = `#version 300 es
+void main(){ vec2 v = vec2((gl_VertexID<<1)&2, gl_VertexID&2); gl_Position = vec4(v*2.0-1.0, 0.0, 1.0); }`;
+const FS = `#version 300 es
+precision highp float;
+uniform vec2 uRes; uniform float uScale, uTheta, uRot, uFrame, uAlpha, uLat; uniform vec2 uPan; uniform vec3 uBg, uA, uB, uBoth; uniform sampler2D uPrev;
+out vec4 fragColor;
+float hash21(vec2 p){ p = fract(p*vec2(233.34, 851.73)); p += dot(p, p + 23.45); return fract(p.x*p.y); }
+// 六方格子（間隔1）の円（半径1）＝生命の花
+float flower(vec2 p){ float d = 1e9; const float s3 = 0.8660254; float bf = p.x/s3; float af = p.y - bf*0.5;
+  for (int i = -1; i <= 2; i++) for (int j = -1; j <= 2; j++){ float b = floor(bf) + float(j), a = floor(af) + float(i); vec2 c = vec2(b*s3, a + b*0.5); d = min(d, abs(length(p - c) - 1.0)); } return d; }
+// 六方格子の線（三方向の平行線）
+float grid(vec2 p){ float d = 1e9; for (int k = 0; k < 3; k++){ float a = float(k)*1.0471976; vec2 n = vec2(cos(a), sin(a)); float s = dot(p, n); d = min(d, abs(s - floor(s + 0.5))); } return d; }
+float layer(vec2 p){ return uLat > 0.5 ? grid(p) : flower(p); }
+void main(){
+  vec2 jit = vec2(hash21(gl_FragCoord.xy + uFrame*0.37), hash21(gl_FragCoord.yx + uFrame*0.91)) - 0.5;
+  vec2 uv = ((gl_FragCoord.xy + jit)/uRes)*2.0 - 1.0; uv.x *= uRes.x/uRes.y;
+  vec2 p = uv/uScale + uPan; float px = 1.0/(uScale*uRes.y*0.5);
+  float c = cos(uRot), s = sin(uRot); p = vec2(p.x*c - p.y*s, p.x*s + p.y*c);
+  float h = 0.5*uTheta; float ca = cos(h), sa = sin(h);
+  vec2 pa = vec2(p.x*ca - p.y*sa, p.x*sa + p.y*ca), pb = vec2(p.x*ca + p.y*sa, -p.x*sa + p.y*ca);
+  float w = max(0.6*px, 0.008);
+  float la = smoothstep(w*1.3, w*0.3, layer(pa)), lb = smoothstep(w*1.3, w*0.3, layer(pb));
+  // 二枚の透明シート：線の和集合で塗る。重なった所は覆いが減る＝モアレは本物の仕組み（平均すると密度の差になる）
+  float uni = 1.0 - (1.0 - la)*(1.0 - lb);
+  vec3 lineCol = (uA*la + uB*lb)/max(la + lb, 1e-4);
+  vec3 col = uBg + lineCol*uni*0.9 + uBoth*la*lb*0.35;
+  vec3 prev = texelFetch(uPrev, ivec2(gl_FragCoord.xy), 0).rgb;
+  fragColor = vec4(mix(prev, col, uAlpha), 1.0);
+}`;
+const FS_DOWN = `#version 300 es
+precision highp float; uniform sampler2D uS; uniform vec2 uDst; out vec4 o;
+void main(){ vec2 uv = gl_FragCoord.xy/uDst; vec2 px = 1.0/uDst; vec3 c = texture(uS, uv + px*vec2(-0.5,-0.5)).rgb + texture(uS, uv + px*vec2(0.5,-0.5)).rgb + texture(uS, uv + px*vec2(-0.5,0.5)).rgb + texture(uS, uv + px*vec2(0.5,0.5)).rgb; o = vec4(c*0.25, 1.0); }`;
+const FS_OUT = `#version 300 es
+precision highp float; uniform sampler2D uAcc, uB4, uB5; uniform vec2 uRes; uniform float uFade, uEnv; out vec4 o;
+void main(){ vec2 uv = gl_FragCoord.xy/uRes; vec3 c = texture(uAcc, uv).rgb; vec3 e = (texture(uB4, uv).rgb*0.5 + texture(uB5, uv).rgb*0.5);
+  vec3 e5 = texture(uB5, uv).rgb; vec3 env = clamp(vec3(0.5) + (e - e5)*7.0, 0.0, 1.0);   // 包絡：粗いぼかしを引いた帯域（DoG）でモアレの起伏だけを出す
+  c = mix(c, env, uEnv);
+  vec2 q = uv*2.0-1.0; c *= 1.0 - 0.15*dot(q,q)*dot(q,q); c = pow(clamp(c*uFade, 0.0, 1.0), vec3(1.0/2.2)); o = vec4(c + (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898,78.233)))*43758.5453) - 0.5)/255.0, 1.0); }`;
+
+// ============================================================
+//  WebGL
+// ============================================================
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false });
+if (!gl) throw new Error('WebGL2 が必要です');
+if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('EXT_color_buffer_float が必要です');
+function compile(type, src){ const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function program(vs, fs){ const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); for (let i = 0; i < n; i++){ const info = gl.getActiveUniform(p, i); u[info.name.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, info.name); } return { p, u }; }
+const P_MAIN = program(VS_QUAD, FS), P_DOWN = program(VS_QUAD, FS_DOWN), P_OUT = program(VS_QUAD, FS_OUT); gl.bindVertexArray(gl.createVertexArray());
+function makeTex(w, h){ const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, w, h); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return t; }
+const fbo = t => { const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0); return f; };
+let W = 0, H = 0, acc = null, cur = 0, accN = 0, bloom = null;
+function alloc(){ const dpr = Math.min(window.devicePixelRatio || 1, 2); const cw = Math.max(64, Math.round(canvas.clientWidth || window.innerWidth || 640)), ch = Math.max(64, Math.round(canvas.clientHeight || window.innerHeight || 480));
+  let s = dpr; if (cw*ch*s*s > 3.2e6) s = Math.sqrt(3.2e6/(cw*ch)); const w = Math.round(cw*s), h = Math.round(ch*s); if (w === W && h === H) return false; W = w; H = h; canvas.width = W; canvas.height = H;
+  if (acc){ acc.forEach(a => { gl.deleteTexture(a.t); gl.deleteFramebuffer(a.f); }); bloom.forEach(b => { gl.deleteTexture(b.t); gl.deleteFramebuffer(b.f); }); }
+  acc = [0, 1].map(() => { const t = makeTex(W, H); return { t, f: fbo(t) }; }); bloom = []; let bw = W, bh = H; for (let i = 0; i < 5; i++){ bw = Math.max(1, bw >> 1); bh = Math.max(1, bh >> 1); const t = makeTex(bw, bh); bloom.push({ t, f: fbo(t), w: bw, h: bh }); } accN = 0; return true; }
+
+// ============================================================
+//  状態・彩
+// ============================================================
+const PALETTES = [ { name: '金と藍', bg: [0.03, 0.03, 0.045], A: [0.95, 0.72, 0.30], B: [0.30, 0.55, 1.0], both: [1.0, 1.0, 1.0] }, { name: '朱と翠', bg: [0.04, 0.035, 0.03], A: [1.0, 0.40, 0.25], B: [0.30, 0.85, 0.60], both: [1.0, 0.95, 0.8] }, { name: '白', bg: [0.02, 0.02, 0.025], A: [0.85, 0.85, 0.85], B: [0.85, 0.85, 0.85], both: [1.0, 1.0, 1.0] } ];
+const state = { t: num('warm', 0), frame: 0, theta: num('theta', 5.0)*Math.PI/180, thetaT: num('theta', 5.0)*Math.PI/180, rot: 0, zoom: num('zoom', 2.2), pan: [0, 0], env: Q.get('env') === '1' ? 1 : 0, envA: 0, lat: Q.get('lat') === '1' ? 1 : 0, pal: Math.round(num('pal', 0)) % PALETTES.length, auto: !Q.has('still'), dragging: false, moved: true };
+state.envA = state.env;
+const statEl = document.getElementById('stat');
+function ease(x){ x = Math.max(0, Math.min(1, x)); return x*x*(3 - 2*x); }
+function render(dt){
+  state.frame++; const pal = PALETTES[state.pal];
+  if (state.auto && !state.dragging){ state.thetaT = (3.0 + 9.0*(0.5 - 0.5*Math.cos(state.t*0.07)))*Math.PI/180; state.rot += dt*0.01; state.moved = true; }
+  const prevTh = state.theta; state.theta += (state.thetaT - state.theta)*Math.min(1, dt*4); if (Math.abs(state.theta - prevTh) > 1e-7) state.moved = true;
+  state.envA += (state.env - state.envA)*Math.min(1, dt*3);
+  const scale = 0.032*state.zoom; const next = 1 - cur;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, acc[next].f); gl.viewport(0, 0, W, H); gl.useProgram(P_MAIN.p); const u = P_MAIN.u;
+  gl.uniform2f(u.uRes, W, H); gl.uniform1f(u.uScale, scale); gl.uniform1f(u.uTheta, state.theta); gl.uniform1f(u.uRot, state.rot); gl.uniform1f(u.uFrame, state.frame); gl.uniform1f(u.uLat, state.lat); gl.uniform2fv(u.uPan, state.pan);
+  if (state.moved){ accN = 0; state.moved = false; } const K = (state.auto || state.dragging) ? 4 : 32; const alpha = 1/Math.min(accN + 1, K); accN++; gl.uniform1f(u.uAlpha, alpha);
+  gl.uniform3fv(u.uBg, pal.bg); gl.uniform3fv(u.uA, pal.A); gl.uniform3fv(u.uB, pal.B); gl.uniform3fv(u.uBoth, pal.both);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, acc[cur].t); gl.uniform1i(u.uPrev, 0); gl.drawArrays(gl.TRIANGLES, 0, 3); cur = next;
+  gl.useProgram(P_DOWN.p); gl.uniform1i(P_DOWN.u.uS, 0); gl.activeTexture(gl.TEXTURE0); let src = acc[cur].t; for (const b of bloom){ gl.bindFramebuffer(gl.FRAMEBUFFER, b.f); gl.viewport(0, 0, b.w, b.h); gl.bindTexture(gl.TEXTURE_2D, src); gl.uniform2f(P_DOWN.u.uDst, b.w, b.h); gl.drawArrays(gl.TRIANGLES, 0, 3); src = b.t; }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H); gl.useProgram(P_OUT.p); gl.uniform2f(P_OUT.u.uRes, W, H); gl.uniform1f(P_OUT.u.uFade, ease((state.t - 0.2)/1.5)); gl.uniform1f(P_OUT.u.uEnv, state.envA);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, acc[cur].t); gl.uniform1i(P_OUT.u.uAcc, 0); gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, bloom[3].t); gl.uniform1i(P_OUT.u.uB4, 1); gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, bloom[4].t); gl.uniform1i(P_OUT.u.uB5, 2); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  if (Q.get('probe') === '1' && state.frame % 30 === 0){ const b = bloom[3]; gl.bindFramebuffer(gl.FRAMEBUFFER, b.f); const buf = new Float32Array(b.w*4); gl.readPixels(0, b.h >> 1, b.w, 1, gl.RGBA, gl.FLOAT, buf); let mn = 1e9, mx = -1e9, sm = 0; for (let i = 0; i < b.w; i++){ const v = (buf[i*4] + buf[i*4+1] + buf[i*4+2])/3; mn = Math.min(mn, v); mx = Math.max(mx, v); sm += v; } state.probe = `mip4 row: min ${mn.toFixed(4)} max ${mx.toFixed(4)} mean ${(sm/b.w).toFixed(4)} contrast ${((mx - mn)/Math.max(sm/b.w, 1e-6)).toFixed(3)}`; gl.bindFramebuffer(gl.FRAMEBUFFER, null); }
+  const deg = state.theta*180/Math.PI; const D = 1/(2*Math.sin(state.theta/2)); let near = null; for (const c of COMM) if (Math.abs(c.deg - deg) < 0.05) near = c;
+  const magic = Math.abs(deg - 1.1) < 0.05;
+  statEl.innerHTML = `θ ＝ <span class="big">${deg.toFixed(2)}°</span><br>モアレの周期 D ＝ d／2sin(θ/2) ＝ <b>${D.toFixed(2)} d</b>${near ? `<br><b>整合角</b>（m,r）＝（${near.m},${near.r}）　cosθ＝(3m²+3mr+r²/2)/(3m²+3mr+r²)` : ''}${magic ? '<br><b>魔法角 1.1°</b>（Bistritzer–MacDonald 2011・D ≈ 52d）' : ''}<br>${state.lat ? '六方格子の線' : '生命の花（六方格子の円）'}　${pal.name}${state.probe ? '<br>' + state.probe : ''}`;
+}
+
+// ============================================================
+//  入力
+// ============================================================
+const ptrs = new Map(); let lastPinch = 0, uiTimer = 0; const ui = document.getElementById('ui');
+function wake(){ ui.classList.remove('fade'); clearTimeout(uiTimer); uiTimer = setTimeout(() => ui.classList.add('fade'), 7000); } wake();
+canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); state.dragging = true; state.auto = false; setBtn('auto', false); wake(); if (ptrs.size === 2){ const a = [...ptrs.values()]; lastPinch = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); } });
+canvas.addEventListener('pointermove', e => { const p = ptrs.get(e.pointerId); if (!p) return; const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+  if (ptrs.size === 1){ state.thetaT = Math.max(0.05*Math.PI/180, Math.min(30*Math.PI/180, state.thetaT + dx*0.0006*(state.thetaT*180/Math.PI + 0.5))); state.rot += dy*0.003; state.moved = true; }
+  else if (ptrs.size === 2){ const a = [...ptrs.values()]; const d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); if (lastPinch > 0) state.zoom = Math.max(0.3, Math.min(6, state.zoom*(d/lastPinch))); lastPinch = d; state.moved = true; } });
+function endPtr(e){ ptrs.delete(e.pointerId); lastPinch = 0; if (ptrs.size === 0) state.dragging = false; }
+canvas.addEventListener('pointerup', endPtr); canvas.addEventListener('pointercancel', endPtr);
+canvas.addEventListener('wheel', e => { e.preventDefault(); state.zoom = Math.max(0.3, Math.min(6, state.zoom*Math.exp(-e.deltaY*0.0015))); state.moved = true; wake(); }, { passive: false });
+function setBtn(k, on){ const b = document.querySelector(`#ctl button[data-k="${k}"]`); if (b) b.classList.toggle('on', !!on); }
+function setTheta(deg){ state.auto = false; setBtn('auto', false); state.thetaT = deg*Math.PI/180;
+  // 花は線が多く（単位面積あたり弧長 2π/0.866≒7.3）、格子を画素で解像しないとモアレが灰色に溶ける。魔法角は線の少ない格子（3.5）へ切り替え、格子1単位≈14px にする
+  if (deg < 2){ state.lat = 1; setBtn('lat', true); state.zoom = 1.0; } else state.zoom = deg < 8 ? 2.2 : 3.0; state.moved = true; }
+document.querySelectorAll('#ctl button').forEach(b => b.addEventListener('click', () => { wake(); if (b.dataset.a) setTheta(parseFloat(b.dataset.a));
+  if (b.dataset.k === 'env'){ state.env = 1 - state.env; setBtn('env', state.env === 1); } if (b.dataset.k === 'lat'){ state.lat = 1 - state.lat; setBtn('lat', state.lat === 1); state.moved = true; } if (b.dataset.k === 'pal'){ state.pal = (state.pal + 1) % PALETTES.length; state.moved = true; } if (b.dataset.k === 'auto'){ state.auto = !state.auto; setBtn('auto', state.auto); } }));
+window.addEventListener('keydown', e => { wake(); if (e.code === 'Space'){ e.preventDefault(); state.auto = !state.auto; setBtn('auto', state.auto); }
+  const A = { '1': 21.787, '2': 13.174, '3': 9.430, '4': 7.341, '5': 6.009 }[e.key]; if (A) setTheta(A); if (e.key === 'm' || e.key === 'M') setTheta(1.1);
+  if (e.key === 'e' || e.key === 'E'){ state.env = 1 - state.env; setBtn('env', state.env === 1); } if (e.key === 'l' || e.key === 'L'){ state.lat = 1 - state.lat; setBtn('lat', state.lat === 1); state.moved = true; } if (e.key === 'c' || e.key === 'C'){ state.pal = (state.pal + 1) % PALETTES.length; state.moved = true; } });
+new ResizeObserver(() => { if (alloc()) state.moved = true; }).observe(canvas); setBtn('env', state.env === 1); setBtn('lat', state.lat === 1);
+
+// ============================================================
+//  ループ
+// ============================================================
+alloc();
+let last = performance.now();
+if (Q.has('warm')){ for (let i = 0; i < 40; i++){ render(1/60); } }
+function loop(now){ let dt = (now - last)/1000; last = now; if (dt > 0.08) dt = 0.08; state.t += dt; if (alloc()) state.moved = true; render(dt); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
