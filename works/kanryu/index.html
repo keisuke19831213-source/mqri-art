@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>環流 — Kanryū</title>
+<style>
+  html,body{margin:0;height:100%;background:#06070a;overflow:hidden;font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;color:#cfd3d8}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  #ui{position:fixed;left:18px;bottom:16px;pointer-events:none;user-select:none;opacity:.9;transition:opacity 2s;max-width:44vw}
+  #ui.fade{opacity:0}
+  #title{font-size:15px;letter-spacing:.35em;color:#e8e6df}
+  #title span{display:block;margin-top:5px;font-size:10.5px;letter-spacing:.12em;color:#9aa0a8}
+  #hint{margin-top:10px;font-size:10px;letter-spacing:.06em;color:#6f7680;line-height:1.7}
+  #stat{position:fixed;right:16px;top:14px;font-size:10px;letter-spacing:.16em;color:#8a8f96;pointer-events:none;text-align:right;line-height:1.8}
+  #stat b{color:#e2b45a;font-weight:500}
+  #ctl{position:fixed;right:16px;bottom:16px;display:flex;gap:6px;user-select:none;flex-wrap:wrap;justify-content:flex-end;max-width:52vw}
+  #ctl button{appearance:none;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.35);color:#c9cdd3;border-radius:999px;padding:6px 10px;font-size:11px;letter-spacing:.16em;cursor:pointer;backdrop-filter:blur(6px);font-family:inherit}
+  #ctl button.on{background:rgba(226,180,90,.9);color:#1a1712;border-color:transparent}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="title">環流<span>Kanryū — トーラスは、一つの輪をめぐる電流の磁場である。線の密度は磁束そのもの</span></div>
+  <div id="hint">ドラッグ＝視点　ホイール／ピンチ＝寄る　1 一輪　2 二輪（ヘルムホルツ・中心が一様）　3 逆輪（くぼみ）　D＝双極子近似と比べる　F＝密度＝磁束／一様　C＝彩　Space＝自動</div>
+</div>
+<div id="stat"></div>
+<div id="ctl"><button data-m="1" class="on">一輪</button><button data-m="2">二輪</button><button data-m="3">逆輪</button><button data-k="dip">双極子</button><button data-k="flux" class="on">磁束</button><button data-k="pal">彩</button><button data-k="auto" class="on">自動</button></div>
+
+<script>
+'use strict';
+// ============================================================
+//  環流 — Kanryū  (2026-09-05 / ccf5 art)
+//  円電流の磁場（Biot–Savart の厳密解：完全楕円積分 K, E）の磁力線を、
+//  磁束に比例した密度で種を撒いて GPU で追う。トーラスは物理から立ち上がる。
+//  二輪＝ヘルムホルツ（中心が一様）／逆輪＝反ヘルムホルツ（中心がゼロのくぼみ）／双極子近似との比較。
+// ============================================================
+const Q = new URLSearchParams(location.search);
+const num = (k, d) => (Q.has(k) && isFinite(parseFloat(Q.get(k)))) ? parseFloat(Q.get(k)) : d;
+const NP = Math.round(num('n', 384));   // 粒子テクスチャの一辺
+
+// ---------- 完全楕円積分（A&S 17.3.34/36）: JS 側（種まきの磁束CDF用）----------
+function ellipKE(m){ const m1 = 1 - m; const L = -Math.log(Math.max(m1, 1e-12));
+  const K = (1.38629436112 + m1*(0.09666344259 + m1*(0.03590092383 + m1*(0.03742563713 + m1*0.01451196212)))) + L*(0.5 + m1*(0.12498593597 + m1*(0.06880248576 + m1*(0.03328355346 + m1*0.00441787012))));
+  const E = (1 + m1*(0.44325141463 + m1*(0.06260601220 + m1*(0.04757383546 + m1*0.01736506451)))) + L*m1*(0.24998368310 + m1*(0.09200180037 + m1*(0.04069697526 + m1*0.00526449639)));
+  return [K, E]; }
+// 一つの輪（半径 a・中心 z0・向き s）の B_z を軸対称平面 z で
+function Bz_loop(rho, z, a, z0, s){ z -= z0; const d1 = (a + rho)*(a + rho) + z*z; const d2 = (a - rho)*(a - rho) + z*z; const m = 4*a*rho/d1; const [K, E] = ellipKE(Math.min(m, 0.999999));
+  return s/Math.sqrt(d1)*(K + (a*a - rho*rho - z*z)/Math.max(d2, 1e-9)*E); }
+// 配置：一輪／二輪（間隔=a）／逆輪
+const MODES = { 1: { name: '一輪', en: 'ONE LOOP', loops: [[0, 1]] }, 2: { name: '二輪（ヘルムホルツ）', en: 'HELMHOLTZ PAIR · uniform centre', loops: [[-0.5, 1], [0.5, 1]] }, 3: { name: '逆輪（反ヘルムホルツ）', en: 'ANTI-HELMHOLTZ · zero at centre', loops: [[-0.5, 1], [0.5, -1]] } };
+// 磁束に比例した種まき：各輪の円板上で pdf ∝ |B_z|·ρ の CDF を作る
+function fluxCDF(mode){ const loops = MODES[mode].loops; const N = 256; const out = [];
+  for (const [z0, s] of loops){ const cdf = new Float32Array(N + 1); let acc = 0; cdf[0] = 0;
+    for (let i = 1; i <= N; i++){ const rho = (i - 0.5)/N*0.94; let bz = 0; for (const [zz, ss] of loops) bz += Bz_loop(rho, z0, 1, zz, ss); acc += Math.abs(bz)*rho; cdf[i] = acc; }
+    for (let i = 0; i <= N; i++) cdf[i] /= acc; out.push({ z0, cdf }); }
+  return out; }
+
+// ============================================================
+//  GLSL
+// ============================================================
+const GLSL_FIELD = `
+uniform vec4 uLoop[2]; uniform int uNLoop; uniform float uDipole;
+vec2 ellipKE(float m){ float m1 = 1.0 - m; float L = -log(max(m1, 1e-9));
+  float K = (1.38629436112 + m1*(0.09666344259 + m1*(0.03590092383 + m1*(0.03742563713 + m1*0.01451196212)))) + L*(0.5 + m1*(0.12498593597 + m1*(0.06880248576 + m1*(0.03328355346 + m1*0.00441787012))));
+  float E = (1.0 + m1*(0.44325141463 + m1*(0.06260601220 + m1*(0.04757383546 + m1*0.01736506451)))) + L*m1*(0.24998368310 + m1*(0.09200180037 + m1*(0.04069697526 + m1*0.00526449639)));
+  return vec2(K, E); }
+// 円電流（半径1・中心 z0・向き s）の磁場（厳密）
+vec3 Bloop(vec3 p, float z0, float s){
+  float rho = length(p.xy); float z = p.z - z0; float a = 1.0;
+  float d1 = (a + rho)*(a + rho) + z*z; float d2 = (a - rho)*(a - rho) + z*z; d2 = max(d2, 1e-7);
+  float m = clamp(4.0*a*rho/d1, 0.0, 0.999999); vec2 ke = ellipKE(m); float K = ke.x, E = ke.y;
+  float inv = 1.0/sqrt(d1);
+  float Bz = s*inv*(K + (a*a - rho*rho - z*z)/d2*E);
+  float Br = (rho > 1e-5) ? s*inv*z/rho*(-K + (a*a + rho*rho + z*z)/d2*E) : 0.0;
+  return vec3(Br*p.xy/max(rho, 1e-5), Bz);
+}
+// 双極子近似（モーメント ∝ π a²）
+vec3 Bdip(vec3 p, float z0, float s){ vec3 r = p - vec3(0.0, 0.0, z0); float R = length(r); R = max(R, 0.05); vec3 rh = r/R; float mz = s*3.14159265;
+  return (3.0*rh*(rh.z*mz) - vec3(0.0, 0.0, mz))/(R*R*R)*0.5; }
+vec3 Bfield(vec3 p){ vec3 B = vec3(0.0); for (int i = 0; i < 2; i++){ if (i >= uNLoop) break; vec4 L = uLoop[i]; B += mix(Bloop(p, L.x, L.y), Bdip(p, L.x, L.y), uDipole); } return B; }
+float wireDist(vec3 p){ float d = 1e9; for (int i = 0; i < 2; i++){ if (i >= uNLoop) break; float rho = length(p.xy); d = min(d, length(vec2(rho - 1.0, p.z - uLoop[i].x))); } return d; }
+`;
+const VS_QUAD = `#version 300 es
+void main(){ vec2 v = vec2((gl_VertexID<<1)&2, gl_VertexID&2); gl_Position = vec4(v*2.0-1.0, 0.0, 1.0); }`;
+// 粒子の更新：RK4 で磁力線に沿って進む（速さ ∝ |B|^γ）。寿命が尽きるか遠くへ出たら磁束CDFで撒き直す
+const FS_SIM = `#version 300 es
+precision highp float; precision highp int;
+${GLSL_FIELD}
+uniform sampler2D uPos, uCdf; uniform float uDt, uTime, uSeed, uGamma, uLife, uFluxOn; uniform int uNP; uniform vec2 uCdfZ; uniform int uNCdf;
+out vec4 o;
+uvec3 pcg3d(uvec3 v){ v = v*1664525u + 1013904223u; v.x += v.y*v.z; v.y += v.z*v.x; v.z += v.x*v.y; v ^= v >> 16u; v.x += v.y*v.z; v.y += v.z*v.x; v.z += v.x*v.y; return v; }
+vec3 rnd3(uvec3 s){ return vec3(pcg3d(s))*(1.0/4294967296.0); }
+vec3 dir(vec3 p){ vec3 B = Bfield(p); float b = length(B); return B/max(b, 1e-9); }
+float speedAt(vec3 p){ float b = length(Bfield(p)); return pow(b, uGamma); }
+vec4 seed(uvec3 s){
+  vec3 r = rnd3(s);
+  int which = (uNCdf > 1 && r.z > 0.5) ? 1 : 0; float z0 = which == 0 ? uCdfZ.x : uCdfZ.y;
+  float rho;
+  if (uFluxOn > 0.5){ // CDF 逆引き（256 ビン）
+    float u = r.x; int lo = 0, hi = 256;
+    for (int it = 0; it < 9; it++){ int mid = (lo + hi)/2; float c = texelFetch(uCdf, ivec2(mid, which), 0).r; if (c < u) lo = mid; else hi = mid; }
+    float c0 = texelFetch(uCdf, ivec2(lo, which), 0).r, c1 = texelFetch(uCdf, ivec2(lo + 1, which), 0).r; float f = clamp((u - c0)/max(c1 - c0, 1e-6), 0.0, 1.0);
+    rho = (float(lo) + f)/256.0*0.94;
+  } else rho = sqrt(r.x)*0.94;
+  float ph = 6.2831853*r.y;
+  return vec4(rho*cos(ph), rho*sin(ph), z0 + (rnd3(s + 7u).x - 0.5)*0.002, rnd3(s + 3u).y*uLife);
+}
+void main(){
+  ivec2 ij = ivec2(gl_FragCoord.xy); int id = ij.y*uNP + ij.x;
+  vec4 P = texelFetch(uPos, ij, 0); vec3 p = P.xyz; float age = P.w;
+  uvec3 s = uvec3(uint(id), uint(uTime*60.0) + uint(uSeed), 0x9E37u);
+  if (age <= 0.0 || length(p) > 14.0 || any(isnan(p))){ o = seed(s); return; }
+  // 適応刻み：導線に近いほど小さく
+  float dw = wireDist(p); float h = clamp(0.06*dw, 0.0015, 0.05)*uDt*60.0;
+  float v = speedAt(p); h *= clamp(v, 0.25, 3.0)*1.1;
+  vec3 k1 = dir(p); vec3 k2 = dir(p + 0.5*h*k1); vec3 k3 = dir(p + 0.5*h*k2); vec3 k4 = dir(p + h*k3);
+  p += h*(k1 + 2.0*k2 + 2.0*k3 + k4)/6.0;
+  age -= uDt;
+  if (wireDist(p) < 0.004) age = 0.0;
+  o = vec4(p, age);
+}`;
+// 粒子描画：位置テクスチャを gl_VertexID で引く
+const VS_PT = `#version 300 es
+precision highp float;
+${GLSL_FIELD}
+uniform sampler2D uPos, uPrevPos; uniform int uNP; uniform vec3 uCamPos; uniform mat3 uCamInv; uniform float uTanHalf; uniform vec2 uRes; uniform float uPtSize, uGamma;
+out vec3 vCol; out float vA;
+void main(){ int id = gl_VertexID >> 1; int end = gl_VertexID & 1; ivec2 ij = ivec2(id % uNP, id / uNP); vec4 P = texelFetch(uPos, ij, 0); vec4 P0 = texelFetch(uPrevPos, ij, 0);
+  bool reseeded = P.w > P0.w || P0.w <= 0.0; vec3 p = (end == 1 || reseeded) ? P.xyz : P0.xyz;
+  vec3 rel = p - uCamPos; vec3 c = uCamInv*rel; float z = max(c.z, 1e-3);
+  gl_Position = vec4(c.x/(z*uTanHalf)*(uRes.y/uRes.x), c.y/(z*uTanHalf), 0.0, 1.0);
+  vec3 B = Bfield(P.xyz); float b = length(B); float up = clamp(B.z/max(b, 1e-6), -1.0, 1.0);
+  // 色：中心を昇る（B_z>0）＝暖、外を降りる＝冷。強さで明るさ
+  vec3 warm = vec3(1.0, 0.72, 0.38), cool = vec3(0.40, 0.62, 1.0);
+  vCol = mix(cool, warm, up*0.5 + 0.5)*(0.45 + 0.55*clamp(pow(b, 0.3)*0.8, 0.0, 1.2));
+  float fade = smoothstep(0.0, 0.4, P.w);   // 撒き直し直後は薄く
+  float nearWire = smoothstep(0.02, 0.16, wireDist(P.xyz));   // 導線のそばは眩しすぎるので抑える
+  vA = fade*nearWire*(P.w > 0.0 && !reseeded ? 1.0 : 0.0);
+}`;
+const FS_PT = `#version 300 es
+precision highp float; in vec3 vCol; in float vA; uniform float uGain; out vec4 o;
+void main(){ o = vec4(vCol*vA*uGain, 1.0); }`;
+// 導線の輪：細い金属の管
+const VS_RING = `#version 300 es
+precision highp float;
+uniform vec3 uCamPos; uniform mat3 uCamInv; uniform float uTanHalf; uniform vec2 uRes; uniform float uZ0, uW;
+out float vV; out vec3 vN;
+void main(){ int id = gl_VertexID; int seg = id >> 1; float side = float(id & 1)*2.0 - 1.0; float a = float(seg)*6.2831853/256.0;
+  vec3 P = vec3(cos(a), sin(a), uZ0); vec3 view = normalize(P - uCamPos); vec3 axis = vec3(-sin(a), cos(a), 0.0); vec3 sideV = normalize(cross(view, axis));
+  vec3 W = P + sideV*uW*side; vec3 c = uCamInv*(W - uCamPos); float z = max(c.z, 1e-3);
+  gl_Position = vec4(c.x/(z*uTanHalf)*(uRes.y/uRes.x), c.y/(z*uTanHalf), 0.0, 1.0); vV = side; vN = sideV*side; }`;
+const FS_RING = `#version 300 es
+precision highp float; in float vV; in vec3 vN; uniform vec3 uRingCol; out vec4 o;
+void main(){ float r = abs(vV); float body = sqrt(max(0.0, 1.0 - r*r)); float aa = smoothstep(1.0, 0.7, r); o = vec4(uRingCol*(0.35 + 0.9*body + 0.8*pow(body, 10.0))*aa, 1.0); }`;
+const FS_DECAY = `#version 300 es
+precision highp float; uniform sampler2D uS; uniform float uK; out vec4 o; void main(){ o = vec4(texelFetch(uS, ivec2(gl_FragCoord.xy), 0).rgb*uK, 1.0); }`;
+const FS_DOWN = `#version 300 es
+precision highp float; uniform sampler2D uS; uniform vec2 uDst; out vec4 o;
+void main(){ vec2 uv = gl_FragCoord.xy/uDst; vec2 px = 1.0/uDst;
+  vec3 c = texture(uS, uv + px*vec2(-0.5,-0.5)).rgb + texture(uS, uv + px*vec2(0.5,-0.5)).rgb + texture(uS, uv + px*vec2(-0.5,0.5)).rgb + texture(uS, uv + px*vec2(0.5,0.5)).rgb; o = vec4(c*0.25, 1.0); }`;
+const FS_POST = `#version 300 es
+precision highp float; uniform sampler2D uAcc, uB1, uB2, uB3, uB4, uB5; uniform vec2 uRes; uniform float uBloom, uFade, uExp; uniform vec3 uBg; out vec4 o;
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0); }
+void main(){ vec2 uv = gl_FragCoord.xy/uRes; vec3 c = texture(uAcc, uv).rgb;
+  vec3 b = texture(uB1, uv).rgb*0.30 + texture(uB2, uv).rgb*0.26 + texture(uB3, uv).rgb*0.20 + texture(uB4, uv).rgb*0.14 + texture(uB5, uv).rgb*0.10;
+  vec2 q = uv*2.0-1.0; c = uBg*(1.0 - 0.3*dot(q,q)) + (c + b*uBloom)*uExp; c = aces(c)*uFade; c = pow(c, vec3(1.0/2.2));
+  float dth = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898,78.233)))*43758.5453); o = vec4(c + (dth-0.5)/255.0, 1.0); }`;
+
+// ============================================================
+//  WebGL
+// ============================================================
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' });
+if (!gl) throw new Error('WebGL2 が必要です');
+if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('EXT_color_buffer_float が必要です');
+function compile(type, src){ const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function program(vs, fs){ const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); for (let i = 0; i < n; i++){ const info = gl.getActiveUniform(p, i); u[info.name.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, info.name); } return { p, u }; }
+const P_SIM = program(VS_QUAD, FS_SIM), P_PT = program(VS_PT, FS_PT), P_RING = program(VS_RING, FS_RING), P_DECAY = program(VS_QUAD, FS_DECAY), P_DOWN = program(VS_QUAD, FS_DOWN), P_POST = program(VS_QUAD, FS_POST);
+gl.bindVertexArray(gl.createVertexArray());
+function makeTex(w, h, internal, filter){ const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texStorage2D(gl.TEXTURE_2D, 1, internal, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return t; }
+function fbo(t){ const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0); return f; }
+// 粒子
+const pos = [0, 1].map(() => { const t = makeTex(NP, NP, gl.RGBA32F, gl.NEAREST); return { t, f: fbo(t) }; }); let pc = 0;
+{ const z = new Float32Array(NP*NP*4); gl.bindTexture(gl.TEXTURE_2D, pos[0].t); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, NP, NP, gl.RGBA, gl.FLOAT, z); }
+const cdfTex = makeTex(257, 2, gl.R32F, gl.NEAREST);
+// 画面バッファ
+let W = 0, H = 0, trail = null, tc = 0, bloom = null;
+function alloc(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const cw = Math.max(64, Math.round(canvas.clientWidth || window.innerWidth || 640)), ch = Math.max(64, Math.round(canvas.clientHeight || window.innerHeight || 480));
+  let s = dpr; if (cw*ch*s*s > 2.6e6) s = Math.sqrt(2.6e6/(cw*ch)); const w = Math.round(cw*s), h = Math.round(ch*s); if (w === W && h === H) return false;
+  W = w; H = h; canvas.width = W; canvas.height = H;
+  if (trail){ trail.forEach(a => { gl.deleteTexture(a.t); gl.deleteFramebuffer(a.f); }); bloom.forEach(b => { gl.deleteTexture(b.t); gl.deleteFramebuffer(b.f); }); }
+  trail = [0, 1].map(() => { const t = makeTex(W, H, gl.RGBA16F, gl.LINEAR); return { t, f: fbo(t) }; });
+  bloom = []; let bw = W, bh = H; for (let i = 0; i < 5; i++){ bw = Math.max(1, bw >> 1); bh = Math.max(1, bh >> 1); const t = makeTex(bw, bh, gl.RGBA16F, gl.LINEAR); bloom.push({ t, f: fbo(t), w: bw, h: bh }); }
+  return true;
+}
+
+// ============================================================
+//  状態
+// ============================================================
+const PALETTES = [
+  { name: '夜', bg: [0.02, 0.022, 0.032], ring: [0.95, 0.80, 0.55], exp: 1.0 },
+  { name: '藍', bg: [0.03, 0.05, 0.10], ring: [0.90, 0.92, 0.95], exp: 1.05 },
+  { name: '金', bg: [0.05, 0.035, 0.025], ring: [1.0, 0.85, 0.5], exp: 0.95 },
+];
+const state = { t: num('warm', 0), frame: 0, mode: Math.round(num('mode', 1)), dipole: Q.get('dip') === '1' ? 1 : 0, dipT: 0, flux: Q.get('flux') === '0' ? 0 : 1, pal: Math.round(num('pal', 0)) % PALETTES.length,
+  yaw: num('yaw', 0.5), pitch: num('pitch', 0.42), zoom: num('zoom', 1), auto: !Q.has('still'), dragging: false, gamma: num('gamma', 0.45), life: 24, seedGen: 0 };
+state.dipT = state.dipole;
+function setMode(m){ state.mode = m; const c = fluxCDF(m); const data = new Float32Array(257*2); c.forEach((e, i) => data.set(e.cdf, i*257)); if (c.length === 1) data.set(c[0].cdf, 257);
+  gl.bindTexture(gl.TEXTURE_2D, cdfTex); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 257, 2, gl.RED, gl.FLOAT, data); state.cdfZ = c.map(e => e.z0); state.seedGen++; state.respawn = 1.0;
+  document.querySelectorAll('#ctl button[data-m]').forEach(b => b.classList.toggle('on', parseInt(b.dataset.m) === m)); }
+setMode(state.mode);
+const statEl = document.getElementById('stat');
+function ease(x){ x = Math.max(0, Math.min(1, x)); return x*x*(3 - 2*x); }
+function camera(){ const aspect = W/H; const fov = 28*Math.PI/180; const tanHalf = Math.tan(fov/2); const fit = 2.9/(0.8*tanHalf); const dist = (aspect < 1 ? fit/aspect : fit)/state.zoom;
+  const cp = Math.cos(state.pitch), sp = Math.sin(state.pitch); const pos = [dist*cp*Math.cos(state.yaw), dist*cp*Math.sin(state.yaw), dist*sp];
+  let f = pos.map(v => -v); const fl = Math.hypot(...f); f = f.map(v => v/fl); const r = [-Math.sin(state.yaw), Math.cos(state.yaw), 0]; const up = [r[1]*f[2]-r[2]*f[1], r[2]*f[0]-r[0]*f[2], r[0]*f[1]-r[1]*f[0]];
+  return { pos, inv: new Float32Array([r[0], up[0], f[0], r[1], up[1], f[1], r[2], up[2], f[2]]), tanHalf, dist }; }
+function setField(u){ const loops = MODES[state.mode].loops; const arr = new Float32Array(8); loops.forEach((l, i) => { arr[i*4] = l[0]; arr[i*4+1] = l[1]; }); gl.uniform4fv(u.uLoop, arr); gl.uniform1i(u.uNLoop, loops.length); gl.uniform1f(u.uDipole, state.dipole); }
+function render(dt){
+  state.frame++; const pal = PALETTES[state.pal];
+  state.dipole += (state.dipT - state.dipole)*Math.min(1, dt*2.0);
+  if (state.auto && !state.dragging){ state.yaw += dt*0.08; state.pitch += ((0.42 + 0.22*Math.sin(state.t*0.13)) - state.pitch)*Math.min(1, dt*0.5); }
+  const cam = camera();
+  // ---- 1) 粒子更新 ----
+  gl.disable(gl.BLEND); gl.bindFramebuffer(gl.FRAMEBUFFER, pos[1 - pc].f); gl.viewport(0, 0, NP, NP); gl.useProgram(P_SIM.p); const s = P_SIM.u; setField(s);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, pos[pc].t); gl.uniform1i(s.uPos, 0); gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, cdfTex); gl.uniform1i(s.uCdf, 1);
+  gl.uniform1f(s.uDt, Math.min(dt, 0.05)); gl.uniform1f(s.uTime, state.t); gl.uniform1f(s.uSeed, state.seedGen*7919); gl.uniform1f(s.uGamma, state.gamma); gl.uniform1f(s.uLife, state.life); gl.uniform1f(s.uFluxOn, state.flux); gl.uniform1i(s.uNP, NP);
+  gl.uniform2f(s.uCdfZ, state.cdfZ[0], state.cdfZ.length > 1 ? state.cdfZ[1] : state.cdfZ[0]); gl.uniform1i(s.uNCdf, state.cdfZ.length);
+  gl.drawArrays(gl.TRIANGLES, 0, 3); pc = 1 - pc;
+  // ---- 2) 残像を減衰 → 粒子と輪を加算 ----
+  const tn = 1 - tc; gl.bindFramebuffer(gl.FRAMEBUFFER, trail[tn].f); gl.viewport(0, 0, W, H);
+  gl.useProgram(P_DECAY.p); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, trail[tc].t); gl.uniform1i(P_DECAY.u.uS, 0); gl.uniform1f(P_DECAY.u.uK, state.dragging ? 0.82 : 0.945); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.useProgram(P_PT.p); const u = P_PT.u; setField(u); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, pos[pc].t); gl.uniform1i(u.uPos, 0); gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, pos[1 - pc].t); gl.uniform1i(u.uPrevPos, 1); gl.uniform1i(u.uNP, NP);
+  gl.uniform3fv(u.uCamPos, cam.pos); gl.uniformMatrix3fv(u.uCamInv, false, cam.inv); gl.uniform1f(u.uTanHalf, cam.tanHalf); gl.uniform2f(u.uRes, W, H); gl.uniform1f(u.uPtSize, 1.6*(W/1400 + 0.5)); gl.uniform1f(u.uGamma, state.gamma);
+  gl.uniform1f(P_PT.u.uGain, num('gain', 0.028)*Math.pow(384/NP, 2)); gl.drawArrays(gl.LINES, 0, NP*NP*2);
+  gl.useProgram(P_RING.p); const r = P_RING.u; gl.uniform3fv(r.uCamPos, cam.pos); gl.uniformMatrix3fv(r.uCamInv, false, cam.inv); gl.uniform1f(r.uTanHalf, cam.tanHalf); gl.uniform2f(r.uRes, W, H); gl.uniform1f(r.uW, 0.012); gl.uniform3fv(r.uRingCol, pal.ring.map(v => v*0.12));
+  for (const l of MODES[state.mode].loops){ gl.uniform1f(r.uZ0, l[0]); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 514); }
+  gl.disable(gl.BLEND); tc = tn;
+  // ---- 3) bloom → post ----
+  gl.useProgram(P_DOWN.p); gl.uniform1i(P_DOWN.u.uS, 0); gl.activeTexture(gl.TEXTURE0); let src = trail[tc].t;
+  for (const b of bloom){ gl.bindFramebuffer(gl.FRAMEBUFFER, b.f); gl.viewport(0, 0, b.w, b.h); gl.bindTexture(gl.TEXTURE_2D, src); gl.uniform2f(P_DOWN.u.uDst, b.w, b.h); gl.drawArrays(gl.TRIANGLES, 0, 3); src = b.t; }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H); gl.useProgram(P_POST.p); const q = P_POST.u;
+  gl.uniform2f(q.uRes, W, H); gl.uniform1f(q.uBloom, 0.6); gl.uniform1f(q.uFade, ease((state.t - 0.2)/2.0)); gl.uniform1f(q.uExp, pal.exp); gl.uniform3fv(q.uBg, pal.bg);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, trail[tc].t); gl.uniform1i(q.uAcc, 0);
+  for (let i = 0; i < 5; i++){ gl.activeTexture(gl.TEXTURE1 + i); gl.bindTexture(gl.TEXTURE_2D, bloom[i].t); gl.uniform1i(q['uB' + (i+1)], 1 + i); }
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const M = MODES[state.mode];
+  statEl.innerHTML = `<b>${M.name}</b><br>${M.en}<br>${state.dipole > 0.5 ? '<b>双極子近似</b>（遠くは同じ・輪の近くで嘘）' : '厳密解（完全楕円積分 K, E）'}<br>密度＝${state.flux ? '<b>磁束</b>（鉄粉と同じ）' : '一様（見た目だけ）'}　粒子 ${NP*NP}`;
+}
+
+// ============================================================
+//  入力
+// ============================================================
+const ptrs = new Map(); let lastPinch = 0, uiTimer = 0; const ui = document.getElementById('ui');
+function wake(){ ui.classList.remove('fade'); clearTimeout(uiTimer); uiTimer = setTimeout(() => ui.classList.add('fade'), 7000); } wake();
+canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); state.dragging = true; wake(); if (ptrs.size === 2){ const a = [...ptrs.values()]; lastPinch = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); } });
+canvas.addEventListener('pointermove', e => { const p = ptrs.get(e.pointerId); if (!p) return; const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+  if (ptrs.size === 1){ state.yaw -= dx*0.006; state.pitch = Math.max(-1.5, Math.min(1.5, state.pitch + dy*0.006)); }
+  else if (ptrs.size === 2){ const a = [...ptrs.values()]; const d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); if (lastPinch > 0) state.zoom = Math.max(0.5, Math.min(5, state.zoom*(d/lastPinch))); lastPinch = d; } });
+function endPtr(e){ ptrs.delete(e.pointerId); lastPinch = 0; if (ptrs.size === 0) state.dragging = false; }
+canvas.addEventListener('pointerup', endPtr); canvas.addEventListener('pointercancel', endPtr);
+canvas.addEventListener('wheel', e => { e.preventDefault(); state.zoom = Math.max(0.5, Math.min(5, state.zoom*Math.exp(-e.deltaY*0.0015))); wake(); }, { passive: false });
+function setBtn(k, on){ const b = document.querySelector(`#ctl button[data-k="${k}"]`); if (b) b.classList.toggle('on', !!on); }
+document.querySelectorAll('#ctl button').forEach(b => b.addEventListener('click', () => { wake(); if (b.dataset.m) setMode(parseInt(b.dataset.m));
+  if (b.dataset.k === 'dip'){ state.dipT = 1 - state.dipT; setBtn('dip', state.dipT === 1); } if (b.dataset.k === 'flux'){ state.flux = 1 - state.flux; setBtn('flux', state.flux === 1); state.seedGen++; }
+  if (b.dataset.k === 'pal'){ state.pal = (state.pal + 1) % PALETTES.length; } if (b.dataset.k === 'auto'){ state.auto = !state.auto; setBtn('auto', state.auto); } }));
+window.addEventListener('keydown', e => { wake(); if (e.code === 'Space'){ e.preventDefault(); state.auto = !state.auto; setBtn('auto', state.auto); }
+  if (e.key >= '1' && e.key <= '3') setMode(parseInt(e.key)); if (e.key === 'd' || e.key === 'D'){ state.dipT = 1 - state.dipT; setBtn('dip', state.dipT === 1); }
+  if (e.key === 'f' || e.key === 'F'){ state.flux = 1 - state.flux; setBtn('flux', state.flux === 1); state.seedGen++; } if (e.key === 'c' || e.key === 'C') state.pal = (state.pal + 1) % PALETTES.length; });
+new ResizeObserver(() => alloc()).observe(canvas);
+setBtn('dip', state.dipT === 1); setBtn('flux', state.flux === 1);
+
+// ============================================================
+//  ループ
+// ============================================================
+alloc();
+let last = performance.now();
+if (Q.has('warm')){ const n = Math.round(num('warm', 0)*60); for (let i = 0; i < Math.min(n, 3000); i++){ state.t += 1/60; render(1/60); } }
+function loop(now){ let dt = (now - last)/1000; last = now; if (dt > 0.08) dt = 0.08; state.t += dt; alloc(); render(dt); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
